@@ -1,0 +1,411 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>自检页（公开）</title>
+    <style>
+      /* 工具页是静态页：不经过打包器，也不依赖壳的样式。
+         这一版走「仪器读数表」的样子 —— 白底、发丝线、等宽数值、方角，
+         与壳的圆角卡片区分开；绿与橙只表示检查通过与否。 */
+      :root {
+        color-scheme: light;
+        --paper: #eff1f3;
+        --surface: #ffffff;
+        --ink: #101418;
+        --ink-dim: #5f6b78;
+        --rule: #d3dae1;
+        --ok: #147a4b;
+        --warn: #9a5b06;
+        --font: system-ui, "Segoe UI", "PingFang SC", "Microsoft YaHei UI", sans-serif;
+        --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        padding: 28px 24px 44px;
+        background: var(--paper);
+        color: var(--ink);
+        font: 15px/1.6 var(--font);
+        -webkit-font-smoothing: antialiased;
+      }
+      main {
+        max-width: 660px;
+        margin: 0 auto;
+      }
+      h1 {
+        margin: 0 0 6px;
+        font-size: 21px;
+        font-weight: 600;
+        line-height: 1.25;
+      }
+      .说明 {
+        margin: 0 0 22px;
+        max-width: 44em;
+        color: var(--ink-dim);
+        font-size: 13px;
+      }
+
+      /* 结论：整页唯一显眼的地方，颜色只说「装载对不对」。 */
+      .结论 {
+        display: flex;
+        gap: 12px;
+        align-items: flex-start;
+        padding: 14px 16px;
+        background: var(--surface);
+        border: 1px solid var(--rule);
+        border-left: 4px solid var(--ink-dim);
+      }
+      .结论[data-state="ok"] {
+        border-left-color: var(--ok);
+      }
+      .结论[data-state="warn"] {
+        border-left-color: var(--warn);
+      }
+      .标记 {
+        flex: none;
+        width: 10px;
+        height: 10px;
+        margin-top: 7px;
+        background: var(--ink-dim);
+      }
+      .结论[data-state="ok"] .标记 {
+        background: var(--ok);
+      }
+      .结论[data-state="warn"] .标记 {
+        background: var(--warn);
+      }
+      .结论标题 {
+        margin: 0;
+        font-size: 17px;
+        font-weight: 600;
+      }
+      .结论说明 {
+        margin: 4px 0 0;
+        color: var(--ink-dim);
+        font-size: 13px;
+      }
+      @media (prefers-reduced-motion: no-preference) {
+        .结论.就位 {
+          animation: 落定 200ms ease-out both;
+        }
+      }
+      @keyframes 落定 {
+        from {
+          opacity: 0;
+        }
+        to {
+          opacity: 1;
+        }
+      }
+
+      .分节 {
+        margin-top: 26px;
+      }
+      .分节 h2 {
+        margin: 0 0 10px;
+        padding-top: 12px;
+        border-top: 1px solid var(--rule);
+        color: var(--ink-dim);
+        font-size: 12.5px;
+        font-weight: 600;
+      }
+
+      /* 读数：一列标签、一列等宽值，行间一条发丝线。 */
+      .读数 {
+        margin: 0;
+      }
+      .读数 .行 {
+        display: grid;
+        grid-template-columns: 6.5em minmax(0, 1fr);
+        gap: 0 14px;
+        padding: 7px 0;
+        border-bottom: 1px solid var(--rule);
+      }
+      .读数 .行:first-child {
+        border-top: 1px solid var(--rule);
+      }
+      .读数 dt {
+        color: var(--ink-dim);
+        font-size: 12.5px;
+      }
+      .读数 dd {
+        margin: 0;
+        font: 13px/1.55 var(--mono);
+        overflow-wrap: anywhere;
+      }
+
+      .检查 {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+      .检查 li {
+        display: grid;
+        grid-template-columns: 1.1em minmax(0, 1fr);
+        gap: 10px;
+        padding: 8px 0;
+        border-bottom: 1px solid var(--rule);
+      }
+      .检查 li:first-child {
+        border-top: 1px solid var(--rule);
+      }
+      .记 {
+        font-weight: 700;
+        line-height: 1.5;
+      }
+      .检查 li[data-ok="true"] .记 {
+        color: var(--ok);
+      }
+      .检查 li[data-ok="false"] .记 {
+        color: var(--warn);
+      }
+      .缘由 {
+        display: block;
+        margin-top: 2px;
+        color: var(--ink-dim);
+        font: 12.5px/1.55 var(--mono);
+        overflow-wrap: anywhere;
+      }
+
+      .操作 {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 12px;
+        margin-top: 22px;
+      }
+      button {
+        padding: 10px 15px;
+        border: 1px solid var(--rule);
+        background: var(--surface);
+        color: var(--ink);
+        font: 600 13px/1 var(--font);
+        cursor: pointer;
+      }
+      button:hover {
+        border-color: var(--ink-dim);
+      }
+      button:focus-visible {
+        outline: 2px solid var(--ink);
+        outline-offset: 2px;
+      }
+      .复述 {
+        color: var(--ink-dim);
+        font-size: 12.5px;
+      }
+
+      @media (max-width: 420px) {
+        .读数 .行 {
+          grid-template-columns: minmax(0, 1fr);
+        }
+        .读数 dd {
+          margin-top: 2px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>自检页</h1>
+      <p class="说明">
+        这张页面由工具箱从当前发布里取出，把这次装载的地址与版本读出来。它和外链那一条一起放在工具架上，
+        就能同时验证两条链路。
+      </p>
+
+      <section class="结论" id="结论" data-state="direct">
+        <span class="标记" aria-hidden="true"></span>
+        <div>
+          <p class="结论标题" id="结论标题">正在读数…</p>
+          <p class="结论说明" id="结论说明"></p>
+        </div>
+      </section>
+
+      <section class="分节">
+        <h2>装载读数</h2>
+        <dl class="读数" id="读数"></dl>
+      </section>
+
+      <section class="分节">
+        <h2>检查项</h2>
+        <ul class="检查" id="检查"></ul>
+      </section>
+
+      <div class="操作">
+        <button id="复制" type="button">复制报告</button>
+        <span class="复述" id="复述" role="status" aria-live="polite"></span>
+      </div>
+    </main>
+
+    <script>
+      // 这一页只回答一件事：它是被工具箱从哪个发布里取出来的。
+      // 工具仓库是数据源，改这里只影响这一个工具页。
+      const 工具 = {
+        id: "self-check-public",
+        name: "自检页（公开）",
+        source: "公开工具 / 测试",
+      };
+
+      const 在框里 = window.self !== window.top;
+      const 走https = location.protocol === "https:";
+      const 版本 = (location.pathname.match(/\/releases\/([^/]+)\//) || [])[1] || "";
+      const 视口 = `${window.innerWidth} × ${window.innerHeight}（dpr ${window.devicePixelRatio}）`;
+      const 环境 = [navigator.language, 时区(), navigator.platform].filter(Boolean).join(" · ");
+
+      function 时区() {
+        try {
+          return Intl.DateTimeFormat().resolvedOptions().timeZone || "";
+        } catch {
+          return "";
+        }
+      }
+
+      const 状态 = 判结论();
+      const 读数 = [
+        ["工具标识", `${工具.name} / ${工具.id}`],
+        ["工具来源", 工具.source],
+        ["装入方式", 状态.标题],
+        ["载入地址", location.href],
+        ["版本目录", 版本 ? `releases/${版本}` : "（没有）"],
+        ["来源页", document.referrer || "（空）"],
+        ["视口", 视口],
+        ["环境", 环境],
+        ["读取时间", new Date().toLocaleString("zh-CN", { hour12: false })],
+      ];
+      const 检查 = [
+        {
+          名称: "由工具箱装载",
+          通过: 在框里,
+          缘由: 在框里 ? "页面跑在工具箱的 iframe 里" : "当前不是 iframe，直接打开看不到工具箱的行为",
+        },
+        {
+          名称: "走 HTTPS 读取",
+          通过: 走https,
+          缘由: 走https ? location.origin : `当前协议是 ${location.protocol}`,
+        },
+        {
+          名称: "地址落在发布目录里",
+          通过: 版本 !== "",
+          缘由: 版本 ? `releases/${版本}` : "地址里没有 releases/<版本>/ 这一段",
+        },
+      ];
+
+      function 判结论() {
+        if (在框里 && 走https && 版本) {
+          return {
+            state: "ok",
+            标题: "已由工具箱装载",
+            说明: "页面来自当前发布，地址与版本都对得上。",
+          };
+        }
+        if (在框里) {
+          return {
+            state: "warn",
+            标题: "已装载，但地址不在发布目录里",
+            说明: "页面在 iframe 里，却没有落在 releases/<版本>/ 下，多半是从别处打开的开发页面。",
+          };
+        }
+        return {
+          state: "direct",
+          标题: "直接打开，未经工具箱",
+          说明: "从工具架点进来才算一次真实装载；直接打开只能看到这张页面的静态内容。",
+        };
+      }
+
+      const 结论块 = document.getElementById("结论");
+      结论块.dataset.state = 状态.state;
+      document.getElementById("结论标题").textContent = 状态.标题;
+      document.getElementById("结论说明").textContent = 状态.说明;
+      if (window.matchMedia("(prefers-reduced-motion: no-preference)").matches) {
+        结论块.classList.add("就位");
+      }
+
+      const 读数表 = document.getElementById("读数");
+      for (const [名, 值] of 读数) {
+        const 行 = document.createElement("div");
+        行.className = "行";
+        const 键 = document.createElement("dt");
+        键.textContent = 名;
+        const 值格 = document.createElement("dd");
+        值格.textContent = 值;
+        行.append(键, 值格);
+        读数表.append(行);
+      }
+
+      const 检查表 = document.getElementById("检查");
+      for (const 项 of 检查) {
+        const 条 = document.createElement("li");
+        条.dataset.ok = String(项.通过);
+        const 记号 = document.createElement("span");
+        记号.className = "记";
+        记号.setAttribute("aria-hidden", "true");
+        记号.textContent = 项.通过 ? "✓" : "✗";
+        const 正文 = document.createElement("span");
+        正文.textContent = `${项.通过 ? "通过" : "未通过"}：${项.名称}`;
+        const 缘由 = document.createElement("span");
+        缘由.className = "缘由";
+        缘由.textContent = 项.缘由;
+        正文.append(缘由);
+        条.append(记号, 正文);
+        检查表.append(条);
+      }
+
+      const 复制键 = document.getElementById("复制");
+      const 复述 = document.getElementById("复述");
+      let 定时 = 0;
+
+      复制键.addEventListener("click", async () => {
+        const 好了 = await 写剪贴板(报告());
+        复述.textContent = 好了 ? "已复制" : "复制被浏览器拦下了：请手动选中上面的读数";
+        window.clearTimeout(定时);
+        定时 = window.setTimeout(() => {
+          复述.textContent = "";
+        }, 4000);
+      });
+
+      function 报告() {
+        const 行 = [
+          `工具：${工具.name} / ${工具.id}`,
+          `来源：${工具.source}`,
+          `装入方式：${状态.标题}`,
+          `载入地址：${location.href}`,
+          `版本目录：${版本 ? `releases/${版本}` : "（没有）"}`,
+          `来源页：${document.referrer || "（空）"}`,
+          `视口：${视口}`,
+          `环境：${环境}`,
+        ];
+        for (const 项 of 检查) {
+          行.push(`检查：${项.通过 ? "通过" : "未通过"} ${项.名称}（${项.缘由}）`);
+        }
+        行.push(`时间：${new Date().toISOString()}`);
+        return `工具箱自检报告\n${行.join("\n")}\n`;
+      }
+
+      // iframe 里可能没有剪贴板权限，失败时回落到选中复制的老办法。
+      async function 写剪贴板(文本) {
+        try {
+          await navigator.clipboard.writeText(文本);
+          return true;
+        } catch {
+          /* 继续走回落 */
+        }
+        try {
+          const 临时 = document.createElement("textarea");
+          临时.value = 文本;
+          临时.setAttribute("readonly", "");
+          临时.style.position = "fixed";
+          临时.style.top = "-1000px";
+          document.body.append(临时);
+          临时.select();
+          const 好了 = document.execCommand("copy");
+          临时.remove();
+          return 好了;
+        } catch {
+          return false;
+        }
+      }
+    </script>
+  </body>
+</html>

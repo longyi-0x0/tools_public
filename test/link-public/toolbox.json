@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "type": "tool",
+  "id": "link-public",
+  "name": "外链（公开）",
+  "description": "指向 example.com 的 HTTPS 地址，占位用；换成真实站点即可验证第三方页面的打开与嵌入。",
+  "kind": "web",
+  "entry": "https://example.com",
+  "capabilities": []
+}

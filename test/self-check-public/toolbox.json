@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "type": "tool",
+  "id": "self-check-public",
+  "name": "自检页（公开）",
+  "description": "打印这次装载的地址、版本与视口，用来核对公开仓库的 H5 发布链路。",
+  "kind": "h5",
+  "entry": "index.html",
+  "capabilities": []
+}
