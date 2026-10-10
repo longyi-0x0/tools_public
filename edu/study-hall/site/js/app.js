@@ -29,13 +29,25 @@ import {
 import * as store from './store.js';
 import * as sound from './sound.js';
 import * as speech from './speech.js';
-import * as xlsx from './xlsx.js';
+import { readSheetFile } from './readSheets.js';
 import { exportClassWorkbook, parseClassWorkbook } from './klassFile.js';
 
 /** 走秒的间隔。500ms 够计时看上去是连续的，也不费。 */
 const TICK_MS = 500;
 /** 一屏格子的网格：按人数选列数，人多列多、字小。 */
 const GRID_COLUMNS = { junior: 5, middle: 6, senior: 8 };
+/**
+ * 花名册认哪些扩展名。
+ *
+ * `.xls` 要收：老师从教务系统拿到的名单常常是这个。但**扩展名不作数** ——
+ * 读的时候按内容认（见 `readSheets.js`），这里只是给文件选择框一个提示。
+ */
+const ROSTER_ACCEPT = '.xlsx,.xls';
+
+/** 从文件名取一个默认的班级名：去掉扩展名。 */
+function baseName(fileName) {
+  return fileName.replace(/\.(xlsx|xls)$/i, '');
+}
 
 const state = {
   view: 'home',
@@ -328,6 +340,30 @@ function studentsFromRows(rows) {
   return students;
 }
 
+/**
+ * 在一份文件的各张表里找名册。
+ *
+ * 先看有没有哪张表叫「名册」；没有就按顺序一张张试，取第一张能读出学生的。
+ * 之所以要试而不是直接取第一张：教务系统的导出常把标题、说明各占一张表，
+ * 名册在里面某一张上。
+ */
+function rosterFromSheets(sheets) {
+  const named = sheets.find((sheet) => sheet.name.includes('名册'));
+  if (named !== undefined) {
+    const students = studentsFromRows(named.rows);
+    if (students.length > 0) {
+      return students;
+    }
+  }
+  for (const sheet of sheets) {
+    const students = studentsFromRows(sheet.rows);
+    if (students.length > 0) {
+      return students;
+    }
+  }
+  return [];
+}
+
 /* ---------- 导出 / 导入整班 ---------- */
 
 function download(filename, bytes) {
@@ -492,7 +528,7 @@ function renderHome() {
         h('p', { class: 'empty__title', text: '还没有班级' }),
         h('p', {
           class: 'empty__hint',
-          text: '导入一份花名册 xlsx 就能建班。表里有一列写着「姓名」即可，学号与座位列可选。',
+          text: '导入一份花名册就能建班（.xlsx 或 .xls，网页表格改名的 .xls 也认）。表里有一列写着「姓名」即可，学号与座位列可选。',
         }),
       ]),
     );
@@ -786,7 +822,7 @@ function renderNewClass() {
   body.push(
     h('p', {
       class: 'modal__hint',
-      text: '选一份花名册 xlsx。表里有一列写着「姓名」就会被认出来，学号与座位列可选。',
+      text: '选一份花名册（.xlsx 或 .xls）。表里有一列写着「姓名」就会被认出来，学号与座位列可选。',
     }),
   );
   const nameInput = h('input', {
@@ -800,25 +836,23 @@ function renderNewClass() {
   });
   body.push(h('label', { class: 'field' }, [h('span', { class: 'field__label', text: '班级名称' }), nameInput]));
 
-  const fileInput = h('input', { type: 'file', accept: '.xlsx', class: 'hidden' });
+  const fileInput = h('input', { type: 'file', accept: ROSTER_ACCEPT, class: 'hidden' });
   fileInput.addEventListener('change', async () => {
-    const file = fileInput.files?.[0];
-    if (file === undefined) {
-      return;
+    const file = fileInput.files[0];
+    try {
+      const students = rosterFromSheets(await readSheetFile(file));
+      if (students.length === 0) {
+        showToast('这张表里没读到学生，请确认有一列写着姓名');
+        return;
+      }
+      state.pendingNewClass = {
+        students,
+        defaultName: nameInput.value.trim() !== '' ? nameInput.value.trim() : baseName(file.name),
+      };
+      render();
+    } catch (error) {
+      showToast(`读表失败：${error.message}`);
     }
-    const bytes = new Uint8Array(await file.arrayBuffer());
-    const sheets = await xlsx.parseWorkbook(bytes);
-    const roster = sheets.find((sheet) => sheet.name.includes('名册')) ?? sheets[0];
-    const students = studentsFromRows(roster.rows);
-    if (students.length === 0) {
-      showToast('这张表里没读到学生，请确认有一列写着姓名');
-      return;
-    }
-    state.pendingNewClass = {
-      students,
-      defaultName: nameInput.value.trim() !== '' ? nameInput.value.trim() : file.name.replace(/\.xlsx$/i, ''),
-    };
-    render();
   });
 
   if (state.pendingNewClass === undefined) {
@@ -1030,17 +1064,14 @@ function renderSettings() {
     ]),
   );
 
-  const rosterInput = h('input', { type: 'file', accept: '.xlsx', class: 'hidden' });
+  const rosterInput = h('input', { type: 'file', accept: ROSTER_ACCEPT, class: 'hidden' });
   rosterInput.addEventListener('change', async () => {
     const file = rosterInput.files?.[0];
     if (file === undefined) {
       return;
     }
     try {
-      const bytes = new Uint8Array(await file.arrayBuffer());
-      const sheets = await xlsx.parseWorkbook(bytes);
-      const roster = sheets.find((sheet) => sheet.name.includes('名册')) ?? sheets[0];
-      const students = studentsFromRows(roster.rows);
+      const students = rosterFromSheets(await readSheetFile(file));
       if (students.length === 0) {
         showToast('这张表里没读到学生');
         return;
