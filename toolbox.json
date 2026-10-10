@@ -2,5 +2,5 @@
   "schemaVersion": 1,
   "type": "folder",
   "name": "公开工具",
-  "children": ["test"]
+  "children": ["edu", "test"]
 }

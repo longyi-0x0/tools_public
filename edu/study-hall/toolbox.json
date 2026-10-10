@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "type": "tool",
+  "id": "study-hall",
+  "name": "自习点名",
+  "description": "自习点名工具：蓝是没到、灰是到了、黄是临时离开并计时、超时转红并出声提醒。支持多班级、花名册导入、按班导出 xlsx，数据存在本机浏览器里。",
+  "kind": "h5",
+  "entry": "index.html",
+  "capabilities": []
+}
