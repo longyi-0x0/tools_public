@@ -247,7 +247,9 @@ export function renderClassesPage() {
     );
     steps.append(h('li', { text: '开始自习 —— 一按下去就在计时，全班默认在座（蓝）' }));
     steps.append(h('li', { text: '有人临时离开，点一下他，会开始计时；超过设定时长转红并提醒' }));
-    steps.append(h('li', { text: '想点名就按「点名」—— 打开时全班都算「没到」，点到的人才算到了' }));
+    steps.append(
+      h('li', { text: '想点名就按「点名」—— 这一场没点过名就全班都算「没到」，点到的人才算到了' }),
+    );
     steps.append(h('li', { text: '换机器或留档：按「多选」勾上几个班，导出成一个 zip；一个班一份 xlsx' }));
     body.append(
       h('div', { class: 'empty' }, [
