@@ -1408,6 +1408,54 @@ body {
 }
 
 /*
+ * 自动点名那一栏：替老师把名字逐个喊出去，谁到了仍由老师点。
+ *
+ * 摆在名字列表上方自己一条 —— 它是**另一套动作**（叫名字），与下面那些格子（记谁到了）
+ * 分开看，别混成一片。
+ */
+.rollcall__auto {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: var(--paper);
+}
+
+/* 开着的时候这颗钮要有「正在走」的样子，不然老师看不出它还在念 */
+.btn--auto.is-on {
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface));
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--rule));
+  color: color-mix(in srgb, var(--accent) 78%, var(--ink));
+}
+
+/* 间隔与「第几个 / 共几个」靠右：左边是动作，右边是设置与读数 */
+.rollcall__auto-gap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  color: var(--ink-dim);
+  font-size: 13px;
+}
+
+.input--interval {
+  width: auto;
+  padding: 5px 8px;
+  font-size: 13px;
+}
+
+.rollcall__auto-pos {
+  min-width: 64px;
+  color: var(--ink-dim);
+  font: 600 13px/1 var(--mono);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+/*
  * 一格 = 名字钮 + 角上那颗喇叭。
  *
  * 状态挂在**壳**上：名字钮与喇叭都从壳上取色，两处不会各说各的。名字钮是 `<button>`，

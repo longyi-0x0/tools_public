@@ -132,6 +132,8 @@ export function startSession(input) {
     phase: PHASE.STUDYING,
     startedAt: input.startedAt,
     absentIds: [],
+    // 本场还没点过名：点名层据此决定从「全班没到」还是「现有名单」起算
+    rollCallAt: null,
     leaves: [],
     pauses: [],
   };
@@ -193,6 +195,8 @@ export function normaliseSession(raw) {
     ...raw,
     phase: raw.phase === PHASE.ENDED ? PHASE.ENDED : PHASE.STUDYING,
     absentIds: Array.isArray(raw.absentIds) ? raw.absentIds : [],
+    // 老记录没有这一项：没写就是「不知道点过没有」，按没点过算（下次点名从全班没到起算）
+    rollCallAt: raw.rollCallAt ?? null,
     leaves: Array.isArray(raw.leaves) ? raw.leaves : [],
     pauses: Array.isArray(raw.pauses) ? raw.pauses : [],
   };
@@ -273,33 +277,19 @@ export function endSession(session, at) {
  * 定时器会一直跑：格子按离开的颜色画，到了时长还会响，而人明明标着没来。
  *
  * 顺序按调用方给的来；导出与统计都只看「在不在里面」，与顺序无关。
+ *
+ * `at` 同时记进 `rollCallAt`：**本场点过名没有**就靠这一笔分。没点过的场子（刚开自习）
+ * 点名层从「全班都没到」起算，点过的就按这一场现有的名单摆 —— 见 `openRollCall`。
  */
 export function setAbsent(session, absentIds, at) {
   let next = { ...session, absentIds: [...absentIds] };
+  if (at !== undefined) {
+    next.rollCallAt = at;
+  }
   for (const studentId of absentIds) {
     next = closeOpenLeave(next, studentId, at);
   }
   return next;
-}
-
-/**
- * 记一个「没来」：蓝 → 灰。
- *
- * 开始自习时全班都是蓝的（在座），所以点名做的不是「标记到了的」，而是反过来
- * 挑出没来的那几个 —— 一个班几十号人，多数都在座位上，挑少数才省力气。
- *
- * 不要求处于某一相：自习里随时能把一个人退回没来（他走了、一开始就点错了）。
- */
-export function markAbsent(session, studentId, at) {
-  const absentIds = session.absentIds.includes(studentId)
-    ? session.absentIds
-    : [...session.absentIds, studentId];
-  return setAbsent(session, absentIds, at);
-}
-
-/** 取消「没来」：灰 → 蓝。点错了可以退回去。 */
-export function markPresent(session, studentId) {
-  return { ...session, absentIds: session.absentIds.filter((id) => id !== studentId) };
 }
 
 /** 合上这个人开着的离开（`at` 没给就原样返回 —— 这一层不读时钟，得调用方给）。 */

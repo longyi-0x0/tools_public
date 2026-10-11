@@ -80,6 +80,7 @@ export async function exportClassWorkbook(klass, sessions, now = Date.now()) {
     text('累计离开（分钟）'),
     text('暂停次数'),
     text('暂停（分钟）'),
+    text('点名时刻'),
   ]];
   const markRows = [[text('会话开始时间'), text('学号'), text('姓名'), text('是否点到')]];
   const pauseRows = [[text('会话开始时间'), text('暂停时间'), text('继续时间'), text('时长（分钟）')]];
@@ -108,6 +109,10 @@ export async function exportClassWorkbook(klass, sessions, now = Date.now()) {
       number(Math.round(summary.leaveDurationMs / 60000)),
       number((session.pauses ?? []).length),
       number(Math.round(pausedMs(session, end) / 60000)),
+      // 这一场点过名没有：空着就是没点过（下次打开点名层从「全班没到」起算）
+      session.rollCallAt === null || session.rollCallAt === undefined
+        ? text('')
+        : date(session.rollCallAt),
     ]);
 
     for (const student of klass.students) {
@@ -259,12 +264,15 @@ export async function parseClassWorkbook(bytes) {
       }
       const endedRaw = row?.[1];
       const endedAt = Number(endedRaw);
+      // 末尾那列「点名时刻」：空着就是这一场没点过名（老文件没有这一列，也读成没点过）
+      const rollCallRaw = Number(row?.[9]);
       const session = {
         id: newId('s'),
         classId: klass.id,
         phase: Number.isFinite(endedAt) ? PHASE.ENDED : PHASE.STUDYING,
         startedAt,
         absentIds: [],
+        rollCallAt: Number.isFinite(rollCallRaw) && rollCallRaw > 0 ? rollCallRaw : null,
         leaves: [],
         pauses: [],
       };

@@ -31,6 +31,156 @@ const rollCells = new Map();
 let rollFoot = null;
 
 /**
+ * 自动点名：按固定间隔把名册逐个念下去。
+ *
+ * 只管「念到谁」，**不动名单** —— 谁到了是老师点了名字才算。所以它只是替老师把名字
+ * 一个一个喊出去，页面上那颗喇叭要一下一下点的活儿由它接手。
+ *
+ * `index` 是**最近念过的那一个**在名册里的位置（还没念过是 -1），`running` 是走没走，
+ * `timer` 是下一个名字的定时器（暂停与收窗都要清掉，不然会接着往下念）。
+ */
+const auto = { running: false, index: -1, ms: 1000, timer: 0 };
+
+/** 间隔的几档，毫秒。默认 1 秒：喊完一个名字就到下一个，不拖堂。 */
+const AUTO_STEPS_MS = [1000, 2000, 3000, 5000, 8000];
+
+/** 栏上那几个随状态变的东西（按钮的字、第几个/共几个），画一次之后定点改。 */
+let autoNodes = null;
+
+/** 只把「走没走」放下，不重画、也不动指针。 */
+function toggleAutoOff() {
+  window.clearTimeout(auto.timer);
+  auto.timer = 0;
+  auto.running = false;
+}
+
+/** 停掉自动点名：清定时器、把「走没走」放下，指针留着（再按就从下一个接着走）。 */
+function stopAuto() {
+  toggleAutoOff();
+  paintAuto();
+}
+
+/**
+ * 念名册里的第 `index` 个。
+ *
+ * 越界就什么都不做，返回 false —— 到头该停该重来由调用方定。
+ */
+function announce(index) {
+  const students = state.klass?.students ?? [];
+  if (index < 0 || index >= students.length) {
+    return false;
+  }
+  auto.index = index;
+  sayName(students[index].name);
+  paintAuto();
+  return true;
+}
+
+/** 排下一个。走到最后一名就停下，不绕回去 —— 再绕一圈会把刚点过的名字又喊一遍。 */
+function scheduleAuto() {
+  window.clearTimeout(auto.timer);
+  if (!auto.running) {
+    return;
+  }
+  auto.timer = window.setTimeout(() => {
+    if (!announce(auto.index + 1)) {
+      stopAuto();
+      showToast('名册念完了');
+      return;
+    }
+    scheduleAuto();
+  }, auto.ms);
+}
+
+/** 开 / 停。开着的时候按就是暂停。 */
+function toggleAuto() {
+  if (auto.running) {
+    stopAuto();
+    return;
+  }
+  if (!(state.klass?.students ?? []).length || !speech.canSpeak()) {
+    showToast('这台机器的语音念不出来，自动点名用不了');
+    return;
+  }
+  // 接着上一次停下的地方往下走；已经念到最后一位了就从头再来
+  if (!announce(auto.index + 1)) {
+    announce(0);
+    showToast('名册念完了，从头再来');
+  }
+  auto.running = true;
+  scheduleAuto();
+  paintAuto();
+}
+
+/**
+ * 重新来：指针退回名册头，走没走不动。
+ *
+ * 与「暂停」是两件事 —— 暂停是停在半路（再按接着往下走），重新来是从第一个名字重开
+ * 一遍。上一趟点出来的名单一个字不动，谁到了仍由老师点。
+ */
+function restartAuto() {
+  auto.index = -1;
+  window.clearTimeout(auto.timer);
+  auto.timer = 0;
+  if (auto.running) {
+    toggleAutoOff();
+    announce(0);
+    auto.running = true;
+    scheduleAuto();
+  } else {
+    showToast('退回去了，下一个从第一个名字开始');
+  }
+  paintAuto();
+}
+
+/** 上一个 / 下一个：立刻念那一个，并把间隔重新起算（只在走的时候）。 */
+function stepAuto(delta) {
+  if (!announce(auto.index + delta)) {
+    return;
+  }
+  if (auto.running) {
+    scheduleAuto();
+  }
+}
+
+/** 改间隔：下一位就按新的走。 */
+function setAutoMs(ms) {
+  auto.ms = ms;
+  if (auto.running) {
+    scheduleAuto();
+  }
+}
+
+/**
+ * 把自动点名那一栏按当前状态画一遍。
+ *
+ * 只有这一栏随状态变（按钮的字、第几个/共几个），名字格子的脸由 `updateRollCall` 管 ——
+ * 两边各管各的，互不重画。
+ */
+function paintAuto() {
+  if (autoNodes === null) {
+    return;
+  }
+  const students = state.klass?.students ?? [];
+  const { toggle, restart, prev, next, position } = autoNodes;
+  const canAuto = students.length > 0 && speech.canSpeak();
+  toggle.textContent = auto.running ? '暂停' : '开始';
+  toggle.classList.toggle('is-on', auto.running);
+  toggle.disabled = !canAuto;
+  toggle.title = canAuto
+    ? auto.running
+      ? '停下来（名单一动不动，随时能接着走）'
+      : `按 ${Math.round(auto.ms / 1000)} 秒一个把名册逐个念下去`
+    : '这台机器的语音念不出来';
+  // 还没念过、或者名册空：退无可退，「重新来」也没必要
+  restart.disabled = auto.index < 0 && !auto.running;
+  prev.disabled = auto.index < 0;
+  next.disabled = auto.index >= students.length - 1;
+  position.textContent =
+    auto.index < 0 ? `共 ${students.length} 人` : `${auto.index + 1} / ${students.length}`;
+}
+
+/**
  * 点名层里那些名字的灰蓝，以及脚上那颗「完成」的人数。
  *
  * 与看板上的格子同理：点一下只换那一个格子的脸，不重画整块 —— 几十号人一次点不完，
@@ -50,6 +200,57 @@ export function updateRollCall() {
   if (rollFoot !== null) {
     rollFoot.textContent = rollDoneText(absent.size);
   }
+}
+
+/**
+ * 自动点名那一栏：开/停、上一个、下一个、间隔。
+ *
+ * 它是**另一套动作**，所以摆在名字列表上方自己一条 —— 老师一眼能分开「这一条在替我叫名字」
+ * 与「下面这些格子在记谁到了」。念不出来（浏览器没有合成接口）时整条压暗，说明原因。
+ */
+function renderAutoBar() {
+  const bar = h('div', { class: 'rollcall__auto' });
+  // 那颗钮上不带「自动」两个字：就叫「开始 / 暂停」—— 旁边那排「重新来 / 上一个 / 下一个」
+  // 已经说清它在干什么了
+  const toggle = h('button', {
+    class: 'btn btn--auto',
+    text: '开始',
+    onClick: toggleAuto,
+  });
+  const restart = h('button', {
+    class: 'btn',
+    text: '重新来',
+    title: '退回名册开头：再走就从第一个名字起（名单一个字不动）',
+    onClick: restartAuto,
+  });
+  const prev = h('button', { class: 'btn btn--icon', text: '⏮', 'aria-label': '上一个', title: '上一个', onClick: () => stepAuto(-1) });
+  const next = h('button', { class: 'btn btn--icon', text: '⏭', 'aria-label': '下一个', title: '下一个', onClick: () => stepAuto(1) });
+  const interval = h('select', {
+    class: 'input input--interval',
+    'aria-label': '间隔',
+    onChange: (event) => setAutoMs(Number(event.target.value)),
+  });
+  for (const ms of AUTO_STEPS_MS) {
+    interval.append(
+      h('option', {
+        value: String(ms),
+        text: `${ms / 1000} 秒`,
+        ...(ms === auto.ms ? { selected: true } : {}),
+      }),
+    );
+  }
+  const position = h('span', { class: 'rollcall__auto-pos', text: '' });
+  bar.append(
+    toggle,
+    restart,
+    prev,
+    next,
+    h('label', { class: 'rollcall__auto-gap' }, [h('span', { text: '间隔' }), interval]),
+    position,
+  );
+  // 栏上这几样随状态变，画一次之后由 `paintAuto` 定点改（不重画整块）
+  autoNodes = { toggle, restart, prev, next, interval, position };
+  return bar;
 }
 
 /**
@@ -74,9 +275,17 @@ export function renderRollCall() {
   body.push(
     h('p', {
       class: 'modal__hint',
-      text: '点一下名字就是「他到了」，他当场变蓝；点错了再点一下退回灰色。打开时全班都是「没到」，点到的才算。不点名也能自习，随时关掉；这一层里点的要按「完成」才落到自习上。',
+      text:
+        state.session?.rollCallAt === null
+          ? '点一下名字就是「他到了」，他当场变蓝；点错了再点一下退回灰色。这一场还没点过名，所以打开时全班都算「没到」，点到的才算。这一层里点的要按「完成」才落到自习上。'
+          : '点一下名字就是「他到了」，他当场变蓝；点错了再点一下退回灰色。这一场点过了，格子按现在的名单摆着，接着点或改点错的都行。这一层里点的要按「完成」才落到自习上。',
     }),
   );
+
+  // 自动点名那一栏：只把名字逐个念出去，谁到了仍由老师点
+  if (speech.canSpeak()) {
+    body.push(renderAutoBar());
+  }
 
   const absent = new Set(draft?.absentIds ?? []);
   const list = h('div', { class: 'rollcall__list' });
@@ -151,6 +360,8 @@ export function renderRollCall() {
   });
   rollFoot = done;
   foot.push(done);
+  // 那一栏刚建出来，按当前状态写一遍（按钮的字、第几个 / 共几个）
+  paintAuto();
   return modalFrame('点名', body, foot, {
     class: 'modal--rollcall',
     closeLabel: '收窗，这一趟不算数',
@@ -225,16 +436,33 @@ function doInvert() {
 /**
  * 开这一层。
  *
- * 名单从**全班都没到**起算（不是本场已记的那一份）：点名就是照着名册往下点，点到谁
- * 谁到 —— 老师不必先看一眼「哪几个已经算在座了」。这一趟没点到的，按「完成」时就记成
- * 没来，所以重开一次是从头点一遍，本场原来的名单会被这一趟覆盖；不想覆盖就收窗走人。
+ * 名单从哪儿起算看**这一场点过名没有**：
+ *
+ * - 没点过（刚开自习）：**全班都算「没到」** —— 老师照着名册往下点，点到谁谁到。
+ * - 点过了：按**这一场现在的名单**摆出来（到的在那儿，没到的沉在后面），接着点、改点错
+ *   的那些都行。
+ *
+ * 「点过没有」由 `rollCallAt` 说（`setAbsent` 时记一笔）—— 不看名单内容：一班人都到齐
+ * 时那份名单正好是空的，拿它当判据会把「点过且全员到齐」读成「还没点」。
+ *
+ * 这一趟改的是层里那一份，按「完成」才落到这一场上；不想动就收窗走人。
  */
 export function openRollCall() {
   if (state.session === null) {
     return;
   }
   noteActivity();
-  state.rollCallOpen = { absentIds: state.klass.students.map((student) => student.id) };
+  // 自动点名的指针归零：重开一层是从头点（或从头念），不接着上一趟
+  auto.index = -1;
+  const students = state.klass.students;
+  state.rollCallOpen = {
+    absentIds:
+      state.session.rollCallAt === null
+        ? students.map((student) => student.id)
+        : students
+            .map((student) => student.id)
+            .filter((id) => state.session.absentIds.includes(id)),
+  };
   state.overlay = 'rollCall';
   render();
 }
@@ -253,12 +481,32 @@ async function finishRollCall() {
   const absentIds = students.filter((student) => absent.has(student.id)).map((student) => student.id);
   // 先落到这一场上、再收窗：反过来会在收窗那一帧画一遍旧名单，看着像闪了一下
   await commitSession(setAbsent(session, absentIds, Date.now()), true);
+  stopAutoRollCall();
   closeOverlay();
   showToast(absentIds.length === 0 ? '全班都在座' : `已记下 ${absentIds.length} 人没来`);
 }
 
-/** 清掉上一帧点名层的索引（同样是重画之前先清）。 */
+/**
+ * 清掉上一帧点名层的索引（同样是重画之前先清）。
+ *
+ * **不动自动点名的定时器**：整块重画会把节点换掉（提示条、改间隔都会触发），但那一趟
+ * 还在走。新节点由 `renderAutoBar` 重建，`paintAuto` 接着往上写 —— 与定时器各活各的。
+ * 真的要停只在收窗时（见 [`stopAutoRollCall`]）。
+ */
 export function resetRollCallRefs() {
   rollCells.clear();
   rollFoot = null;
+  autoNodes = null;
+}
+
+/**
+ * 收窗时停掉自动点名。
+ *
+ * 不这样收尾的话，那一趟会接着往下念 —— 层都没了，声音还在报名字。
+ */
+export function stopAutoRollCall() {
+  window.clearTimeout(auto.timer);
+  auto.timer = 0;
+  auto.running = false;
+  autoNodes = null;
 }

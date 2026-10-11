@@ -13,9 +13,7 @@ import {
   PHASE,
   STATUS,
   endSession,
-  markAbsent,
   markLeft,
-  markPresent,
   markReturned,
   normaliseKlass,
   normaliseSession,
@@ -251,17 +249,6 @@ export async function commitClass(next) {
 }
 
 /**
- * 点错的人退回没来：蓝 → 灰。
- *
- * 隔了一阵再补记也说得通（他那天确实没来），所以自习里随时能做，不必正在点名。
- */
-export async function doNotHere(studentId) {
-  state.overlay = null;
-  state.remarkStudentId = null;
-  await commitSession(markAbsent(state.session, studentId, state.now), true);
-}
-
-/**
  * 结束自习。
  *
  * 这一场就此定格（记录、明细都留着，在「自习记录」里看），看板直接收起、回到班级列表 ——
@@ -325,7 +312,8 @@ export async function doRestart() {
 /**
  * 点一个格子。走哪条路看这个人现在的颜色。
  *
- * 点到没来的人（灰）点一下就归队；点到在座的人（蓝）就问一句备注、开始记他离开；
+ * 点到没到的人（灰）只在提示里说一句 —— 到没到由点名层定；点到在座的人（蓝）就问一句
+ * 备注、开始记他离开；
  * 点到离开中的人（黄 / 红）就记归来。已结束的这一场只读，点格子顶一句。
  */
 export async function tapStudent(studentId) {
@@ -343,9 +331,8 @@ export async function tapStudent(studentId) {
 
   const status = statusOf(session, studentId, state.now, state.klass);
   if (status === STATUS.ABSENT) {
-    // 自习中按「在座的在前」排过：他这一下是归队，得整块重画 ——
-    // 不然格子还留在「没来」那一段里，分界线上的人数也不跟着变
-    await commitSession(markPresent(session, studentId), true);
+    // 到没到只由「点名」定，看板上点他没这一手 —— 顶一句，别默不作声
+    showToast('他没到。到没到在「点名」里点，这里点不动');
     return;
   }
   if (status === STATUS.PRESENT) {
