@@ -108,12 +108,12 @@ export function renderRemark() {
 
   const foot = [];
   foot.push(h('button', { class: 'btn', text: '取消', onClick: closeOverlay }));
-  // 退路：自习中点错了人（他其实没来），得能退回蓝色。不给这条，一次手抖就改不掉了。
+  // 退路：自习中点错了人（他其实没来），得能退回灰色。不给这条，一次手抖就改不掉了。
   foot.push(
     h('button', {
       class: 'btn',
       text: '他没来',
-      title: '改成没来（蓝色）',
+      title: '改成没来（灰色）',
       onClick: () => void doNotHere(state.remarkStudentId),
     }),
   );

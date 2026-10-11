@@ -17,11 +17,11 @@
   --ink-dim: #5d6673;
   --rule: #dfe3e9;
 
-  /* 三色的语义角色：蓝是没来、灰是在座、红是超时 —— 这三色不给备注挑 */
-  --absent: #2f68d8;
-  --absent-ink: #ffffff;
-  --present: #cdd3dc;
-  --present-ink: #2b323c;
+  /* 三色的语义角色：灰是没来、蓝是在座、红是超时 —— 这三色不给备注挑 */
+  --absent: #cdd3dc;
+  --absent-ink: #2b323c;
+  --present: #2f68d8;
+  --present-ink: #ffffff;
   --overtime: #e0454b;
   --overtime-ink: #ffffff;
 
@@ -65,8 +65,8 @@
   --meta-size: 13px;
   --timer-size: 18px;
   --gap: 12px;
-  --absent: #2b6cf0;
-  --present: #d5dae2;
+  --absent: #d5dae2;
+  --present: #2b6cf0;
   --away-yellow: #ffb020;
   --away-orange: #ff8a1f;
   --away-green: #23b377;
@@ -85,8 +85,8 @@
   --meta-size: 11px;
   --timer-size: 13px;
   --gap: 7px;
-  --absent: #3a63ad;
-  --present: #d2d6dc;
+  --absent: #d2d6dc;
+  --present: #3a63ad;
   --away-yellow: #d99a13;
   --away-orange: #c76f24;
   --away-green: #2b8a5f;
@@ -217,15 +217,15 @@ body {
 }
 
 .chip--calling {
-  background: color-mix(in srgb, var(--absent) 12%, var(--surface));
-  border-color: color-mix(in srgb, var(--absent) 30%, var(--rule));
-  color: color-mix(in srgb, var(--absent) 78%, var(--ink));
+  background: color-mix(in srgb, var(--absent) 30%, var(--surface));
+  border-color: color-mix(in srgb, var(--absent) 70%, var(--rule));
+  color: color-mix(in srgb, var(--absent) 45%, var(--ink));
 }
 
 .chip--studying {
-  background: color-mix(in srgb, var(--present) 45%, var(--surface));
-  border-color: color-mix(in srgb, var(--present) 80%, var(--rule));
-  color: var(--present-ink);
+  background: color-mix(in srgb, var(--present) 14%, var(--surface));
+  border-color: color-mix(in srgb, var(--present) 32%, var(--rule));
+  color: color-mix(in srgb, var(--present) 78%, var(--ink));
 }
 
 .chip--ended {
@@ -746,11 +746,11 @@ body {
 }
 
 .status__value.is-absent {
-  color: var(--absent);
+  color: color-mix(in srgb, var(--absent) 45%, var(--ink));
 }
 
 .status__value.is-present {
-  color: color-mix(in srgb, var(--present-ink) 70%, var(--ink-dim));
+  color: var(--present);
 }
 
 .status__value.is-left {
@@ -808,13 +808,13 @@ body {
   transition: background-color 120ms ease, color 120ms ease;
 }
 
-/* 蓝：没来 */
+/* 灰：没来 */
 .tile[data-status="absent"] {
   background: var(--absent);
   color: var(--absent-ink);
 }
 
-/* 灰：在座 */
+/* 蓝：在座 */
 .tile[data-status="present"] {
   background: var(--present);
   color: var(--present-ink);
@@ -1370,7 +1370,7 @@ body {
   align-items: center;
   gap: 10px;
   margin: 4px 0 0;
-  color: var(--absent);
+  color: color-mix(in srgb, var(--absent) 45%, var(--ink));
   font-size: 13px;
   font-weight: 600;
 }
@@ -1379,7 +1379,7 @@ body {
   content: '';
   flex: 1;
   height: 1px;
-  background: color-mix(in srgb, var(--absent) 30%, var(--rule));
+  background: color-mix(in srgb, var(--absent) 55%, var(--rule));
 }
 
 .hidden {
@@ -1496,8 +1496,10 @@ body {
   background: var(--present);
 }
 
+/* 「没来」是浅灰，画在纸底上几乎看不出边界，单独描一道边 */
 .legend__dot[data-status="absent"] {
   background: var(--absent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--absent) 62%, var(--ink-dim));
 }
 
 .legend__dot[data-status="present"] {

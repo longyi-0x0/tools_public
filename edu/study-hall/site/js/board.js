@@ -56,7 +56,7 @@ function phaseHint(klass, session) {
   }
   const summary = summarize(klass, session, state.now);
   return summary.absent > 0
-    ? `自习中：蓝色 ${summary.absent} 人没来。在座的人点一下就记他离开，回来再点一下；按「点名」可以把没来的人挑出来。`
+    ? `自习中：灰色 ${summary.absent} 人没来。在座的人点一下就记他离开，回来再点一下；按「点名」可以把没来的人挑出来。`
     : '自习中：全班都在座。有人临时离开就点一下他，会开始计时；回来再点一下。';
 }
 

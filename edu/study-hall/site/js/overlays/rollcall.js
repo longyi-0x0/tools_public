@@ -65,7 +65,7 @@ export function renderRollCall() {
   body.push(
     h('p', {
       class: 'modal__hint',
-      text: '点一下名字就是「他没来」，他当场变蓝；点错了再点一下退回灰色。不点名也能自习，随时关掉；这一层里点的要按「完成」才落到自习上。',
+      text: '点一下名字就是「他没来」，他当场变灰；点错了再点一下退回蓝色。不点名也能自习，随时关掉；这一层里点的要按「完成」才落到自习上。',
     }),
   );
 
@@ -171,7 +171,7 @@ function doInvert() {
   updateRollCall();
   showToast(
     flipped.length === students.length
-      ? '全班都算作没来了；在座的点一下他，变回灰色'
+      ? '全班都算作没来了；在座的点一下他，变回蓝色'
       : flipped.length === 0
         ? '全班都算作在座了'
         : `翻过来了：${students.length - flipped.length} 人在座，${flipped.length} 人没来`,

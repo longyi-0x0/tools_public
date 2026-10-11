@@ -245,9 +245,9 @@ export function renderClassesPage() {
         text: '导入一份花名册建班（.xlsx 或 .xls，网页表格改名的 .xls 也认；表里有一列写着「姓名」即可）',
       }),
     );
-    steps.append(h('li', { text: '开始自习 —— 一按下去就在计时，全班默认在座（灰）' }));
+    steps.append(h('li', { text: '开始自习 —— 一按下去就在计时，全班默认在座（蓝）' }));
     steps.append(h('li', { text: '有人临时离开，点一下他，会开始计时；超过设定时长转红并提醒' }));
-    steps.append(h('li', { text: '想点名就按「点名」，点一下没来的人，他变蓝并沉到后面' }));
+    steps.append(h('li', { text: '想点名就按「点名」，点一下没来的人，他变灰并沉到后面' }));
     steps.append(h('li', { text: '换机器或留档：按「多选」勾上几个班，导出成一个 zip；一个班一份 xlsx' }));
     body.append(
       h('div', { class: 'empty' }, [

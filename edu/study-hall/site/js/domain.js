@@ -17,26 +17,26 @@ export const PHASE = {
 /**
  * 一个学生的当前状态。
  *
- * 颜色语义一句话说完：**蓝 = 没来，灰 = 在座**；离开中的颜色由**那条备注**决定
+ * 颜色语义一句话说完：**灰 = 没来，蓝 = 在座**；离开中的颜色由**那条备注**决定
  * （默认黄），超过那条备注设的时长转红。
  *
- * 开始自习时全班都是灰的 —— 坐在座位上是默认事实，老师不必为此点几十下。蓝色的
+ * 开始自习时全班都是蓝的 —— 坐在座位上是默认事实，老师不必为此点几十下。灰的
  * 那几个只可能来自两处：点名时被点出来的没来，或自习中把点错的人退回没来。
  *
  * 离开中没有单独的状态常量：它的状态值**就是颜色名**（见 [`AWAY_COLORS`]），
  * 界面照着 `data-status` 上色，两处不会对不上。
  */
 export const STATUS = {
-  /** 蓝：没来 */
+  /** 灰：没来 */
   ABSENT: 'absent',
-  /** 灰：在座 */
+  /** 蓝：在座 */
   PRESENT: 'present',
   /** 红：临时离开，已过那条备注设的时长 */
   OVERTIME: 'overtime',
 };
 
 /**
- * 离开中能挑的颜色。黄是默认；蓝 / 灰 / 红是语义色，不在其中也不给挑 ——
+ * 离开中能挑的颜色。黄是默认；灰 / 蓝 / 红是语义色，不在其中也不给挑 ——
  * 它们分别说「没来」「在座」「超时」，被备注借去用就说不清了。
  */
 export const AWAY_COLORS = ['yellow', 'orange', 'green', 'violet', 'pink', 'teal'];
@@ -283,9 +283,9 @@ export function setAbsent(session, absentIds, at) {
 }
 
 /**
- * 记一个「没来」：灰 → 蓝。
+ * 记一个「没来」：蓝 → 灰。
  *
- * 开始自习时全班都是灰的（在座），所以点名做的不是「标记到了的」，而是反过来
+ * 开始自习时全班都是蓝的（在座），所以点名做的不是「标记到了的」，而是反过来
  * 挑出没来的那几个 —— 一个班几十号人，多数都在座位上，挑少数才省力气。
  *
  * 不要求处于某一相：自习里随时能把一个人退回没来（他走了、一开始就点错了）。
@@ -297,7 +297,7 @@ export function markAbsent(session, studentId, at) {
   return setAbsent(session, absentIds, at);
 }
 
-/** 取消「没来」：蓝 → 灰。点错了可以退回去。 */
+/** 取消「没来」：灰 → 蓝。点错了可以退回去。 */
 export function markPresent(session, studentId) {
   return { ...session, absentIds: session.absentIds.filter((id) => id !== studentId) };
 }
@@ -326,7 +326,7 @@ export function activeLeave(session, studentId) {
   return session.leaves.find((leave) => leave.studentId === studentId && leave.returnedAt === undefined);
 }
 
-/** 记一次离开：灰 → 黄，开始计时。 */
+/** 记一次离开：蓝 → 黄，开始计时。 */
 export function markLeft(session, input) {
   if (session.phase !== PHASE.STUDYING) {
     throw new Error(`当前阶段（${session.phase}）不能记离开`);
@@ -344,7 +344,7 @@ export function markLeft(session, input) {
   return { ...session, leaves: [...session.leaves, leave] };
 }
 
-/** 记一次归来：黄 / 红 → 灰，停表。 */
+/** 记一次归来：黄 / 红 → 蓝，停表。 */
 export function markReturned(session, studentId, at) {
   if (session.phase !== PHASE.STUDYING) {
     throw new Error(`当前阶段（${session.phase}）不能记归来`);
@@ -371,7 +371,7 @@ export function markNotified(session, leaveId, at) {
  * 只看事实（`absentIds` 与 `leaves`）与「现在」，不落库 —— 所以刷新页面、
  * 合盖再打开，颜色与计时都能从时间戳重算回来。
  *
- * 灰度是默认：没被点成没来、也没在离开中的，就是在座。离开中的颜色跟着**那条备注**
+ * 蓝色是默认：没被点成没来、也没在离开中的，就是在座。离开中的颜色跟着**那条备注**
  * 走（默认黄）；备注设了时长且已经过了，就是红。
  */
 export function statusOf(session, studentId, now, klass) {
