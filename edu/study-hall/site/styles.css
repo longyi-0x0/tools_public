@@ -40,6 +40,22 @@
   --away-teal: #1f9a9a;
   --away-teal-ink: #ffffff;
 
+  /*
+   * 待机屏的响度五档：静 → 临界 → 吵，越吵越暖。
+   *
+   * **只有一套，与亮暗无关** —— 待机屏读着教室的时候一律走浅底（白为主，见 `.mask--idle`），
+   * 所以这五档只需要浅底上那一组；暗色主题里把淡绿淡暖压在深底上只会变成一片灰。
+   *
+   * 这是一套**环境**的色，与人物的四色说的不是一件事 —— 待机屏上两者同时在场（底色
+   * 偏暖，卡片上写着谁超时了），所以这套只染整屏的底，不去碰名字、卡片与字色。
+   */
+  --idle-calm: #dcebe0;
+  --idle-quiet: #e8f0e6;
+  --idle-edge: #f6ecd6;
+  --idle-warm: #f8e3cc;
+  --idle-over: #f7d9c8;
+  --idle-over-ink: #c2410c;
+
   /* 格子的密度。三套「格子大小」各覆盖其中几档 */
   --radius: 10px;
   --tile-radius: 12px;
@@ -108,18 +124,8 @@
   --danger: #ff6b63;
   --board-danger: #ff6b63;
 
-  /*
-   * 教室的响度：静 → 临界 → 吵，板上五档，越吵越暖。
-   *
-   * 这是一套**环境**的色，与人物的四色说的不是一件事 —— 待机屏上两者同时在场（底色
-   * 偏暖，卡片上写着谁超时了），所以这套只染整屏的底，不去碰名字、卡片与字色。
-   */
-  --board-volume-calm: #1e2a24;
-  --board-volume-quiet: #1f2a26;
-  --board-volume-edge: #2a2a24;
-  --board-volume-warm: #2f2822;
-  --board-volume-over: #332622;
-  --board-volume-over-ink: #ff9a6b;
+  /* 待机屏没在读响度时的底：一块干净的黑 */
+  --idle-plain: #000000;
 }
 
 /* ---------- 亮 ---------- */
@@ -170,13 +176,8 @@
   --danger: #c8362f;
   --board-danger: #c8362f;
 
-  /* 响度五档：浅底上是那套淡淡的绿与暖 */
-  --board-volume-calm: #dcebe0;
-  --board-volume-quiet: #e8f0e6;
-  --board-volume-edge: #f6ecd6;
-  --board-volume-warm: #f8e3cc;
-  --board-volume-over: #f7d9c8;
-  --board-volume-over-ink: #c2410c;
+  /* 待机屏没在读响度时的底：一块干净的白 */
+  --idle-plain: #ffffff;
 }
 
 /* ---------- 三套「格子大小」 ---------- */
@@ -324,14 +325,6 @@ body {
   font-weight: 650;
   letter-spacing: 0.01em;
   white-space: nowrap;
-}
-
-.tab__sep {
-  color: var(--rule);
-}
-
-.mask .tab__sep {
-  color: var(--board-line);
 }
 
 .tab__sub {
@@ -588,6 +581,19 @@ body {
   /* 抬头贴顶、钟居中、未完的卡片贴底 */
   /* 底色换档时不「啪」一下 —— 从后排看，五档加上这一段过渡就像慢慢变暖的 */
   transition: background-color 600ms ease;
+
+  /* 这一屏自己的字色：读着响度时底是浅的，字就得是深色 —— 不跟看板共用 */
+  --idle-ink: #1b2028;
+  --idle-dim: #5d6673;
+  --idle-line: #dfe3e9;
+}
+
+/* 没在读响度：一块干净的黑或白，字色回到这一档的粉笔色 */
+.mask--idle[data-volume="off"] {
+  background: var(--idle-plain);
+  --idle-ink: var(--chalk);
+  --idle-dim: var(--chalk-dim);
+  --idle-line: var(--board-line);
 }
 
 /*
@@ -597,26 +603,27 @@ body {
  * 染色要回答的是「现在离那条线多近」，那个带迟滞的「吵着」判定回答的是「算不算吵起来了」，
  * 两个问法不一样，所以这里不用 `is-over`。
  *
- * 没在听（`off`）时一条规则都不给，底色回到 `.mask` 的板色 —— 屏幕上偏绿偏暖，总该有来由。
+ * 没在读（`off`）时一条规则都不给，底色由上面那条 `off` 规则给成干净的黑或白 ——
+ * 屏幕上偏绿偏暖，总该有来由。
  */
 .mask--idle[data-volume="calm"] {
-  background: var(--board-volume-calm);
+  background: var(--idle-calm);
 }
 
 .mask--idle[data-volume="quiet"] {
-  background: var(--board-volume-quiet);
+  background: var(--idle-quiet);
 }
 
 .mask--idle[data-volume="edge"] {
-  background: var(--board-volume-edge);
+  background: var(--idle-edge);
 }
 
 .mask--idle[data-volume="warm"] {
-  background: var(--board-volume-warm);
+  background: var(--idle-warm);
 }
 
 .mask--idle[data-volume="over"] {
-  background: var(--board-volume-over);
+  background: var(--idle-over);
 }
 
 /* 写着读数的那个数。没在听时是空的，占不到地方 */
@@ -626,7 +633,7 @@ body {
 }
 
 .idle__volume.is-over {
-  color: var(--board-volume-over-ink);
+  color: var(--idle-over-ink);
   font-weight: 650;
 }
 
@@ -656,13 +663,13 @@ body {
 }
 
 .idle__class {
-  color: var(--chalk);
+  color: var(--idle-ink);
   font-size: clamp(17px, 1.9vw, 27px);
   font-weight: 650;
 }
 
 .idle__date {
-  color: var(--chalk-dim);
+  color: var(--idle-dim);
   font-size: clamp(14px, 1.5vw, 21px);
   letter-spacing: 0.02em;
 }
@@ -671,22 +678,22 @@ body {
   font: 700 clamp(72px, 17vw, 240px) / 1 var(--mono);
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.02em;
-  color: var(--chalk);
+  color: var(--idle-ink);
 }
 
 .idle__elapsed {
-  color: var(--chalk-dim);
+  color: var(--idle-dim);
   font-size: clamp(14px, 1.5vw, 20px);
 }
 
 .idle__elapsed b {
-  color: var(--chalk);
+  color: var(--idle-ink);
   font-family: var(--mono);
   font-variant-numeric: tabular-nums;
 }
 
 .idle__counts {
-  color: var(--chalk-dim);
+  color: var(--idle-dim);
   font-size: clamp(13px, 1.3vw, 18px);
 }
 
@@ -696,11 +703,11 @@ body {
   flex-direction: column;
   gap: 10px;
   padding: 16px 0 8px;
-  border-top: 1px solid var(--board-line);
+  border-top: 1px solid var(--idle-line);
 }
 
 .idle__away-title {
-  color: var(--chalk-dim);
+  color: var(--idle-dim);
   font-size: 14px;
 }
 
@@ -782,7 +789,7 @@ body {
   flex: none;
   margin: 0;
   padding: 6px 0 20px;
-  color: var(--chalk-dim);
+  color: var(--idle-dim);
   font-size: 13px;
   text-align: center;
 }

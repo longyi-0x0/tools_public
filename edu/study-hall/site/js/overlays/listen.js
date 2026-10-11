@@ -1,5 +1,5 @@
 /**
- * 听教室：这一场用麦克风读教室的响度。
+ * 教室响度：这一场用麦克风读教室有多响。
  *
  * 这一层只管三件事 —— 开不开、阈值拧到哪儿、现在读出来是多少。读数怎么用（待机页染色、
  * 吵得停不下来提醒）在别处：这一层是老师当场看着数拧那一颗旋钮的地方。
@@ -41,7 +41,7 @@ export function renderListen() {
       class: 'modal__hint',
       text: available.ok
         ? '仅读取教室响度，不录音、不保存。'
-        : `无法听教室：${available.reason}`,
+        : `无法读取教室响度：${available.reason}`,
     }),
   );
 
@@ -94,17 +94,17 @@ export function renderListen() {
 
   const foot = [];
   // 这一层没有「关闭」那一颗：它只是一扇窗，看一眼、拧一下就完事 —— 收窗由右上角那个 ✕
-  // 与 Esc、点窗外管。脚上只留这一层唯一的那一手：开听 / 停听
+  // 与 Esc、点窗外管。脚上只留这一层唯一的那一手：开始 / 停止读取
   foot.push(
     h('button', {
       // 停听永远能按（哪怕是这台机器后来不让听了，或者权限被撤了），不然老师就关不掉了
       class: on ? 'btn btn--danger' : 'btn btn--primary',
-      text: on ? '停止听' : '开始听',
+      text: on ? '停止读取' : '开始读取',
       disabled: on || available.ok ? undefined : '',
       onClick: () => void toggleListening(),
     }),
   );
-  const frame = modalFrame('听教室', body, foot, { onClose: closeOverlay });
+  const frame = modalFrame('教室响度', body, foot, { onClose: closeOverlay });
   // 建好先自己画一遍：读数是每一拍才来的，不先画一遍的话，开着听也显示「—」——
   // 得等第一拍（100 毫秒）过去才有数，看着像没开成
   paintListenPanel();

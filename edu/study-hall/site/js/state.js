@@ -78,7 +78,7 @@ export const state = {
    */
   idleOff: false,
   /**
-   * 本场听教室：开着就用麦克风读教室的响度。
+   * 本场教室响度：开着就用麦克风读教室有多响。
    *
    * 与 [`muted`] / [`idleOff`] 同一个规矩 —— 只存内存、只管这一场：新场从头来，默认不听。
    * 麦克风是一只手能伸进教室的耳朵，所以**不自动开**：老师按一下才开，关一下、或者
@@ -103,7 +103,7 @@ export const state = {
    * 正在开着的浮层：null / 'newClass' / 'remark' / 'settings' / 'history' / 'conflict' / 'rollCall' / 'listen'
    *
    * 「点名」就是这一层里的一个 —— 它是叠在自习看板上的一层可选的窗，不再是一个相。
-   * 「听教室」也是：开不开、阈值拧到哪儿，当场看着数调。
+   * 「教室响度」也是：开不开、阈值拧到哪儿，当场看着数调。
    */
   overlay: null,
   /**
@@ -223,7 +223,7 @@ export async function openFromCard(klass, overlay) {
  * 老师先在屏幕上把名单点一遍再上投影，或者拿投影切了别的画面，自动抢一次全屏反而
  * 会打断他手上的事 —— 浏览器全屏是**能抢走整个屏幕**的一手，不该由点「开始自习」顺手做掉。
  *
- * **听教室默认开着**：教室里有多响是这一场的基本信息，进这一屏就听着，不想听按那颗钮停。
+ * **教室响度默认开着**：教室里有多响是这一场的基本信息，进这一屏就读着，不想读按那颗钮停。
  *
  * 一按下去就在计时：**点名不在这一步里**，想点再按看板上的「点名」。
  */
@@ -353,23 +353,22 @@ export async function doEndSession() {
   // 麦克风也一起放手：这一场都结束了，没有理由还听着教室
   dropListening();
   render();
-  showToast(
-    klass === null
-      ? '这一场已结束'
-      : `「${klass.name}」这一场已结束，共 ${formatSpan(studyMs(state.session, state.now))}`,
-  );
 }
 
-/** 暂停自习。 */
+/**
+ * 暂停自习。
+ *
+ * `forceRender`：暂停换的是那一颗主行动的**字**（「暂停自习」→「继续自习」），而相没变 ——
+ * 不重画整块的话，按下去钟停了、钮上却还写着「暂停自习」。这一下原来由一条提示条兜着，
+ * 提示条去掉之后就得靠重画。
+ */
 export async function doPause() {
-  await commitSession(pauseSession(state.session, Date.now()));
-  showToast('已暂停');
+  await commitSession(pauseSession(state.session, Date.now()), true);
 }
 
-/** 继续自习。 */
+/** 继续自习。那颗钮要换回「暂停自习」，同理要重画。 */
 export async function doResume() {
-  await commitSession(resumeSession(state.session, Date.now()));
-  showToast('已继续');
+  await commitSession(resumeSession(state.session, Date.now()), true);
 }
 
 /**
@@ -381,7 +380,6 @@ export async function doRestart() {
   const now = Date.now();
   await commitSession(endSession(state.session, now));
   await enterSession();
-  showToast('已重开一场');
 }
 
 /** 这一场现在用的响度阈值：本场拧过就用拧过的，没拧过就跟着班级设置。 */
@@ -406,7 +404,7 @@ export async function startListening(auto = false) {
   }
   const can = mic.availability();
   if (!can.ok) {
-    showToast(auto ? '听不了教室：这个浏览器要 https' : `听不了教室：${can.reason}`);
+    showToast(auto ? '无法读取教室响度：需通过 https 打开' : `无法读取教室响度：${can.reason}`);
     return;
   }
   const watch = new VolumeWatch(volumeThresholdInUse());
@@ -418,7 +416,7 @@ export async function startListening(auto = false) {
       onLost: () => {
         dropListening();
         render();
-        showToast('麦克风已断开，听教室停止');
+        showToast('麦克风已断开，教室响度读取停止');
       },
     });
   } finally {
@@ -427,7 +425,7 @@ export async function startListening(auto = false) {
   if (!opened.ok) {
     // 自动开的那一次不铺开三种动法：老师没按过任何钮，页面上忽然出现一段讲怎么放行权限的
     // 话反而莫名其妙。短一句就够，他真要看就按那颗钮，浮层里写着。
-    showToast(auto ? '听教室没能开起来，按「听教室」看原因' : mic.explainTrouble(opened.trouble));
+    showToast(auto ? '教室响度没能开起来，按「教室响度」看原因' : mic.explainTrouble(opened.trouble));
     return;
   }
   volumeWatch = watch;
@@ -435,11 +433,6 @@ export async function startListening(auto = false) {
   state.volumeLevel = watch.level;
   state.volumeOver = watch.isOver;
   render();
-  // 自动开起来的那一次不报「开始听教室」：老师没按过钮，报一声反而像出了什么事。
-  // 但他的浏览器会弹一次麦克风权限，那一下得有个交代 —— 所以这里说一句在听。
-  if (auto) {
-    showToast('正在听教室，按「听教室」可停止');
-  }
 }
 
 /** 老师按了「不听」。 */
@@ -449,7 +442,6 @@ export function stopListening() {
   }
   dropListening();
   render();
-  showToast('已停止听教室');
 }
 
 export async function toggleListening() {
@@ -536,7 +528,7 @@ async function ringNoiseAlert() {
 }
 
 /**
- * 放开麦克风，把这一场听教室的那点状态清掉。
+ * 放开麦克风，把这一场教室响度的那点状态清掉。
  *
  * 走的是真的放手（[`mic.close`] 会停掉轨道），不是只停下读数 —— 老师关了、离开看板、
  * 或者这一场结束了，浏览器上那个「正在录音」的记号就该灭。界面要不要重画由调用方定
@@ -669,9 +661,6 @@ export async function confirmLeave(templateId, remark) {
   // 多选这一轮到这儿为止：记完就回看板，勾还留着会让人以为没生效
   state.pickingStudents = null;
   await commitSession(next, true);
-  if (studentIds.length > 1) {
-    showToast(`已记下 ${studentIds.length} 人离开`);
-  }
 }
 
 export async function exportClass(klass) {
@@ -774,7 +763,6 @@ export async function markReturnedFromIdle(studentId) {
     return;
   }
   await commitSession(markReturned(session, studentId, Date.now()), true);
-  showToast(`${student?.name ?? ''} 已回来`);
 }
 
 /**

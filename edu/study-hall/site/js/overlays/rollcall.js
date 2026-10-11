@@ -120,7 +120,6 @@ function toggleAuto() {
   // 接着上一次停下的地方往下走；已经念到最后一位了就从头再来
   if (!announce(auto.index + 1)) {
     announce(0);
-    showToast('名册已念完，从头开始');
   }
   auto.running = true;
   scheduleAuto();
@@ -142,8 +141,6 @@ function restartAuto() {
     announce(0);
     auto.running = true;
     scheduleAuto();
-  } else {
-    showToast('已回到名册开头');
   }
   paintAuto();
 }
@@ -187,8 +184,10 @@ function paintAuto() {
   restart.disabled = auto.index < 0 && !auto.running;
   prev.disabled = auto.index < 0;
   next.disabled = auto.index >= students.length - 1;
+  // 还没念过时不说「共 40 人」——那句话只说人数，不说下一步会念谁。
+  // 「从头念」把指针退回 -1 时，这一行就是它唯一的反馈（不再弹提示条）
   position.textContent =
-    auto.index < 0 ? `共 ${students.length} 人` : `${auto.index + 1} / ${students.length}`;
+    auto.index < 0 ? `下一个：第 1 人` : `${auto.index + 1} / ${students.length}`;
   paintAutoMark();
 }
 

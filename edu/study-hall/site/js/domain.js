@@ -111,7 +111,7 @@ export function createKlass(input) {
     alertSound: input.alertSound ?? true,
     alertRepeatMs: input.alertRepeatMs ?? DEFAULT_ALERT_REPEAT_MS,
     idleMaskMs: input.idleMaskMs ?? DEFAULT_IDLE_MASK_MS,
-    // 听教室的阈值。每台机器的麦克风利得不同，所以这是一个班一个数，不是一个通用标准
+    // 教室响度的阈值。每台机器的麦克风利得不同，所以这是一个班一个数，不是一个通用标准
     volumeThreshold: clampThreshold(input.volumeThreshold ?? THRESHOLD_DEFAULT),
     remarkTemplates: templates.map(normaliseTemplate),
     students: input.students ?? [],

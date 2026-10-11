@@ -35,7 +35,6 @@ import {
   markReturnedFromIdle,
   noteActivity,
   render,
-  showToast,
   startPickingStudents,
   state,
   tapStudent,
@@ -311,7 +310,7 @@ function renderControls() {
     }, [icon('users'), h('span', { text: '多人离开' })]),
   );
 
-  // 本场的开关（听教室 / 自动待机 / 待机屏 / 静音）与收尾那一组一起靠右：
+  // 本场的开关（教室响度 / 自动待机 / 待机屏 / 静音）与收尾那一组一起靠右：
   // 左边是「接着上课」，右边是「这一场怎么过、什么时候完」
   const end = h('div', { class: 'board__foot-group board__foot-group--end' });
   end.append(restartButton());
@@ -367,7 +366,7 @@ function renderPickBar() {
 }
 
 /**
- * 「重开一场」：把这一场结束掉，另开一场。
+ * 「重新开始」：把这一场结束掉，另开一场。
  *
  * 上课时什么情况都能遇到（点错一堆、被别的事打断、想从头记），所以给一手干净的：
  * 先确认，再结束 + 开新场。旧的那一场留在记录里，不删。
@@ -380,7 +379,7 @@ function restartButton() {
         void doRestart();
       }
     },
-  }, [icon('restart'), h('span', { text: '重开一场' })]);
+  }, [icon('restart'), h('span', { text: '重新开始' })]);
 }
 
 /**
@@ -404,17 +403,16 @@ function idleButton() {
         return;
       }
       state.idleOff = !state.idleOff;
-      showToast(state.idleOff ? '已关闭自动待机' : '已开启自动待机');
       render();
     },
-  }, [icon(on ? 'moon' : 'sun'), h('span', { text: '自动待机' })]);
+  }, [icon('idle-auto'), h('span', { text: '自动待机' })]);
 }
 
 /**
- * 听教室。
+ * 教室响度。
  *
- * 教室的响度是**整场自习**的事，不是待机页那一块屏的事 —— 所以这一颗管的是「这一场
- * 听不听」，待机页只是它的一块显示屏。麦克风是一只能伸进教室的耳朵，所以默认不听。
+ * 教室的响度是**整场自习**的事，不是待机屏那一块屏的事 —— 所以这一颗管的是「这一场
+ * 读不读」，待机屏只是它的一块显示屏。
  *
  * 点开的是浮层而不是当场切换：浮层里要摆那条阈值尺与当前的读数（老师得看着数拧它）。
  */
@@ -424,7 +422,7 @@ function listenButton() {
     class: `btn btn--small${on ? ' is-on' : ''}`,
     'aria-pressed': on ? 'true' : 'false',
     onClick: () => openOverlay('listen'),
-  }, [icon(on ? 'mic' : 'mic-off'), h('span', { text: '听教室' })]);
+  }, [icon(on ? 'mic' : 'mic-off'), h('span', { text: '教室响度' })]);
 }
 
 /**
@@ -457,7 +455,6 @@ function muteButton() {
     'aria-pressed': muted ? 'true' : 'false',
     onClick: () => {
       state.muted = !state.muted;
-      showToast(state.muted ? '已静音' : '已取消静音');
       render();
     },
   }, [icon(muted ? 'volume-off' : 'volume'), h('span', { text: muted ? '已静音' : '静音' })]);

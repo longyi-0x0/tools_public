@@ -19,7 +19,6 @@ import {
   pickFile,
   refreshClasses,
   render,
-  showToast,
   state,
 } from './state.js';
 import { openOverlay } from './overlays/index.js';
@@ -123,7 +122,6 @@ export async function removePicked() {
   }
   state.picking = null;
   await refreshClasses();
-  showToast(picked.length === 1 ? `「${picked[0].name}」已删除` : `已删除 ${picked.length} 个班`);
 }
 
 /** 删掉一个班（连同它的全部记录）。问一句，确认了才动手。 */
@@ -152,10 +150,11 @@ export function tabBar(options) {
   if (options.back !== undefined) {
     left.append(options.back);
   }
+  // 顶栏上不写工具名：这一栏说的是「在哪、什么状态、能做什么」，工具名在浏览器标签上
   left.append(h('span', { class: 'tab__mark', 'aria-hidden': 'true' }));
-  left.append(h('h1', { class: 'tab__title', text: '自习点名' }));
   if (options.crumb !== undefined) {
-    left.append(h('span', { class: 'tab__sep', text: '/' }));
+    // 班名前面那道斜杠是「自习点名 / 高二（3）班」留下的。工具名不再写在这一栏里，
+    // 前面没有东西可分了，这一道就成了一道悬着的线 —— 去掉
     left.append(h('span', { class: 'tab__sub', text: options.crumb }));
   }
   if (options.chip !== undefined) {
@@ -257,7 +256,8 @@ export function renderClassesPage() {
 
   const body = h('div', { class: 'home' });
   const bar = h('div', { class: 'home__bar' });
-  bar.append(h('h2', { class: 'home__title', text: '班级' }));
+  // 顶栏不再写工具名，这一页的 h1 由这个标题顶上
+  bar.append(h('h1', { class: 'home__title', text: '班级' }));
   bar.append(renderHomeActions());
   body.append(bar);
 

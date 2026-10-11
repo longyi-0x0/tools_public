@@ -159,7 +159,7 @@ export function renderSettings() {
     ]),
   );
 
-  // 「听教室」的默认线。与上面那几项不同的是：这一项**多半要当场调**才准，
+  // 教室响度的默认线。与上面那几项不同的是：这一项**多半要当场调**才准，
   // 所以看板上另有一颗钮能拧（只管这一场）。这里管的是这个班的默认值
   const thresholdInput = h('input', {
     class: 'input',
@@ -173,7 +173,7 @@ export function renderSettings() {
     h('label', { class: 'field' }, [
       h('span', { class: 'field__label', text: '判定为吵的响度' }),
       thresholdInput,
-      h('span', { class: 'field__note', text: `开着「听教室」当场调整最准。默认 ${THRESHOLD_DEFAULT}。` }),
+      h('span', { class: 'field__note', text: `开着「教室响度」当场调整最准。默认 ${THRESHOLD_DEFAULT}。` }),
     ]),
   );
   body.push(alerts);
@@ -218,7 +218,6 @@ export function renderSettings() {
         return;
       }
       await commitClass({ ...state.klass, students });
-      showToast(`名册已更新为 ${students.length} 人`);
     } catch {
       showToast('无法读取该文件，请换一份 .xlsx 或 .xls');
     }
@@ -249,7 +248,6 @@ export function renderSettings() {
         state.session = null;
         state.sessions = [];
         state.overlay = null;
-        showToast(`「${klass.name}」已删除`);
       }
     },
   });
@@ -287,7 +285,6 @@ export function renderSettings() {
           volumeThreshold: clampThreshold(thresholdInput.value),
           remarkTemplates: templates,
         });
-        showToast('设置已保存');
       },
     }),
   );
