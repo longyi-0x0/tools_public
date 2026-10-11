@@ -24,6 +24,7 @@ import {
   markReturned,
   normaliseKlass,
   normaliseSession,
+  overtimeCount,
   pausedMs,
   pauseSession,
   remarkTextOf,
@@ -98,6 +99,8 @@ const state = {
    * 导出与删除平时都收在「设置」里，一个班一个班来；要一次收拾好几个班就走这里。
    */
   picking: null,
+  /** 上一次画出来的浮层，用来判断这一帧是不是「浮层刚出现」。 */
+  overlayShown: null,
   toast: '',
 };
 
@@ -264,7 +267,7 @@ async function readRunningSessions() {
  * 把某个班装进状态：名册、记录、有没有一场还没结束的。
  *
  * 没有专门的班级页了，这个函数就是「按这个班的上下文做一件事」的入口 ——
- * 开始自习、设置、全班记录都从班级卡上按，按之前先把它的上下文装上。
+ * 开始自习、设置、自习记录都从班级卡上按，按之前先把它的上下文装上。
  */
 async function loadClass(klass) {
   state.klass = normaliseKlass(klass);
@@ -279,7 +282,7 @@ async function enterSessionFrom(klass) {
   await enterSession();
 }
 
-/** 从班级卡上开一个挂在这个班上的浮层（设置 / 全班记录）。 */
+/** 从班级卡上开一个挂在这个班上的浮层（设置 / 自习记录）。 */
 async function openFromCard(klass, overlay) {
   await loadClass(klass);
   state.overlay = overlay;
@@ -425,15 +428,23 @@ async function tapStudent(studentId) {
   if (session === null) {
     return;
   }
-  const status = statusOf(session, studentId, state.now, state.klass.overtimeThresholdMs);
 
+  // 准备阶段与已结束阶段点格子什么也不算 —— 不能默不作声：格子是按钮的样子，
+  // 点下去没反应，老师会以为坏了
+  if (session.phase === PHASE.PREPARING) {
+    showToast('先按「开始点名」，之后点名字才算数');
+    return;
+  }
+  if (session.phase === PHASE.ENDED) {
+    showToast('这一场已经结束。要改状态，先按「再开一场自习」');
+    return;
+  }
+
+  const status = statusOf(session, studentId, state.now, state.klass.overtimeThresholdMs);
   if (session.phase === PHASE.ROLL_CALL) {
     await commitSession(
       status === STATUS.PRESENT ? unmarkPresent(session, studentId) : markPresent(session, studentId),
     );
-    return;
-  }
-  if (session.phase !== PHASE.SELF_STUDY) {
     return;
   }
   if (status === STATUS.ABSENT) {
@@ -750,9 +761,17 @@ function render() {
   tiles.clear();
   timerText.clear();
   metaText.clear();
+  // 判据放在这里而不是各个打开浮层的地方：直接设 state.overlay 的有好几处
+  // （卡上的钮、导入撞名、点格子开备注），逐处打标记迟早漏一个
+  const before = state.overlayShown;
+  state.overlayShown = state.overlay;
   root.replaceChildren(renderShell());
   // 挂上去了才算数：updateDynamic 是去已挂的 DOM 里找那些要逐拍改的节点
   updateDynamic();
+  // 焦点得等节点挂上去才能给
+  if (state.overlay !== null && state.overlay !== before) {
+    focusIntoOverlay();
+  }
 }
 
 /**
@@ -865,6 +884,7 @@ function renderHomeActions() {
       h('button', { class: 'btn btn--quiet', text: '退出多选', onClick: endPicking }),
     ]);
   }
+  // 实心的那一颗放在最右边：一排钮里最边上的一颗最好按，也最不容易跟旁边混起来
   return h('div', { class: 'home__actions' }, [
     h('button', {
       class: 'btn',
@@ -874,12 +894,12 @@ function renderHomeActions() {
       disabled: state.classes.length === 0 ? '' : undefined,
       onClick: startPicking,
     }),
+    h('button', { class: 'btn', text: '从文件恢复一个班', title: '导入之前导出的整班 xlsx（含记录）', onClick: () => pickFile('.xlsx', importClassFile) }),
     h('button', {
       class: 'btn btn--primary',
       text: '新建班级',
       onClick: () => openOverlay('newClass'),
     }),
-    h('button', { class: 'btn', text: '从文件恢复一个班', title: '导入之前导出的整班 xlsx（含记录）', onClick: () => pickFile('.xlsx', importClassFile) }),
   ]);
 }
 
@@ -928,12 +948,12 @@ function renderClassesPage() {
 /**
  * 一张班级卡：谁、多少人、有没有在跑的一场，加一行动作。
  *
- * 这里就是入口 —— 不再有单独的班级页，花名册在自习蒙版里看，设置与全班记录从这张卡
+ * 这里就是入口 —— 不再有单独的班级页，花名册在自习蒙版里看，设置与自习记录从这张卡
  * 上开（都是浮层）。
  *
- * 排布按「按下去的频次」分三处：卡右上角是设置（平时才动），底下一条是全班记录
- * （靠左）与开始自习（靠右）—— 自习时最常按的就是右边那颗。多选态下整张卡变成一个
- * 勾选项，这些钮全让位：那时候按卡片是这个意思，不是那个意思。
+ * 排布就两块：卡上是「这个班是什么」（名字、人数、有没有在跑、自习记录、设置），
+ * 卡底是「拿它开始干活」—— 一整行都是「开始自习」。多选态下整张卡变成一个勾选项，
+ * 这些钮全让位：那时候按卡片是这个意思，不是那个意思。
  */
 function renderClassCard(klass) {
   const running = state.running.get(klass.id) ?? null;
@@ -981,7 +1001,16 @@ function renderClassCard(klass) {
   head.append(title);
 
   if (!picking) {
+    // 记录与设置都是「翻资料」，挨着放；开自习是「干活」，隔到卡底去
     const tools = h('div', { class: 'card__tools' });
+    tools.append(
+      h('button', {
+        class: 'btn',
+        text: '自习记录',
+        title: '以前每一场自习的账',
+        onClick: () => void openFromCard(klass, 'history'),
+      }),
+    );
     tools.append(
       h('button', { class: 'btn', text: '设置', onClick: () => void openFromCard(klass, 'settings') }),
     );
@@ -991,13 +1020,6 @@ function renderClassCard(klass) {
 
   if (!picking) {
     const foot = h('div', { class: 'card__foot' });
-    foot.append(
-      h('button', {
-        class: 'btn',
-        text: '全班记录',
-        onClick: () => void openFromCard(klass, 'history'),
-      }),
-    );
     foot.append(
       h('button', {
         class: 'btn btn--primary btn--tall',
@@ -1045,7 +1067,7 @@ function renderSessionMask() {
             render();
           },
         }),
-        h('button', { class: 'btn', text: '全班记录', onClick: () => openOverlay('history') }),
+        h('button', { class: 'btn', text: '自习记录', onClick: () => openOverlay('history') }),
       ].filter((node) => node !== undefined),
     }),
   );
@@ -1145,7 +1167,7 @@ function renderSummary(klass, session) {
       list.append(line);
     }
     if (report.length > 4) {
-      list.append(h('li', { class: 'summary__more', text: `还有 ${report.length - 4} 人出去过，见「全班记录」` }));
+      list.append(h('li', { class: 'summary__more', text: `还有 ${report.length - 4} 人出去过，见「自习记录」` }));
     }
     box.append(list);
   }
@@ -1641,6 +1663,30 @@ function openOverlay(name) {
   render();
 }
 
+/**
+ * 浮层一出来就把焦点送进去。
+ *
+ * 键盘老师按下的那一刻焦点在触发它的那颗钮上，浮层一出来整棵树重画、焦点掉回 body，
+ * 再按 Tab 会从班级列表开头走一圈。所以浮层刚出现时把焦点送进去，顺序是：
+ * `data-autofocus`（备注要打字、设置要改名字）→ 第一个输入类控件 → 浮层本身。
+ *
+ * 一轮按钮排在最后是有意的：浮层头上的第一颗钮是「✕」，焦点若落在它上面，
+ * 老师顺手一个回车就把刚打开的窗又关了。
+ *
+ * 只做「进来」不做「出去」：关闭时那颗触发它的钮已经是新节点了，硬要还原得给每颗钮
+ * 编个号，不值当 —— Esc 与 Tab 能走通就够用了。
+ */
+function focusIntoOverlay() {
+  const modal = root.querySelector('.modal');
+  if (modal === null) {
+    return;
+  }
+  const target =
+    modal.querySelector('[data-autofocus]') ??
+    modal.querySelector('input:not([type="hidden"]):not([disabled]), select:not([disabled]), textarea:not([disabled])');
+  (target ?? modal).focus?.();
+}
+
 function closeOverlay() {
   state.overlay = null;
   state.remarkStudentId = null;
@@ -1650,7 +1696,14 @@ function closeOverlay() {
 }
 
 function modalFrame(title, bodyNodes, footNodes, extraClass = '') {
-  const modal = h('div', { class: `modal ${extraClass}`.trim(), role: 'dialog', 'aria-modal': 'true' });
+  // tabindex：浮层里一个输入控件都没有时（比如自习记录），焦点落在浮层本身，
+  // 既算「进来了」，回车也不会误触里面任何一颗钮
+  const modal = h('div', {
+    class: `modal ${extraClass}`.trim(),
+    role: 'dialog',
+    'aria-modal': 'true',
+    tabindex: '-1',
+  });
   const head = h('div', { class: 'modal__head' });
   head.append(h('h2', { class: 'modal__title', text: title }));
   head.append(h('button', { class: 'btn btn--icon', text: '✕', 'aria-label': '关闭', onClick: closeOverlay }));
@@ -1807,7 +1860,13 @@ function renderRemark() {
   }
   body.push(h('div', { class: 'field' }, [h('span', { class: 'field__label', text: '常用备注' }), chips]));
 
-  const textarea = h('textarea', { class: 'input input--area', rows: 2, placeholder: '补充一句（可空）' });
+  const textarea = h('textarea', {
+    class: 'input input--area',
+    rows: 2,
+    placeholder: '补充一句（可空）',
+    // 键盘老师点开备注就是要打字，焦点别落在上面那排常用备注上
+    'data-autofocus': '',
+  });
   const micNote = h('span', { class: 'field__note' });
   const mic = h('button', {
     class: 'btn btn--mic',
@@ -2067,15 +2126,17 @@ function renderHistory() {
     const end = Date.now();
     const total = sessions.reduce((sum, item) => sum + studyMs(item, item.endedAt ?? end), 0);
     const leaves = sessions.reduce((sum, item) => sum + item.leaves.length, 0);
-    body.push(
-      h('p', {
-        class: 'modal__hint',
-        text: `共 ${sessions.length} 场 · 自习合计 ${formatDuration(total)} · 离开 ${leaves} 人次`,
-      }),
-    );
+    // 有超时的场次才把这一条说出来：全班都没超时的时候提它反而扎眼
+    const overtimeRuns = sessions.filter((item) => overtimeCount(state.klass, item, item.endedAt ?? end) > 0).length;
+    const bits = [`共 ${sessions.length} 场`, `自习合计 ${formatSpan(total)}`, `离开 ${leaves} 人次`];
+    if (overtimeRuns > 0) {
+      bits.push(`有超时 ${overtimeRuns} 场`);
+    }
+    body.push(h('p', { class: 'modal__hint', text: bits.join(' · ') }));
+
     const table = h('table', { class: 'table' });
     const head = h('tr');
-    for (const label of ['开始', '结束', '自习时长', '已到', '离开人次']) {
+    for (const label of ['开始', '结束', '自习时长', '已到', '离开人次', '超时']) {
       head.append(h('th', { text: label }));
     }
     table.append(h('thead', {}, [head]));
@@ -2083,12 +2144,15 @@ function renderHistory() {
     for (const session of sessions) {
       const endAt = session.endedAt ?? Date.now();
       const summary = summarize(state.klass, session, endAt);
+      const overtime = overtimeCount(state.klass, session, endAt);
       const row = h('tr');
       row.append(h('td', { text: formatDate(session.startedAt) }));
       row.append(h('td', { text: session.endedAt === undefined ? '进行中' : formatDate(session.endedAt) }));
+      // 表里这份用「时:分:秒」：一列数上下对齐才好比长短，中文单位会把列撑得忽宽忽窄
       row.append(h('td', { text: formatStudyTime(studyMs(session, endAt)) }));
       row.append(h('td', { text: String(summary.present) }));
       row.append(h('td', { text: String(summary.leaveCount) }));
+      row.append(h('td', { class: overtime > 0 ? 'is-overtime' : '', text: overtime > 0 ? String(overtime) : '—' }));
       tbody.append(row);
     }
     table.append(tbody);
@@ -2097,7 +2161,7 @@ function renderHistory() {
   const foot = [];
   foot.push(h('button', { class: 'btn', text: '关闭', onClick: closeOverlay }));
   foot.push(h('button', { class: 'btn btn--primary', text: '导出全班 xlsx', onClick: () => void exportClass(state.klass) }));
-  return modalFrame('全班记录', body, foot);
+  return modalFrame('自习记录', body, foot);
 }
 
 function renderConflict() {
@@ -2256,6 +2320,27 @@ async function boot() {
   render();
   window.setInterval(tick, TICK_MS);
 }
+
+/**
+ * 键盘的退路。
+ *
+ * Esc 先关浮层 —— 键盘老师最需要的就是「退出去」。多选态下退多选。
+ * 其余场合不碰 Esc：自习蒙版下那一下是浏览器自己的「退出全屏」。
+ */
+document.addEventListener('keydown', (event) => {
+  if (event.key !== 'Escape') {
+    return;
+  }
+  if (state.overlay !== null) {
+    event.preventDefault();
+    closeOverlay();
+    return;
+  }
+  if (state.picking !== null) {
+    event.preventDefault();
+    endPicking();
+  }
+});
 
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible') {

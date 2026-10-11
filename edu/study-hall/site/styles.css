@@ -520,22 +520,20 @@ body {
   font-size: 12.5px;
 }
 
-/* 底下一行：全班记录靠左、开始自习靠右 —— 自习时最常按的是右边那颗 */
+/* 卡底：一整行都是「开始自习」—— 一张卡上要按的就是它 */
 .card__foot {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
   /* 同一行里的卡片等高，底行要贴着底 —— 不然没有牌子那几张底下会空一块 */
   margin-top: auto;
-  padding: 10px 14px 12px;
-  border-top: 1px solid var(--rule);
-  background: color-mix(in srgb, var(--ink) 2%, var(--surface));
+  padding: 4px 14px 14px;
 }
 
+/* 不画分隔线、不铺底色：卡上那块是「这个班是什么」，这一颗是「开始干活」，
+   一条线横在那儿像把它切成了另一块，反倒让人以为下面是页脚 */
 .card__foot .btn {
-  padding: 6px 13px;
-  font-size: 13.5px;
+  flex: 1;
+  padding: 9px 13px;
+  font-size: 14px;
 }
 
 /* ---------- 多选态下的班级卡 ---------- */
@@ -1112,6 +1110,17 @@ body {
 .table td:not(:first-child) {
   font-family: var(--mono);
   font-variant-numeric: tabular-nums;
+}
+
+/* 那一场有人超时：这一格点出来，扫一眼就知道哪几场乱 */
+.table td.is-overtime {
+  color: var(--overtime);
+  font-weight: 600;
+}
+
+/* 焦点落到浮层本身时不要给整个对话框套一圈描边（那是键盘「进来」的作用点，不是控件） */
+.modal:focus {
+  outline: none;
 }
 
 .hidden {
