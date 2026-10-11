@@ -13,13 +13,19 @@
  */
 
 import { h, modalFrame } from '../dom.js';
+import * as speech from '../speech.js';
 import { setAbsent } from '../domain.js';
 import { commitSession, noteActivity, render, showToast, state } from '../state.js';
 import { seatLine, tileTitle } from '../board.js';
 import { closeOverlay } from './index.js';
 
-/** 点名层里那些名字的格子：`学生 id → 格子`，与看板上那一套同理，走定点更新。 */
-const rollTiles = new Map();
+/**
+ * 每一格的壳：`学生 id → 那一格的 div`。
+ *
+ * 状态（到没到）挂在**壳**上而不是里头的名字钮上 —— 名字钮与角上那颗喇叭都从壳上取色。
+ * 与看板上那一套同理，走定点更新：点一下只换一个格子的脸，不重画整块。
+ */
+const rollCells = new Map();
 
 /** 点名层脚上那颗「完成」：人数变了要跟着改字，但不值得为它重画整块。 */
 let rollFoot = null;
@@ -38,8 +44,8 @@ export function updateRollCall() {
     return;
   }
   const absent = new Set(draft.absentIds);
-  for (const [studentId, tile] of rollTiles) {
-    tile.classList.toggle('is-absent', absent.has(studentId));
+  for (const [studentId, cell] of rollCells) {
+    cell.classList.toggle('is-absent', absent.has(studentId));
   }
   if (rollFoot !== null) {
     rollFoot.textContent = rollDoneText(absent.size);
@@ -74,11 +80,17 @@ export function renderRollCall() {
 
   const absent = new Set(draft?.absentIds ?? []);
   const list = h('div', { class: 'rollcall__list' });
+  // 能念得出声才画那颗喇叭：画一堆按下去没反应的钮不如不画
+  const canSay = speech.canSpeak();
   // 按名册顺序排：老师是照着名单点人，格子一挪就会点错
   for (const student of klass.students) {
     const isAbsent = absent.has(student.id);
+    const cell = h('div', {
+      class: `rollcall__cell${isAbsent ? ' is-absent' : ''}`,
+      dataset: { rollcallCell: student.id },
+    });
     const tile = h('button', {
-      class: `rollcall__tile${isAbsent ? ' is-absent' : ''}`,
+      class: 'rollcall__tile',
       title: tileTitle(student),
       dataset: { rollcallId: student.id },
       onClick: () => toggleRoll(student.id),
@@ -88,8 +100,22 @@ export function renderRollCall() {
     if (seat !== '') {
       tile.append(h('span', { class: 'rollcall__seat', text: seat }));
     }
-    list.append(tile);
-    rollTiles.set(student.id, tile);
+    cell.append(tile);
+    if (canSay) {
+      // 不进 Tab 序列：一班几十号人，Tab 上多一倍就走不完这一趟了；鼠标与触摸直接点得到
+      cell.append(
+        h('button', {
+          class: 'rollcall__say',
+          text: '📣',
+          tabindex: '-1',
+          'aria-label': `念「${student.name}」`,
+          title: `念「${student.name}」`,
+          onClick: () => sayName(student.name),
+        }),
+      );
+    }
+    list.append(cell);
+    rollCells.set(student.id, cell);
   }
   if (klass.students.length === 0) {
     list.append(h('p', { class: 'empty__hint', text: '这个班还没有学生。' }));
@@ -136,6 +162,19 @@ export function renderRollCall() {
 /** 点名层那颗「完成」上的字。 */
 function rollDoneText(absentCount) {
   return absentCount === 0 ? '完成' : `完成（${absentCount} 人没来）`;
+}
+
+/**
+ * 念一下这个名字。
+ *
+ * 只出声，不动名单 —— 「他到了」是点名字那一下的事，喇叭是另一件事（叫一声让教室里
+ * 听见）。念不出来（浏览器没有中文嗓音之类）就顶一句提示，不默不作声。
+ */
+function sayName(name) {
+  const status = speech.speak(name, () => showToast('念不出来：这台机器的语音不可用'));
+  if (!status.ok) {
+    showToast(`念不出来：${status.reason}`);
+  }
 }
 
 /**
@@ -219,6 +258,6 @@ async function finishRollCall() {
 
 /** 清掉上一帧点名层的索引（同样是重画之前先清）。 */
 export function resetRollCallRefs() {
-  rollTiles.clear();
+  rollCells.clear();
   rollFoot = null;
 }

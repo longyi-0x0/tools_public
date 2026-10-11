@@ -1407,18 +1407,36 @@ body {
   align-content: start;
 }
 
+/*
+ * 一格 = 名字钮 + 角上那颗喇叭。
+ *
+ * 状态挂在**壳**上：名字钮与喇叭都从壳上取色，两处不会各说各的。名字钮是 `<button>`，
+ * 喇叭也是，所以不能把喇叭嵌在名字钮里（交互元素套交互元素不合法）—— 壳就是为了这个。
+ */
+.rollcall__cell {
+  position: relative;
+  display: flex;
+  color: var(--present-ink);
+}
+
+.rollcall__cell.is-absent {
+  color: var(--absent-ink);
+}
+
 .rollcall__tile {
+  flex: 1;
   display: flex;
   flex-direction: column;
   justify-content: center;
   align-items: center;
   gap: 2px;
+  min-width: 0;
   min-height: 62px;
   padding: 10px 8px;
   border: 1px solid transparent;
   border-radius: var(--tile-radius);
   font: inherit;
-  color: var(--present-ink);
+  color: inherit;
   background: var(--present);
   cursor: pointer;
   transition: background-color 120ms ease, color 120ms ease;
@@ -1428,9 +1446,39 @@ body {
   border-color: color-mix(in srgb, var(--ink) 24%, transparent);
 }
 
-.rollcall__tile.is-absent {
+.rollcall__cell.is-absent .rollcall__tile {
   background: var(--absent);
-  color: var(--absent-ink);
+}
+
+/*
+ * 念名字那颗喇叭。
+ *
+ * 字形取格子上的字色，压在右上角：蓝色（到了）上是白、灰色（没到）上是深灰，两边都看得见，
+ * 也不必按状态各配一套样式。平时压到半透明，指上去才实起来。
+ */
+.rollcall__say {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  font-size: 13px;
+  line-height: 1;
+  opacity: 0.55;
+  cursor: pointer;
+}
+
+.rollcall__say:hover,
+.rollcall__say:focus-visible {
+  opacity: 1;
+  background: color-mix(in srgb, currentColor 16%, transparent);
 }
 
 .rollcall__name {

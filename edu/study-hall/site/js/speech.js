@@ -1,12 +1,14 @@
 /**
- * 备注的语音输入。
+ * 说话：备注的语音输入，以及把名字念出来。
  *
- * 走浏览器原生的 `SpeechRecognition`（Chrome / Edge 为 `webkitSpeechRecognition`），
+ * **输入**走浏览器原生的 `SpeechRecognition`（Chrome / Edge 为 `webkitSpeechRecognition`），
  * 语言固定 `zh-CN`。**这是可选增强，不是必需路径**：这套识别在多数实现里要把音频
  * 送到厂商的服务器，国内网络下常常起不来；起不来时界面把麦克风按钮置灰并说明原因，
- * 备注照样能手打或挑模板。
+ * 备注照样能手打或挑模板。一次识别一段话，说完（引擎自己判定断句）就回调结果，
+ * 不做连续听写。
  *
- * 一次识别一段话，说完（引擎自己判定断句）就回调结果，不做连续听写。
+ * **念出来**走 `speechSynthesis`，同样固定 `zh-CN`。它与识别相反：在本机合成，不联网，
+ * 也不要求 HTTPS，所以点名层里那颗喇叭几乎处处能用；没有这套接口的浏览器上不画那颗钮。
  */
 
 function recognitionClass() {
@@ -20,6 +22,44 @@ export function availability() {
   }
   if (window.isSecureContext === false) {
     return { ok: false, reason: '语音识别要求页面走 HTTPS' };
+  }
+  return { ok: true, reason: '' };
+}
+
+/**
+ * 这台浏览器能不能把字念出来。
+ *
+ * `speechSynthesis` 与 `SpeechSynthesisUtterance` 都得在（后者是构造函数，不能只看前者）。
+ */
+export function canSpeak() {
+  return (
+    typeof window.speechSynthesis?.speak === 'function' &&
+    typeof window.SpeechSynthesisUtterance === 'function'
+  );
+}
+
+/**
+ * 念一句中文。
+ *
+ * 连点几个名字时把上一句掐掉再念新的 —— 老师要的是**这一个**的名字，不是排队念一串。
+ * 引擎自己在念的时候出错（没有中文嗓音之类）走 `onError`。
+ *
+ * 返回「起没起来」与原因，由调用方决定怎么跟老师说。
+ */
+export function speak(text, onError) {
+  if (!canSpeak()) {
+    return { ok: false, reason: '这个浏览器念不出声' };
+  }
+  const utterance = new window.SpeechSynthesisUtterance(text);
+  utterance.lang = 'zh-CN';
+  utterance.onerror = (event) => onError?.(event.error ?? 'unknown');
+  if (window.speechSynthesis.speaking || window.speechSynthesis.pending) {
+    window.speechSynthesis.cancel();
+  }
+  try {
+    window.speechSynthesis.speak(utterance);
+  } catch (error) {
+    return { ok: false, reason: error instanceof Error ? error.message : '念不出来' };
   }
   return { ok: true, reason: '' };
 }
