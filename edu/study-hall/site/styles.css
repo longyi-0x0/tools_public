@@ -275,11 +275,6 @@ body {
   background: color-mix(in srgb, var(--danger) 8%, var(--surface));
 }
 
-.btn--small {
-  padding: 4px 10px;
-  font-size: 13px;
-}
-
 /* 收尾那一颗（取消之类）：不跟主行动抢眼 */
 .btn--quiet {
   background: transparent;

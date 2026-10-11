@@ -21,7 +21,7 @@ import {
 } from './domain.js';
 import { buildWorkbook, date, number, parseWorkbook, text } from './xlsx.js';
 
-export const SHEET = {
+const SHEET = {
   KLASS: '班级',
   TEMPLATES: '备注模板',
   ROSTER: '名册',

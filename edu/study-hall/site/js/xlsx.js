@@ -13,7 +13,7 @@
 /* ---------- XML ---------- */
 
 /** XML 文本里必须转义的字符。 */
-export function escapeXml(text) {
+function escapeXml(text) {
   return String(text)
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
@@ -25,7 +25,7 @@ export function escapeXml(text) {
 }
 
 /** 0 → A、25 → Z、26 → AA。 */
-export function columnName(index) {
+function columnName(index) {
   let name = '';
   let rest = index;
   while (rest >= 0) {
@@ -36,7 +36,7 @@ export function columnName(index) {
 }
 
 /** A1 → { column: 0, row: 0 }。 */
-export function parseRef(ref) {
+function parseRef(ref) {
   const matched = /^([A-Z]+)(\d+)$/.exec(ref);
   if (matched === null) {
     return null;
@@ -308,7 +308,7 @@ const RELS_XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`;
 
 /** 工作表名的禁用字符：Excel 不允许这几个，也不允许超过 31 字。 */
-export function safeSheetName(name) {
+function safeSheetName(name) {
   return name.replace(/[\\/?*[\]:]/g, '·').slice(0, 31);
 }
 

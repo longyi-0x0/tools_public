@@ -49,7 +49,7 @@ export function isAwayStatus(status) {
 }
 
 /** 默认补响间隔：60 秒。 */
-export const DEFAULT_ALERT_REPEAT_MS = 60 * 1000;
+const DEFAULT_ALERT_REPEAT_MS = 60 * 1000;
 
 /**
  * 默认的待机时间：自习中 30 秒没人碰屏幕，就切到待机蒙版。
@@ -61,7 +61,7 @@ export const DEFAULT_ALERT_REPEAT_MS = 60 * 1000;
 export const DEFAULT_IDLE_MASK_MS = 30 * 1000;
 
 /** 新班的默认备注模板。颜色与时长都交给老师自己设（默认黄、不限时）。 */
-export const DEFAULT_REMARK_TEMPLATES = ['上厕所', '打水', '去办公室', '身体不适', '被老师叫走'];
+const DEFAULT_REMARK_TEMPLATES = ['上厕所', '打水', '去办公室', '身体不适', '被老师叫走'];
 
 /**
  * 把一条备注模板补齐成当前形状：`{ id, text, color, timeoutMs }`。
@@ -116,7 +116,7 @@ export function startSession(input) {
 }
 
 /** 这一相能不能迁到下一相。 */
-export function canTransition(session, to) {
+function canTransition(session, to) {
   switch (to) {
     case PHASE.ENDED:
       return session.phase === PHASE.STUDYING;
@@ -193,7 +193,7 @@ export function isPaused(session) {
 }
 
 /** 暂停区间与 `[from, to]` 的重叠时长。 */
-export function pausedOverlapMs(pauses, from, to) {
+function pausedOverlapMs(pauses, from, to) {
   if (!Array.isArray(pauses) || to <= from) {
     return 0;
   }
@@ -304,7 +304,7 @@ function closeOpenLeave(session, studentId, at) {
 
 /**
  * 这个人当前是不是在外面（有没归来的离开记录）。 */
-export function isAway(session, studentId) {
+function isAway(session, studentId) {
   return session.leaves.some((leave) => leave.studentId === studentId && leave.returnedAt === undefined);
 }
 
@@ -344,37 +344,12 @@ export function markReturned(session, studentId, at) {
   };
 }
 
-/** 给一条离开记录补备注。已经归来的也能补。 */
-export function setRemark(session, leaveId, input) {
-  return {
-    ...session,
-    leaves: session.leaves.map((leave) => {
-      if (leave.id !== leaveId) {
-        return leave;
-      }
-      const next = { ...leave };
-      if (input.templateId !== undefined) {
-        next.templateId = input.templateId;
-      }
-      if (input.remark !== undefined) {
-        next.remark = input.remark;
-      }
-      return next;
-    }),
-  };
-}
-
 /** 记下「这一条已经响过了」，避免每个 tick 都响。 */
 export function markNotified(session, leaveId, at) {
   return {
     ...session,
     leaves: session.leaves.map((leave) => (leave.id === leaveId ? { ...leave, overtimeNotifiedAt: at } : leave)),
   };
-}
-
-/** 这一场是不是还在进行中。 */
-export function isActive(session) {
-  return session.phase !== PHASE.ENDED;
 }
 
 /**
@@ -405,7 +380,7 @@ export function remarkOf(klass, leave) {
 }
 
 /** 这条离开该刷什么颜色：备注没挑颜色时是默认黄。 */
-export function awayColorOf(klass, leave) {
+function awayColorOf(klass, leave) {
   return remarkOf(klass, leave)?.color ?? DEFAULT_AWAY_COLOR;
 }
 
@@ -415,7 +390,7 @@ export function awayColorOf(klass, leave) {
  * 超时不是全班一个数，而是每条备注自己的事：「去办公室」可能要 10 分钟，「上厕所」
  * 3 分钟就够。同一个班里谁也别拿别人的尺子量。
  */
-export function awayTimeoutMsOf(klass, leave) {
+function awayTimeoutMsOf(klass, leave) {
   return remarkOf(klass, leave)?.timeoutMs ?? 0;
 }
 
@@ -464,7 +439,7 @@ export function pausedMs(session, now) {
  * 下课那一刻老师要交代的是「谁出去过、多久、超时没有」。一次离开一条记录，同一个人
  * 出去两次就在这儿并成一行；时长用有效时长（扣掉暂停段），与格子上的算法一致。
  */
-export function leaveReport(klass, session, now) {
+function leaveReport(klass, session, now) {
   const rows = new Map();
   for (const leave of session.leaves) {
     const ms = awayMsOf(session, leave, now);
@@ -514,9 +489,9 @@ export function remarkTextOf(klass, leave) {
 /**
  * 顶部统计条上的一组数。
  *
- * 「已到」把临时离开的人算在内 —— 他们到了，只是这会儿不在座位上。「离开中」
- * 与「超时」是「已到」的子集，单独报出来给老师看。所以
- * `已到 + 没到 = 应到`，而离开的那几个人两边都出现。
+ * 「在座」把临时离开的人算在内 —— 他们到了，只是这会儿不在座位上。「离开中」
+ * 与「超时」是「在座」的子集，单独报出来给老师看。所以
+ * `在座 + 没来 = 应到`，而离开的那几个人两边都出现。
  */
 export function summarize(klass, session, now) {
   let present = 0;

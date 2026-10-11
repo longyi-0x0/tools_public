@@ -290,7 +290,7 @@ site/
 └── js/
     ├── app.js          界面与装配：两层视图（班级列表 / 蒙版）、一个状态、走秒定点更新
     ├── domain.js       状态机、颜色与超时推导、统计、该响哪几条、老数据补齐。纯函数，不认识浏览器
-    ├── store.js        IndexedDB 三个 store（classes / sessions / settings）
+    ├── store.js        IndexedDB 两个 store（classes / sessions）
     ├── readSheets.js   按内容读表格（不看扩展名），花名册走这里
     ├── klassFile.js    一个班 ↔ 一份 xlsx
     ├── xlsx.js         最小 xlsx 读写（自己写的 ZIP + 够用的 OOXML）

@@ -101,7 +101,7 @@ function decodeText(bytes) {
 }
 
 /** 读一份表格文件的内容，返回工作表。认不出来时把话说清楚。 */
-export async function readSheetBytes(bytes) {
+async function readSheetBytes(bytes) {
   if (startsWith(bytes, [0x50, 0x4b])) {
     return parseWorkbook(bytes);
   }

@@ -12,9 +12,7 @@ import {
   PHASE,
   STATUS,
   activeLeave,
-  awayColorOf,
   awayMs,
-  awayTimeoutMsOf,
   createKlass,
   dueAlerts,
   endSession,
@@ -117,6 +115,14 @@ const state = {
   /** 冲突导入：同名班级已在库时的待决文件 */
   pendingImport: null,
   /**
+   * 新建班级：从表里读出来的名册与默认名。`null` 是还没选表。
+   *
+   * 读表会重画这一块，认到的名字得留在状态里，不然老师选的表一重画就没了。
+   */
+  pendingNewClass: null,
+  /** 新建班级那个输入框里正在打的字（与上面同理：重画不能把字弄丢）。 */
+  newClassName: null,
+  /**
    * 班级列表的多选态：`null` 是平时，否则是选中班级的 id 集合。
    *
    * 导出与删除平时都收在「设置」里，一个班一个班来；要一次收拾好几个班就走这里。
@@ -188,7 +194,7 @@ function uid(prefix) {
 }
 
 /** 毫米秒 → `12:34`；超过一小时 → `1:02:03`。 */
-export function formatDuration(ms) {
+function formatDuration(ms) {
   const total = Math.max(0, Math.floor(ms / 1000));
   const seconds = total % 60;
   const minutes = Math.floor(total / 60) % 60;
@@ -223,7 +229,7 @@ function formatSpan(ms) {
  * 大屏上的数字宽度得稳 —— 分秒那种「12:34」走到一小时忽然变成「1:02:03」，
  * 字会跳一下。所以小时位一直留着。
  */
-export function formatStudyTime(ms) {
+function formatStudyTime(ms) {
   const total = Math.max(0, Math.floor(ms / 1000));
   const pad = (value) => String(value).padStart(2, '0');
   return `${pad(Math.floor(total / 3600))}:${pad(Math.floor(total / 60) % 60)}:${pad(total % 60)}`;
@@ -330,13 +336,6 @@ async function enterSession() {
 }
 
 /**
- * 改一场记录并落盘。所有对会话的写都走这里，免得漏存。
- *
- * 相没变就**不重画整块**：重画会把老师正点着的那个格子换掉，点得快的一下就丢了。
- * 只有相变了（按钮要换、控件要换）才整块重画。浮层收起来这种「壳变了、格子没变」
- * 的情况由调用方传 `forceRender`。
- */
-/**
  * 把当前这一场同步进 `state.sessions`。
  *
  * 历史表读的是 `state.sessions` 那一份，而写只会写 `state.session` —— 不跟着换，
@@ -356,6 +355,10 @@ function syncSessionList(session) {
  *
  * `state.running` 是班级卡看的，`state.session` 是正在看的那一场 —— 两者只能在这里
  * 一处同时改，不然列表上会出现「已经结束的一场还写着自习中」。
+ *
+ * 相没变就**不重画整块**：重画会把老师正点着的那个格子换掉，点得快的一下就丢了。
+ * 只有相变了（按钮要换、控件要换）才整块重画。浮层收起来这种「壳变了、格子没变」
+ * 的情况由调用方传 `forceRender`。
  */
 async function commitSession(next, forceRender = false) {
   if (next === state.session) {
@@ -1330,12 +1333,6 @@ function quietGroup(children) {
 }
 
 /**
- * 本场静音。
- *
- * 教室里铃突然响起来，老师需要当场掐掉，而不是去设置里翻。这一下只影响这一场
- * （不改班级设置）；刷新页面会恢复 —— 宁可多响一次，也别一直静着没人知道。
- */
-/**
  * 本场不切待机蒙版。
  *
  * 教室里老师正讲着一道题、或者那会儿就是要一直盯着花名册，屏幕上忽然换成一个大钟
@@ -1367,6 +1364,12 @@ function idleButton() {
   });
 }
 
+/**
+ * 本场静音。
+ *
+ * 教室里铃突然响起来，老师需要当场掐掉，而不是去设置里翻。这一下只影响这一场
+ * （不改班级设置）；刷新页面会恢复 —— 宁可多响一次，也别一直静着没人知道。
+ */
 function muteButton() {
   const muted = state.muted;
   return h('button', {
@@ -1440,13 +1443,7 @@ function renderTile(student) {
 /**
  * 四色图例。
  *
- * 蓝 / 灰 / 黄 / 红是这一屏的全部语言，但界面上原本一个字都没解释 —— 第一次用的老师
- * 看到一片蓝，分不清那是「还没点」还是「没来」。这一行就是那本小字典，平时压得很暗。
- */
-/**
- * 四色图例。
- *
- * 蓝 / 灰 / 黄 / 红是这一屏的语言，但界面上原本一个字都没解释 —— 第一次用的老师
+ * 灰 / 蓝 / 黄 / 红是这一屏的语言，但界面上原本一个字都没解释 —— 第一次用的老师
  * 看到一片灰，分不清那是「还没点」还是「都在座」。这一行就是那本小字典，平时压得很暗。
  *
  * 「离开中」画黄 —— 那是默认色；老师给某条备注挑了别的颜色，格子跟着走，图例不追。
@@ -1579,7 +1576,7 @@ function updateDynamic() {
   // 提示语随点名进度变，但它不换结构，所以在这里定点改
   const hint = root.querySelector('[data-hint]');
   if (hint !== null) {
-    hint.textContent = phaseHint(state.klass, session ?? { phase: PHASE.STUDYING, absentIds: [], leaves: [], startedAt: now });
+    hint.textContent = phaseHint(state.klass, session);
   }
 
   // 自习时间：开始自习就在走；暂停时停住并标注；结束后定住
@@ -1724,8 +1721,8 @@ function closeOverlay() {
   }
   state.overlay = null;
   state.remarkStudentId = null;
-  state.pendingNewClass = undefined;
-  state.newClassName = undefined;
+  state.pendingNewClass = null;
+  state.newClassName = null;
   render();
 }
 
@@ -2011,7 +2008,7 @@ function renderNewClass() {
     }
   });
 
-  if (state.pendingNewClass === undefined) {
+  if (state.pendingNewClass === null) {
     body.push(
       h('div', { class: 'pick' }, [
         h('p', { class: 'pick__title', text: '还没选表' }),
@@ -2037,7 +2034,7 @@ function renderNewClass() {
       class: 'btn btn--primary',
       text: '建班',
       onClick: async () => {
-        if (state.pendingNewClass === undefined) {
+        if (state.pendingNewClass === null) {
           showToast('先选一份花名册');
           return;
         }
@@ -2050,8 +2047,8 @@ function renderNewClass() {
         });
         await store.putClass(klass);
         await refreshClasses();
-        state.pendingNewClass = undefined;
-        state.newClassName = undefined;
+        state.pendingNewClass = null;
+        state.newClassName = null;
         state.overlay = null;
         render();
       },
@@ -2639,12 +2636,6 @@ async function boot() {
   window.setInterval(tick, TICK_MS);
 }
 
-/**
- * 键盘的退路。
- *
- * Esc 先关浮层 —— 键盘老师最需要的就是「退出去」。多选态下退多选。
- * 其余场合不碰 Esc：自习蒙版下那一下是浏览器自己的「退出全屏」。
- */
 /**
  * 键盘的退路。
  *

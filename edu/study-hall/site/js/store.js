@@ -6,7 +6,7 @@
  * `navigator.storage.persist()` 申请持久化配额；申请被拒不影响使用，只是那份数据
  * 可能被系统回收。
  *
- * 三个 store：`classes`（班）、`sessions`（一场记录）、`settings`（全局偏好）。
+ * 两个 store：`classes`（班）、`sessions`（一场记录）。
  * 进行中的会话也落盘，所以中途刷新或关掉浏览器，回来接着上一次那一相继续。
  */
 
@@ -14,12 +14,11 @@ const DB_NAME = 'study-hall';
 const DB_VERSION = 1;
 const STORE_CLASSES = 'classes';
 const STORE_SESSIONS = 'sessions';
-const STORE_SETTINGS = 'settings';
 
 let dbPromise = null;
 
 /** 打开（并按需建）库。同一个页面里只开一次。 */
-export function openDb() {
+function openDb() {
   if (dbPromise !== null) {
     return dbPromise;
   }
@@ -33,9 +32,6 @@ export function openDb() {
       if (!db.objectStoreNames.contains(STORE_SESSIONS)) {
         const store = db.createObjectStore(STORE_SESSIONS, { keyPath: 'id' });
         store.createIndex('classId', 'classId', { unique: false });
-      }
-      if (!db.objectStoreNames.contains(STORE_SETTINGS)) {
-        db.createObjectStore(STORE_SETTINGS, { keyPath: 'key' });
       }
     };
     request.onsuccess = () => resolve(request.result);
@@ -98,13 +94,6 @@ export async function listClasses() {
   });
 }
 
-export async function getClass(id) {
-  return transact([STORE_CLASSES], 'readonly', async (tx) => {
-    const found = await wrap(tx.objectStore(STORE_CLASSES).get(id));
-    return found ?? null;
-  });
-}
-
 export async function putClass(klass) {
   await transact([STORE_CLASSES], 'readwrite', async (tx) => {
     await wrap(tx.objectStore(STORE_CLASSES).put(klass));
@@ -135,13 +124,6 @@ export async function listSessions(classId) {
   });
 }
 
-export async function getSession(id) {
-  return transact([STORE_SESSIONS], 'readonly', async (tx) => {
-    const found = await wrap(tx.objectStore(STORE_SESSIONS).get(id));
-    return found ?? null;
-  });
-}
-
 export async function putSession(session) {
   await transact([STORE_SESSIONS], 'readwrite', async (tx) => {
     await wrap(tx.objectStore(STORE_SESSIONS).put(session));
@@ -151,20 +133,5 @@ export async function putSession(session) {
 export async function deleteSession(id) {
   await transact([STORE_SESSIONS], 'readwrite', async (tx) => {
     await wrap(tx.objectStore(STORE_SESSIONS).delete(id));
-  });
-}
-
-/* ---------- 全局偏好 ---------- */
-
-export async function getSetting(key, fallback) {
-  return transact([STORE_SETTINGS], 'readonly', async (tx) => {
-    const found = await wrap(tx.objectStore(STORE_SETTINGS).get(key));
-    return found === undefined || found === null ? fallback : found.value;
-  });
-}
-
-export async function putSetting(key, value) {
-  await transact([STORE_SETTINGS], 'readwrite', async (tx) => {
-    await wrap(tx.objectStore(STORE_SETTINGS).put({ key, value }));
   });
 }
