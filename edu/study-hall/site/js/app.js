@@ -1421,11 +1421,12 @@ function renderSettings() {
 
   const idleSelect = h('select', { class: 'input' });
   for (const [value, label] of [
-    ['0', '不切（一直显示花名册）'],
+    ['15', '15 秒'],
     ['30', '30 秒'],
     ['60', '1 分钟'],
     ['120', '2 分钟'],
     ['300', '5 分钟'],
+    ['0', '不切（一直显示花名册）'],
   ]) {
     idleSelect.append(
       h('option', {
@@ -1441,7 +1442,7 @@ function renderSettings() {
       idleSelect,
       h('span', {
         class: 'field__note',
-        text: '自习中这么久没人碰屏幕，就换成一个大钟加「谁还在外面」。点一下屏幕回来。',
+        text: '自习中这么久没人碰屏幕，就换成一个大钟加「谁还在外面」。点一下、动一下鼠标、敲一下键都算，都会重新计时。',
       }),
     ]),
   );
@@ -1637,8 +1638,11 @@ let listening = null;
 /**
  * 有人碰了屏幕。
  *
- * 任何一次指针按下或按键都算 —— 老师伸手那一刻就不该再是待机。切回看板由待机蒙版
- * 自己的点击处理（这样点某张卡片能拦住，不冒到蒙版上）。
+ * **凡是能表明「人在这儿」的信号都算**：指针按下、指针移动、滚轮、键盘、触摸。
+ * 鼠标只是晃了一下也是人在这儿 —— 老师盯着屏幕时手常常在鼠标上。所以指针移动也
+ * 会把计时推后，待机蒙版因此只会在真的没人时出现。
+ *
+ * 切回看板由待机蒙版自己的点击处理（这样点某张卡片能拦住，不冒到蒙版上）。
  */
 function noteActivity() {
   state.lastActivityAt = Date.now();
@@ -1665,8 +1669,12 @@ function maybeGoIdle() {
   return true;
 }
 
-document.addEventListener('pointerdown', noteActivity, true);
-document.addEventListener('keydown', noteActivity, true);
+/** 把活动监听挂上。用捕获与被动：只记时刻，不干预页面自己的处理。 */
+function watchActivity() {
+  for (const event of ['pointerdown', 'pointermove', 'wheel', 'keydown', 'touchstart']) {
+    document.addEventListener(event, noteActivity, { capture: true, passive: true });
+  }
+}
 
 /* ---------- 启动 ---------- */
 
@@ -1695,6 +1703,7 @@ async function boot() {
     }
   }
   noteActivity();
+  watchActivity();
   render();
   window.setInterval(tick, TICK_MS);
 }

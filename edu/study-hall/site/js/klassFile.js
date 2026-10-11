@@ -8,7 +8,7 @@
  * 表里时间写成 Excel 日期（不是文本），老师拿到文件能直接排序与筛。
  */
 
-import { PHASE, remarkTextOf, summarize } from './domain.js';
+import { DEFAULT_IDLE_MASK_MS, PHASE, remarkTextOf, summarize } from './domain.js';
 import { buildWorkbook, date, number, parseWorkbook, text } from './xlsx.js';
 
 export const SHEET = {
@@ -210,7 +210,7 @@ export async function parseClassWorkbook(bytes) {
   const alertRepeatMs = Number(settings.get('补响间隔（秒）') ?? 60) * 1000;
   // 待机蒙版可以是 0（不切），所以这里不能像补响间隔那样把 0 当成缺省
   const idleRaw = settings.get('待机蒙版（秒）');
-  const idleMaskMs = idleRaw === undefined ? 60000 : Number(idleRaw) * 1000;
+  const idleMaskMs = idleRaw === undefined ? DEFAULT_IDLE_MASK_MS : Number(idleRaw) * 1000;
 
   const klass = {
     id: newId('k'),
@@ -220,7 +220,7 @@ export async function parseClassWorkbook(bytes) {
     overtimeThresholdMs: Number.isFinite(thresholdMs) && thresholdMs > 0 ? thresholdMs : 600000,
     alertSound,
     alertRepeatMs: Number.isFinite(alertRepeatMs) && alertRepeatMs > 0 ? alertRepeatMs : 60000,
-    idleMaskMs: Number.isFinite(idleMaskMs) && idleMaskMs >= 0 ? idleMaskMs : 60000,
+    idleMaskMs: Number.isFinite(idleMaskMs) && idleMaskMs >= 0 ? idleMaskMs : DEFAULT_IDLE_MASK_MS,
     remarkTemplates: templates.map((value, index) => ({ id: `tpl-${index + 1}`, text: value })),
     students,
   };

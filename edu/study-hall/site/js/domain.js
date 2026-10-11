@@ -42,12 +42,13 @@ export const DEFAULT_OVERTIME_THRESHOLD_MS = 10 * 60 * 1000;
 export const DEFAULT_ALERT_REPEAT_MS = 60 * 1000;
 
 /**
- * 默认的待机时间：自习中一分钟没人碰屏幕，就切到待机蒙版。
+ * 默认的待机时间：自习中 30 秒没人碰屏幕，就切到待机蒙版。
  *
  * 教室前面那块屏，老师不操作时不该一直亮着密密麻麻的名字；换成一个大钟加「谁还在
- * 外面」，从最后一排也看得见。0 表示不切。
+ * 外面」，从最后一排也看得见。**任何操作都重新计时** —— 指针动一下也算（见 app.js
+ * 的活动监听）。0 表示不切。
  */
-export const DEFAULT_IDLE_MASK_MS = 60 * 1000;
+export const DEFAULT_IDLE_MASK_MS = 30 * 1000;
 
 /** 新班的默认备注模板。 */
 export const DEFAULT_REMARK_TEMPLATES = ['上厕所', '打水', '去办公室', '身体不适', '被老师叫走'];
