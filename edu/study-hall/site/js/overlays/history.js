@@ -12,7 +12,7 @@ export function renderHistory() {
   const body = [];
   const sessions = [...state.sessions].sort((left, right) => right.startedAt - left.startedAt);
   if (sessions.length === 0) {
-    body.push(h('p', { class: 'modal__hint', text: '这个班还没有上过自习。' }));
+    body.push(h('p', { class: 'modal__hint', text: '本班还没有自习记录。' }));
   } else {
     const end = Date.now();
     const total = sessions.reduce((sum, item) => sum + studyMs(item, item.endedAt ?? end), 0);

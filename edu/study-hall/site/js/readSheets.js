@@ -117,7 +117,7 @@ async function readSheetBytes(bytes) {
   if (looksLikeHtml(text)) {
     return parseHtmlTables(text);
   }
-  throw new Error('认不出这是什么表格文件。支持 .xlsx、.xls，以及被存成 .xls 的网页表格');
+  throw new Error('无法识别该表格文件。支持 .xlsx、.xls，以及存为 .xls 的网页表格');
 }
 
 /** 读一个 `File`。 */

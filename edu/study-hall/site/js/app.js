@@ -18,6 +18,7 @@ import {
   noteActivity,
   refreshClasses,
   render,
+  startListening,
   state,
 } from './state.js';
 import { closeOverlay } from './overlays/index.js';
@@ -120,6 +121,8 @@ async function boot() {
     if (klass !== undefined) {
       await loadClass(klass);
       state.mask = 'session';
+      // 听教室默认开着，刷新也一样 —— 浏览器仍会问一次麦克风权限，那一下他看得见
+      void startListening(true);
     }
   }
   noteActivity();

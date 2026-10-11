@@ -13,9 +13,11 @@ import {
   PHASE,
   STATUS,
   activeLeave,
+  awayMs,
   endSession,
   markLeft,
   markReturned,
+  remarkTextOf,
   normaliseKlass,
   normaliseSession,
   pauseSession,
@@ -31,8 +33,8 @@ import * as mic from './mic.js';
 import { THRESHOLD_DEFAULT, VolumeWatch, clampThreshold } from './volume.js';
 import { exportClassWorkbook, parseClassWorkbook } from './klassFile.js';
 import { download } from './roster.js';
-import { formatSpan, today } from './format.js';
-import { focusIntoOverlay, h, requestFullscreen, root, uid } from './dom.js';
+import { formatDuration, formatSpan, today } from './format.js';
+import { focusIntoOverlay, h, root, uid } from './dom.js';
 import { renderClassesPage } from './classes.js';
 import { paintIdleVolume, renderIdleMask, renderSessionMask, resetTileRefs, updateDynamic, paintPicking } from './board.js';
 import { renderOverlay, resetOverlayRefs } from './overlays/index.js';
@@ -71,7 +73,7 @@ export const state = {
    * 屏幕上忽然换成一个大钟很碍事 —— 看板上那颗钮当场就能按住。
    *
    * 只存内存、只管这一场，理由与 [`muted`] 一样：新场从头来，宁可多切一次，
-   * 也别一直不切而没人知道。班级设置里那个「多久不动就换成大时钟」管的是**多快切**，
+   * 也别一直不切而没人知道。班级设置里那个「多久不动换成待机屏」管的是**多快切**，
    * 这一颗管的是**这一场切不切** —— 两件事。
    */
   idleOff: false,
@@ -92,7 +94,7 @@ export const state = {
   /**
    * 本场临时改的响度阈值；`null` 是跟着班级设置走。
    *
-   * 与「多久不动就换成大时钟」一样分两处：班级设置里那个是**这个班的默认**（换台机器、
+   * 与「多久不动换成待机屏」一样分两处：班级设置里那个是**这个班的默认**（换台机器、
    * 或者教室换了，都该回去改它），看板上这一处是**本场当场拧一下** —— 那会儿老师
    * 正听着教室，拧完就上课，不该为此进设置里翻一层。
    */
@@ -217,19 +219,25 @@ export async function openFromCard(klass, overlay) {
 /**
  * 进自习：没有进行中的那场就先开一场，然后盖上蒙版。
  *
- * 这是老师按下去的一下，顺手要一次浏览器全屏 —— 教室前面的屏不该留地址栏。
- * 已有进行中的那场就直接盖上（「继续自习」）。
+ * **不自动要全屏**：全屏是老师自己按顶栏那颗钮的事（`toggleFullscreen`）。课上常常是
+ * 老师先在屏幕上把名单点一遍再上投影，或者拿投影切了别的画面，自动抢一次全屏反而
+ * 会打断他手上的事 —— 浏览器全屏是**能抢走整个屏幕**的一手，不该由点「开始自习」顺手做掉。
  *
- * 一按下去就在计时：**点名不在这一步里**，想点再按蒙版上的「点名」。
+ * **听教室默认开着**：教室里有多响是这一场的基本信息，进这一屏就听着，不想听按那颗钮停。
+ *
+ * 一按下去就在计时：**点名不在这一步里**，想点再按看板上的「点名」。
  */
 async function enterSession() {
   sound.unlock();
   noteActivity();
-  requestFullscreen();
+  state.mask = 'session';
+  const running = state.session !== null && state.session.phase !== PHASE.ENDED;
 
-  if (state.session !== null && state.session.phase !== PHASE.ENDED) {
-    state.mask = 'session';
+  if (running) {
+    // 「继续自习」：上一场还在跑。静音与本场不切那两相留着 —— 老师是按「返回」离开的，
+    // 回来该接着刚才的样子；但教室里那只看不见的耳朵要重新戴上（返回时一起放开了）
     render();
+    void startListening(true);
     return;
   }
 
@@ -242,11 +250,10 @@ async function enterSession() {
   // 不然老师不知道自己是静音的、也不知道屏幕为什么不切了
   state.muted = false;
   state.idleOff = false;
-  // 听教室同样是本场的事：新场从头来 —— 不听、麦克风也放开。老师上一场忘了关，
-  // 这一场不该接着被听着
-  dropListening();
-  state.mask = 'session';
   render();
+  // 上一场那一趟先放开，再开这一场自己的（新场从头听）
+  dropListening();
+  void startListening(true);
 }
 
 /**
@@ -334,7 +341,7 @@ export async function doEndSession() {
   if (
     !window.confirm(
       `结束这一场自习？\n已走了 ${formatSpan(studyMs(session, state.now))}（${bits.join(' · ')}）。\n\n` +
-        '结束之后这一场不能接着走。账会留在「记录」里。',
+        '结束之后这一场不能接着走，记录会留在「记录」里。',
     )
   ) {
     return;
@@ -385,16 +392,21 @@ export function volumeThresholdInUse() {
 /**
  * 开听。
  *
+ * **默认就开**：进自习、以及刷新后接上一场在跑的自习，都自动开一次（见 `enterSession`
+ * 与 `app.js` 的 `boot`）—— 教室有多响是这一场的基本信息，不该要老师先想着去按一下。
+ * 不想听就按那颗钮停掉，停掉之后这一场不再自己开回来。
+ *
  * 开不成时退回来，把原因说给老师 —— 麦克风开不了有三种，各有各的动法
- * （见 [`mic.explainTrouble`]）。
+ * （见 [`mic.explainTrouble`]）。自动开的那一次（`auto`）失败只留一声很短的话：
+ * 老师没按过任何钮，弹一长串解释反而莫名其妙。
  */
-export async function startListening() {
+export async function startListening(auto = false) {
   if (state.listening || listeningOpening) {
     return;
   }
   const can = mic.availability();
   if (!can.ok) {
-    showToast(`听不了教室：${can.reason}`);
+    showToast(auto ? '听不了教室：这个浏览器要 https' : `听不了教室：${can.reason}`);
     return;
   }
   const watch = new VolumeWatch(volumeThresholdInUse());
@@ -406,14 +418,16 @@ export async function startListening() {
       onLost: () => {
         dropListening();
         render();
-        showToast('麦克风断了，已停止听教室');
+        showToast('麦克风已断开，听教室停止');
       },
     });
   } finally {
     listeningOpening = false;
   }
   if (!opened.ok) {
-    showToast(mic.explainTrouble(opened.trouble));
+    // 自动开的那一次不铺开三种动法：老师没按过任何钮，页面上忽然出现一段讲怎么放行权限的
+    // 话反而莫名其妙。短一句就够，他真要看就按那颗钮，浮层里写着。
+    showToast(auto ? '听教室没能开起来，按「听教室」看原因' : mic.explainTrouble(opened.trouble));
     return;
   }
   volumeWatch = watch;
@@ -421,7 +435,11 @@ export async function startListening() {
   state.volumeLevel = watch.level;
   state.volumeOver = watch.isOver;
   render();
-  showToast('开始听教室');
+  // 自动开起来的那一次不报「开始听教室」：老师没按过钮，报一声反而像出了什么事。
+  // 但他的浏览器会弹一次麦克风权限，那一下得有个交代 —— 所以这里说一句在听。
+  if (auto) {
+    showToast('正在听教室，按「听教室」可停止');
+  }
 }
 
 /** 老师按了「不听」。 */
@@ -445,7 +463,7 @@ export async function toggleListening() {
 /**
  * 本场把阈值拧一下。
  *
- * 只改这一场，**不写回班级** —— 与「本场不切大时钟」同一件事：班级上那个是这个班的
+ * 只改这一场，**不写回班级** —— 与「本场自动待机」同一件事：班级上那个是这个班的
  * 默认，看板上这一下是当场听着教室拧的，多半只想管这一节。
  */
 export function setVolumeThreshold(value) {
@@ -520,10 +538,11 @@ async function ringNoiseAlert() {
 /**
  * 放开麦克风，把这一场听教室的那点状态清掉。
  *
- * 走的是真的放手（[`mic.close`] 会停掉轨道），不是只停下读数 —— 老师关了、或者这一场
- * 结束了，浏览器上那个「正在录音」的记号就该灭。界面要不要重画由调用方定。
+ * 走的是真的放手（[`mic.close`] 会停掉轨道），不是只停下读数 —— 老师关了、离开看板、
+ * 或者这一场结束了，浏览器上那个「正在录音」的记号就该灭。界面要不要重画由调用方定
+ * （所以导出给「返回」那条路用）。
  */
-function dropListening() {
+export function dropListening() {
   mic.close();
   volumeWatch = null;
   state.listening = false;
@@ -560,7 +579,7 @@ export async function tapStudent(studentId) {
   const status = statusOf(session, studentId, state.now, state.klass);
   if (status === STATUS.ABSENT) {
     // 到没到只由「点名」定，看板上点他没这一手 —— 顶一句，别默不作声
-    showToast('他没到。要改就按「点名」');
+    showToast('他是没来的。到没到在「点名」里改');
     return;
   }
   if (status === STATUS.PRESENT) {
@@ -568,6 +587,15 @@ export async function tapStudent(studentId) {
     state.remarkStudentIds = [studentId];
     state.overlay = 'remark';
     render();
+    return;
+  }
+  // 记归来问一句：他在外面这一趟的时长就到此为止了，按错了得重新记一次离开、
+  // 从头计时 —— 而格子是一片色块里的一格，点错人太容易（与「结束自习」同理）
+  const student = state.klass.students.find((item) => item.id === studentId);
+  const away = formatDuration(awayMs(session, studentId, state.now));
+  const remark = remarkTextOf(state.klass, activeLeave(session, studentId));
+  const what = remark === '' ? '离开' : remark;
+  if (!window.confirm(`${student?.name ?? ''} 回来了？\n记他归来后，这一趟${what}就停在 ${away}。`)) {
     return;
   }
   await commitSession(markReturned(session, studentId, Date.now()));
@@ -596,11 +624,11 @@ export function togglePickStudent(studentId) {
     return;
   }
   if (activeLeave(state.session, studentId) !== undefined) {
-    showToast('他已经记过离开了');
+    showToast('他已经记过离开，还没记归来');
     return;
   }
   if (state.session.absentIds.includes(studentId)) {
-    showToast('他没到，记不了离开');
+    showToast('他是没来的，记不了离开');
     return;
   }
   if (state.pickingStudents.has(studentId)) {
@@ -642,7 +670,7 @@ export async function confirmLeave(templateId, remark) {
   state.pickingStudents = null;
   await commitSession(next, true);
   if (studentIds.length > 1) {
-    showToast(`已给 ${studentIds.length} 人记离开`);
+    showToast(`已记下 ${studentIds.length} 人离开`);
   }
 }
 
@@ -707,7 +735,12 @@ export function render() {
  * 蒙版盖住整屏，所以有蒙版时就不再画底下那一页 —— 反正看不见，白画一遍还慢。
  */
 function renderShell() {
-  const shell = h('div', { class: 'shell' });
+  // 「格子大小」挂在最外面这一层：看板与浮层共用一套字号 —— 挂在蒙版上的话，点名层
+  // （它是蒙版的兄弟节点）拿不到，同一个班里看板的字是 24px、点名层却是 20px
+  const shell = h('div', {
+    class: 'shell',
+    dataset: state.klass === null ? undefined : { density: state.klass.theme },
+  });
 
   if (state.mask === 'session') {
     shell.append(renderSessionMask());
@@ -724,10 +757,23 @@ function renderShell() {
   return shell;
 }
 
-/** 待机蒙版上点一张卡片：直接记归来。 */
+/**
+ * 待机屏上点一张卡片：记他回来。
+ *
+ * 同样先问一句（见 `tapStudent`）：待机屏离老师更远，点错的余地更大，而且那张卡片是
+ * 一整块色块，按下去就是「这一趟到此为止」。
+ */
 export async function markReturnedFromIdle(studentId) {
+  const session = state.session;
   const student = state.klass.students.find((item) => item.id === studentId);
-  await commitSession(markReturned(state.session, studentId, Date.now()), true);
+  const leave = activeLeave(session, studentId);
+  const remark = remarkTextOf(state.klass, leave);
+  const what = remark === '' ? '离开' : remark;
+  const away = formatDuration(awayMs(session, studentId, state.now));
+  if (!window.confirm(`${student?.name ?? ''} 回来了？\n记他归来后，这一趟${what}就停在 ${away}。`)) {
+    return;
+  }
+  await commitSession(markReturned(session, studentId, Date.now()), true);
   showToast(`${student?.name ?? ''} 已回来`);
 }
 
@@ -767,7 +813,7 @@ export function pickFile(accept, handler) {
     try {
       await handler(file);
     } catch (error) {
-      showToast('读不了这个文件。换一份再试');
+      showToast('读不了这个文件，换一份再试');
       console.error(error);
     }
   });

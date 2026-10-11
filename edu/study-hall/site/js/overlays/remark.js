@@ -54,14 +54,14 @@ export function renderRemark() {
     chips.append(chip);
   }
   if (klass.remarkTemplates.length === 0) {
-    chips.append(h('span', { class: 'modal__hint', text: '还没有常用备注。到「设置」里添加。' }));
+    chips.append(h('span', { class: 'modal__hint', text: '还没有常用备注，可在「设置」中添加。' }));
   }
   body.push(h('div', { class: 'field' }, [h('span', { class: 'field__label', text: '去哪儿' }), chips]));
 
   const textarea = h('textarea', {
     class: 'input input--area',
     rows: 2,
-    placeholder: '补充一句（可不填）',
+    placeholder: '补充说明（可不填）',
     // 键盘老师点开备注就是要打字，焦点别落在上面那排常用备注上
     'data-autofocus': '',
   });
@@ -71,7 +71,7 @@ export function renderRemark() {
     onClick: () => {
       const status = speech.availability();
       if (!status.ok) {
-        showToast('这台电脑不能用语音输入，直接打字就行');
+        showToast('本机不支持语音输入，请直接输入文字');
         return;
       }
       if (listening !== null) {
@@ -85,7 +85,7 @@ export function renderRemark() {
         onResult: (text, isFinal) => {
           textarea.value = text;
           if (isFinal) {
-            micNote.textContent = '已识别，可以改';
+            micNote.textContent = '已识别，可修改';
           }
         },
         onError: (code) => {
@@ -93,8 +93,8 @@ export function renderRemark() {
             code === 'not-allowed'
               ? '没给麦克风权限'
               : code === 'network'
-                ? '语音识别连不上，直接打字就行'
-                : '没听清，再说一遍或直接打字',
+                ? '语音识别连接失败，请直接输入文字'
+                : '未识别到内容，请重试或直接输入文字',
           );
           listening = null;
           setMicIdle();
@@ -114,7 +114,7 @@ export function renderRemark() {
 
   function setMicOn() {
     mic.classList.add('is-on');
-    mic.replaceChildren(icon('mic-off'), h('span', { text: '正在听…（再点停）' }));
+    mic.replaceChildren(icon('mic-off'), h('span', { text: '正在识别…（再点停止）' }));
   }
 
   body.push(h('div', { class: 'field' }, [

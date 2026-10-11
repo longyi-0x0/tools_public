@@ -12,13 +12,13 @@ export function renderConflict() {
   body.push(
     h('p', {
       class: 'modal__hint',
-      text: `已经有一个叫「${pending.parsed.klass.name}」的班。`,
+      text: `已有同名班级「${pending.parsed.klass.name}」。`,
     }),
   );
   body.push(
     h('ul', { class: 'diff' }, [
-      h('li', { text: `文件里 ${pending.parsed.klass.students.length} 人 · ${pending.parsed.sessions.length} 场记录` }),
-      h('li', { text: `现在这个班 ${pending.existing.students.length} 人` }),
+      h('li', { text: `文件：${pending.parsed.klass.students.length} 人 · ${pending.parsed.sessions.length} 场记录` }),
+      h('li', { text: `当前：${pending.existing.students.length} 人` }),
     ]),
   );
   const foot = [];

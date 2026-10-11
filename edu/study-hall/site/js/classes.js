@@ -6,6 +6,7 @@
  */
 
 import { h, icon, toggleFullscreen } from './dom.js';
+import { currentMode, toggleMode } from './mode.js';
 import * as store from './store.js';
 import { exportClassWorkbook } from './klassFile.js';
 import { buildZip } from './xlsx.js';
@@ -108,7 +109,7 @@ export async function removePicked() {
   const runningCount = picked.filter((klass) => state.running.has(klass.id)).length;
   const warning =
     runningCount > 0 ? `\n其中 ${runningCount} 个班正在上自习，那一场也会被删掉。` : '';
-  if (!window.confirm(`删除「${names}」${rest}？${warning}\n全部记录会一起删掉，不能撤回。`)) {
+  if (!window.confirm(`删除「${names}」${rest}？${warning}\n全部记录一并删除，无法撤回。`)) {
     return;
   }
   for (const klass of picked) {
@@ -127,7 +128,7 @@ export async function removePicked() {
 
 /** 删掉一个班（连同它的全部记录）。问一句，确认了才动手。 */
 export async function removeClass(klass) {
-  if (!window.confirm(`删除「${klass.name}」？全部记录会一起删掉，不能撤回。`)) {
+  if (!window.confirm(`删除「${klass.name}」？全部记录一并删除，无法撤回。`)) {
     return false;
   }
   await store.deleteClass(klass.id);
@@ -135,16 +136,22 @@ export async function removeClass(klass) {
   return true;
 }
 
-/** 顶栏：三处共用，只在左头与右钮上不同。 */
 /**
  * 顶栏。三处共用，只在左头与右钮上不同。
  *
- * `fullscreen` 默认开着：蒙版上需要它（投影开着时可以随手进出全屏）。班级列表页关掉 ——
- * 那一页不在教室前面用，多这一颗只是碍事；进自习时会自己向浏览器要一次全屏。
+ * - `back` 给了就摆在**最左边、班名之前**：它是一个「离开这一屏」的动作，不在右边那排
+ *   动作里。右边那排是「在这一屏里做什么」，左边是「不在这儿待了」。
+ * - `actions` 是这一屏自己的动作，摆在右边最前。
+ * - 接着是亮暗，最后是全屏。
+ * - `fullscreen` 默认开着：看板上需要它（进自习**不**自动要全屏，见 `enterSession`，
+ *   投影上要全屏就按这颗）。班级列表页关掉 —— 那一页不在教室前面用，多这一颗只是碍事。
  */
 export function tabBar(options) {
   const header = h('header', { class: 'tab' });
   const left = h('div', { class: 'tab__left' });
+  if (options.back !== undefined) {
+    left.append(options.back);
+  }
   left.append(h('span', { class: 'tab__mark', 'aria-hidden': 'true' }));
   left.append(h('h1', { class: 'tab__title', text: '自习点名' }));
   if (options.crumb !== undefined) {
@@ -160,6 +167,7 @@ export function tabBar(options) {
   for (const node of options.actions ?? []) {
     right.append(node);
   }
+  right.append(modeButton());
   if (options.fullscreen !== false) {
     right.append(
       h('button', {
@@ -171,6 +179,25 @@ export function tabBar(options) {
   }
   header.append(right);
   return header;
+}
+
+/**
+ * 亮暗那一颗。
+ *
+ * 图标与字说的都是**按下去会得到什么**（现在暗，就写「亮色」配一颗太阳）—— 一颗钮的
+ * 内容读作「按了会怎样」，比读作「现在是什么」少一层反推。
+ */
+function modeButton() {
+  const dark = currentMode() === 'dark';
+  return h('button', {
+    class: 'btn btn--small',
+    'aria-label': dark ? '切换到亮色' : '切换到暗色',
+    onClick: () => {
+      toggleMode();
+      // 整棵树重画：图标与这一颗的字都要跟着换
+      render();
+    },
+  }, [icon(dark ? 'sun' : 'moon'), h('span', { text: dark ? '亮色' : '暗色' })]);
 }
 
 /**
@@ -225,7 +252,7 @@ function renderHomeActions() {
 
 export function renderClassesPage() {
   const main = h('main', { class: 'page' });
-  // 这一页不在教室前面用，用不上全屏钮
+  // 这一页不在教室前面用，用不上全屏钮（全屏只从看板那一颗进）
   main.append(tabBar({ fullscreen: false }));
 
   const body = h('div', { class: 'home' });

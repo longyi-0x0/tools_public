@@ -18,10 +18,10 @@ function recognitionClass() {
 /** 这台浏览器能不能做语音识别。 */
 export function availability() {
   if (recognitionClass() === null) {
-    return { ok: false, reason: '这个浏览器没有语音识别接口' };
+    return { ok: false, reason: '本浏览器不支持语音识别' };
   }
   if (window.isSecureContext === false) {
-    return { ok: false, reason: '语音识别要求页面走 HTTPS' };
+    return { ok: false, reason: '语音识别需通过 HTTPS 打开页面' };
   }
   return { ok: true, reason: '' };
 }
@@ -47,15 +47,15 @@ export function canSpeak() {
 function explain(code) {
   switch (code) {
     case 'not-allowed':
-      return '这台机器不给念（语音被系统或权限挡住了）';
+      return '本机朗读被系统或权限阻止';
     case 'synthesis-failed':
-      return '这台机器合成不了这段声音';
+      return '本机无法合成这段语音';
     case 'voice-unavailable':
-      return '这台机器没有能念中文的嗓音';
+      return '本机没有可用的中文嗓音';
     case 'audio-busy':
-      return '声音设备正被别的程序占着';
+      return '声音设备被其他程序占用';
     default:
-      return `念不出来（${code}）`;
+      return `朗读失败（${code}）`;
   }
 }
 
@@ -77,7 +77,7 @@ let current = null;
  */
 export function speak(text, onError) {
   if (!canSpeak()) {
-    return { ok: false, reason: '这个浏览器念不出声' };
+    return { ok: false, reason: '本浏览器不支持朗读' };
   }
   const utterance = new window.SpeechSynthesisUtterance(text);
   utterance.lang = 'zh-CN';
@@ -102,7 +102,7 @@ export function speak(text, onError) {
     window.speechSynthesis.speak(utterance);
   } catch (error) {
     current = null;
-    return { ok: false, reason: error instanceof Error ? error.message : '念不出来' };
+    return { ok: false, reason: error instanceof Error ? error.message : '朗读失败' };
   }
   return { ok: true, reason: '' };
 }

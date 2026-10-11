@@ -1,51 +1,32 @@
 /**
  * 自习点名的样式。
  *
- * 两块面，两种距离：
+ * 两个轴，别混：
  *
- * - **板**（自习看板、待机屏）是教室前面那块屏，八米外看。深底、大字、默认态安静 ——
- *   全班在座时不该是一片高饱和的蓝，老师的眼睛要直接落在需要处理的那几个人身上。
- * - **纸**（班级列表、浮层）是老师坐下来备课、整理资料时看的，近距离、浅底、密一些。
+ * **一个是看的距离**，不随亮暗变：
  *
- * 两套面共用同一个墨色 `#1B2028`：它是板的底，也是纸上主行动钮的填充。这样按钮永远
- * 不会被误读成某个学生状态 —— 主行动不占用任何语义色。
+ * - **板**（`--board*`）是教室前面那块屏，八米外看。大字、默认态安静 —— 全班在座时是
+ *   一格格描边方块，只有没来 / 离开 / 超时才上色，老师的眼睛直接落在要处理的那几个人身上。
+ * - **纸**（`--paper` / `--surface` / `--ink` 这一组）是老师坐下来备课、整理资料时看的
+ *   那几层，近距离、密一些。
  *
- * 三套主题只改密度的那几档（圆角、字号、留白），四色的语义不动 —— 小学生与高中生看
- * 的是同一套颜色关系，只是格子大小的差别。
+ * **一个是亮暗**，写在 `<html>` 的 `data-mode` 上，顶栏那颗钮切换：投影用暗、白天在
+ * 笔记本上用亮。它给板与纸各自换一套值，两个模式里页面上所有面一起换。
+ *
+ * 主行动在两个模式里都不占用任何人物的颜色 —— 按钮永远不会被误读成某个学生状态。
+ *
+ * **三套「格子大小」**（童趣 / 标准 / 简洁，`data-density`）是第三个轴，只改密度那几档
+ * （圆角、字号、留白），与亮暗无关；挂在最外面那层壳上，看板与浮层共用一套字号。
  */
 
+/* ---------- 两个模式共用的：字体，与离开中的六色 ---------- */
+
 :root {
-  /* 纸：班级列表与浮层 */
-  --paper: #f5f6f8;
-  --surface: #ffffff;
-  --ink: #1b2028;
-  --ink-dim: #5d6673;
-  --rule: #dfe3e9;
-
-  /* 板：自习看板与待机屏 */
-  --board: #1b2028;
-  --board-2: #232a34;
-  --board-line: #333c49;
-  --chalk: #e8ecf2;
-  --chalk-dim: #9aa5b4;
-
-  /* 语义四色（纸上） */
-  --absent: #cdd3dc;
-  --absent-ink: #2b323c;
-  --present: #2f68d8;
-  --present-ink: #ffffff;
-  --overtime: #e0454b;
-  --overtime-ink: #ffffff;
-
-  /* 语义四色（板上）：在座是安静的描边块，只有例外才上色 */
-  --board-absent: #262c36;
-  --board-absent-ink: #6b7684;
-  --board-present-line: #3a4453;
-  --board-present-ink: #e8ecf2;
-  --board-overtime: #ff5a52;
-  --board-overtime-ink: #1b2028;
-
-  /* 离开中的六色：老师按每条备注挑一个，黄是默认。每色配一个压在上面的字色 */
+  /*
+   * 离开中的六色：老师按每条备注挑一个，黄是默认。每色配一个压在上面的字色。
+   *
+   * 两个模式共用 —— 这六色是自成一格的小色块（自带底色与字色），不参与面的深浅。
+   */
   --away-yellow: #f0a80b;
   --away-yellow-ink: #33260a;
   --away-orange: #e0792a;
@@ -59,31 +40,7 @@
   --away-teal: #1f9a9a;
   --away-teal-ink: #ffffff;
 
-  /* 板上的离开六色：提亮一档，压在深底上才跳得出来 */
-  --board-away-yellow: #f2b23e;
-  --board-away-orange: #e8823a;
-  --board-away-green: #3fae7e;
-  --board-away-violet: #8f6be8;
-  --board-away-pink: #de6ba0;
-  --board-away-teal: #2fafaf;
-
-  --accent: #2f68d8;
-  --danger: #c8362f;
-  --board-danger: #ff6b63;
-
-  /*
-   * 教室的响度：静 → 临界 → 吵。板上五档，越吵越暖。
-   *
-   * 这是一套**环境**的色，与人物的四色说的不是一件事 —— 待机屏上两者同时在场
-   * （底色偏暖，卡片上写着谁超时了），所以这套只染整屏的底，不去碰名字、卡片与字色。
-   */
-  --board-volume-calm: #1e2a24;
-  --board-volume-quiet: #1f2a26;
-  --board-volume-edge: #2a2a24;
-  --board-volume-warm: #2f2822;
-  --board-volume-over: #332622;
-  --board-volume-over-ink: #ff9a6b;
-
+  /* 格子的密度。三套「格子大小」各覆盖其中几档 */
   --radius: 10px;
   --tile-radius: 12px;
   --tile-pad: 12px;
@@ -95,12 +52,142 @@
   --font: "PingFang SC", "HarmonyOS Sans SC", "Source Han Sans SC", system-ui, -apple-system,
     "Segoe UI", "Microsoft YaHei UI", sans-serif;
   --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
-
-  color-scheme: light;
 }
 
+/* ---------- 暗（默认） ---------- */
+
+/*
+ * 没写 `data-mode` 时也落在这里：首屏那一段在 index.html 里先跑过，正常不会走到，
+ * 这里只是兜底。
+ */
+:root,
+[data-mode="dark"] {
+  /* 原生控件（下拉、勾选框、滚动条）跟着一起暗 —— 不然暗底上会弹出一张白列表 */
+  color-scheme: dark;
+
+  /* 纸：班级列表与浮层 */
+  --paper: #151a21;
+  --surface: #1b2028;
+  --ink: #e8ecf2;
+  --ink-dim: #9aa5b4;
+  --rule: #2c333e;
+
+  /* 板：自习看板与待机屏 */
+  --board: #1b2028;
+  --board-2: #212832;
+  --board-line: #333c49;
+  --chalk: #e8ecf2;
+  --chalk-dim: #9aa5b4;
+
+  /* 四个人物的颜色，在纸上（近距离、小面积） */
+  --absent: #cdd3dc;
+  --absent-ink: #2b323c;
+  --present: #4a7ee0;
+  --present-ink: #ffffff;
+  --overtime: #d9444a;
+  --overtime-ink: #ffffff;
+
+  /* 同样这四个，在板上：在座是安静的描边块，只有例外才上色 */
+  --board-absent: #2b323c;
+  --board-absent-ink: #8b95a5;
+  --board-present-line: #3a4453;
+  --board-present-ink: #e8ecf2;
+  --board-overtime: #ff5a52;
+  --board-overtime-ink: #1b2028;
+
+  /* 板上那六色：提亮一档，压在深底上才跳得出来 */
+  --board-away-yellow: #f2b23e;
+  --board-away-orange: #e8823a;
+  --board-away-green: #3fae7e;
+  --board-away-violet: #8f6be8;
+  --board-away-pink: #de6ba0;
+  --board-away-teal: #2fafaf;
+
+  --accent: #5b8ae8;
+  --accent-ink: #10151c;
+  --danger: #ff6b63;
+  --board-danger: #ff6b63;
+
+  /*
+   * 教室的响度：静 → 临界 → 吵，板上五档，越吵越暖。
+   *
+   * 这是一套**环境**的色，与人物的四色说的不是一件事 —— 待机屏上两者同时在场（底色
+   * 偏暖，卡片上写着谁超时了），所以这套只染整屏的底，不去碰名字、卡片与字色。
+   */
+  --board-volume-calm: #1e2a24;
+  --board-volume-quiet: #1f2a26;
+  --board-volume-edge: #2a2a24;
+  --board-volume-warm: #2f2822;
+  --board-volume-over: #332622;
+  --board-volume-over-ink: #ff9a6b;
+}
+
+/* ---------- 亮 ---------- */
+
+[data-mode="light"] {
+  color-scheme: light;
+
+  /* 纸：班级列表与浮层 */
+  --paper: #f5f6f8;
+  --surface: #ffffff;
+  --ink: #1b2028;
+  --ink-dim: #5d6673;
+  --rule: #dfe3e9;
+
+  /* 板：自习看板与待机屏 */
+  --board: #f5f6f8;
+  --board-2: #eceef2;
+  --board-line: #d9dee5;
+  --chalk: #1b2028;
+  --chalk-dim: #5d6673;
+
+  /* 四个人物的颜色，在纸上 */
+  --absent: #cdd3dc;
+  --absent-ink: #2b323c;
+  --present: #2f68d8;
+  --present-ink: #ffffff;
+  --overtime: #d63a41;
+  --overtime-ink: #ffffff;
+
+  /* 同样这四个，在板上 */
+  --board-absent: #d3d9e1;
+  --board-absent-ink: #39414e;
+  --board-present-line: #c9d1db;
+  --board-present-ink: #1b2028;
+  --board-overtime: #d63a41;
+  --board-overtime-ink: #ffffff;
+
+  /* 板上那六色：浅底上不必提亮，用回原色 */
+  --board-away-yellow: #eda108;
+  --board-away-orange: #dd731f;
+  --board-away-green: #2c9463;
+  --board-away-violet: #7452d6;
+  --board-away-pink: #c94d86;
+  --board-away-teal: #1b9494;
+
+  --accent: #2f68d8;
+  --accent-ink: #ffffff;
+  --danger: #c8362f;
+  --board-danger: #c8362f;
+
+  /* 响度五档：浅底上是那套淡淡的绿与暖 */
+  --board-volume-calm: #dcebe0;
+  --board-volume-quiet: #e8f0e6;
+  --board-volume-edge: #f6ecd6;
+  --board-volume-warm: #f8e3cc;
+  --board-volume-over: #f7d9c8;
+  --board-volume-over-ink: #c2410c;
+}
+
+/* ---------- 三套「格子大小」 ---------- */
+
+/*
+ * 只改密度那几档（圆角、字号、留白）与纸面上的那个人物色，亮暗两个模式里都生效 ——
+ * 小学生与高中生看的是同一套颜色关系，只是格子大小的差别。
+ */
+
 /* 童趣：小学。格子更圆更大，字更粗，颜色更饱和。 */
-[data-theme="junior"] {
+[data-density="junior"] {
   --radius: 14px;
   --tile-radius: 18px;
   --tile-pad: 14px;
@@ -120,7 +207,7 @@
 }
 
 /* 简洁：高中。格子更紧凑、饱和度更低，一屏能多放几个人。 */
-[data-theme="senior"] {
+[data-density="senior"] {
   --radius: 8px;
   --tile-radius: 8px;
   --tile-pad: 9px;
@@ -336,7 +423,7 @@ body {
 .btn--primary {
   background: var(--ink);
   border-color: var(--ink);
-  color: #fff;
+  color: var(--paper);
 }
 
 .btn--primary:hover {
@@ -428,8 +515,8 @@ body {
 }
 
 .mask .btn--primary:hover {
-  background: #fff;
-  border-color: #fff;
+  background: color-mix(in srgb, var(--chalk) 85%, var(--board));
+  border-color: color-mix(in srgb, var(--chalk) 85%, var(--board));
 }
 
 .mask .btn--danger {
@@ -462,10 +549,18 @@ body {
   border-color: var(--board-line);
 }
 
-/* 板上的小钮（顶栏那一排）：压一档，不与底栏的主行动抢 */
-.mask .btn--small {
+/*
+ * 小钮：顶栏那一排（返回 / 记录 / 亮暗 / 全屏）压一档，不与看板底栏的主行动抢。
+ *
+ * 尺寸不只在板上用 —— 班级列表页那一排也是这个大小，所以 padding 与字号写在基础类里，
+ * 板上只额外把字色压暗一点。
+ */
+.btn--small {
   padding: 6px 11px;
   font-size: 13.5px;
+}
+
+.mask .btn--small {
   color: var(--chalk-dim);
 }
 
@@ -490,6 +585,7 @@ body {
 .mask--idle {
   cursor: pointer;
   padding: 0 4vw;
+  /* 抬头贴顶、钟居中、未完的卡片贴底 */
   /* 底色换档时不「啪」一下 —— 从后排看，五档加上这一段过渡就像慢慢变暖的 */
   transition: background-color 600ms ease;
 }
@@ -544,10 +640,31 @@ body {
   min-height: 0;
 }
 
+/*
+ * 左上角那一行抬头：班名 + 日期。
+ *
+ * 摆开成一条而不是竖着叠在中间 —— 它只是「这是哪个班、今天几号」的抬头，读一眼就过，
+ * 不该占中间那块地方（中间留给钟）。两个都跟着屏宽走，教室里远看的屏也跟着放大。
+ */
+.idle__head {
+  flex: none;
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 4vh 0 0;
+}
+
 .idle__class {
+  color: var(--chalk);
+  font-size: clamp(17px, 1.9vw, 27px);
+  font-weight: 650;
+}
+
+.idle__date {
   color: var(--chalk-dim);
-  font-size: clamp(15px, 1.6vw, 22px);
-  font-weight: 600;
+  font-size: clamp(14px, 1.5vw, 21px);
+  letter-spacing: 0.02em;
 }
 
 .idle__wall {
@@ -848,7 +965,7 @@ body {
   height: 18px;
   border: 1.5px solid var(--rule);
   border-radius: 5px;
-  color: #fff;
+  color: var(--accent-ink);
   font-size: 12px;
   line-height: 1;
 }
@@ -910,21 +1027,9 @@ body {
   color: color-mix(in srgb, var(--chalk-dim) 55%, var(--board));
 }
 
-/* 暂停中：数字压暗一点，后面跟一颗「已暂停」 */
+/* 暂停中：数字压暗一点（不再另挂一颗「已暂停」的牌子，见 `renderClock`） */
 .clock__value.is-paused {
   color: color-mix(in srgb, var(--chalk) 45%, var(--board));
-}
-
-.clock__paused {
-  color: var(--chalk-dim);
-  font-size: 13px;
-}
-
-.clock__paused:not(:empty) {
-  padding: 2px 8px;
-  border: 1px solid var(--board-line);
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--chalk) 8%, transparent);
 }
 
 @media (max-width: 720px) {
@@ -1259,15 +1364,23 @@ body {
   font-size: 14px;
 }
 
+/*
+ * 提示条。挂在**顶上**，因为底下是看板的动作条 —— 收上来会盖住「暂停自习 / 结束自习」
+ * 那一排，而提示常常正是按了那一排里某一颗之后出来的（按完就看不见刚才按的是什么）。
+ *
+ * 宽度卡死一点（`48vw`），好让它永远待在顶栏中间那段空处：顶栏左头是班名、右边是
+ * 返回与那几颗动作，提示条一长就会压上去。最长的那几条（「…这一场已结束，共 1 小时
+ * 12 分 30 秒」）都在这个宽度里排得下，不会折行。
+ */
 .toast {
   position: fixed;
   left: 50%;
-  bottom: 26px;
+  top: 14px;
   transform: translateX(-50%);
-  max-width: min(560px, 88vw);
+  max-width: min(520px, 48vw);
   padding: 10px 16px;
   background: var(--ink);
-  color: #fff;
+  color: var(--paper);
   border-radius: 999px;
   font-size: 13.5px;
   z-index: 60;

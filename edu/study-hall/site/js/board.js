@@ -10,7 +10,7 @@
  */
 
 import { h, icon, root } from './dom.js';
-import { formatDuration, formatStudyTime } from './format.js';
+import { formatDuration, formatIdleDate, formatStudyTime } from './format.js';
 import {
   PHASE,
   STATUS,
@@ -30,6 +30,7 @@ import {
   doPause,
   doResume,
   doRestart,
+  dropListening,
   endPickingStudents,
   markReturnedFromIdle,
   noteActivity,
@@ -58,7 +59,7 @@ let pickedCountNode = null;
 
 let leaveButtonNode = null;
 
-/** 待机蒙版那一块与它里面写响度的那一行，由 [`paintIdleVolume`] 定点改。 */
+/** 待机屏那一块与它里面写响度的那一行，由 [`paintIdleVolume`] 定点改。 */
 let idleMaskNode = null;
 
 let idleVolumeNode = null;
@@ -70,7 +71,7 @@ let idleVolumeNode = null;
  */
 export function renderSessionMask() {
   const klass = state.klass;
-  const section = h('section', { class: 'mask mask--session', 'data-theme': klass.theme });
+  const section = h('section', { class: 'mask mask--session' });
 
   const running = state.session !== null && state.session.phase !== PHASE.ENDED;
   // 点名层开着时顶栏也说得清：那时点格子是「他没来」，不是「他离开」
@@ -80,21 +81,26 @@ export function renderSessionMask() {
     tabBar({
       crumb: klass.name,
       chip: state.session === null ? undefined : h('span', { class: `chip ${chipClass}`, text: chipText }),
+      // 「返回」摆在班名前面：它是不在这一屏待了，与右边那排「在这一屏里做什么」不是
+      // 一回事。右边依次是记录、亮暗、全屏
+      back: h('button', {
+        class: 'btn btn--small',
+        onClick: () => {
+          state.mask = null;
+          // 多选态跟着看板一起收：回来时那几颗勾还在，反而像没退出去
+          state.pickingStudents = null;
+          // 麦克风也一起放开：离开这一屏了，浏览器上那个「正在录音」的记号不该还亮着。
+          // 再按「继续自习」回来时会自动重新戴上（见 `enterSession`）
+          dropListening();
+          render();
+        },
+      }, [icon('back'), h('span', { text: '返回' })]),
       actions: [
-        h('button', {
-          class: 'btn btn--small',
-          onClick: () => {
-            state.mask = null;
-            // 多选态跟着看板一起收：回来时那几颗勾还在，反而像没退出去
-            state.pickingStudents = null;
-            render();
-          },
-        }, [icon('back'), h('span', { text: '返回' })]),
         h('button', {
           class: 'btn btn--small',
           onClick: () => openOverlay('history'),
         }, [icon('history'), h('span', { text: '记录' })]),
-      ].filter((node) => node !== undefined),
+      ],
     }),
   );
 
@@ -106,7 +112,7 @@ export function renderSessionMask() {
   const grid = h('div', { class: 'grid' });
   grid.style.setProperty('--cols', String(themeColumns(klass.theme)));
   if (klass.students.length === 0) {
-    grid.append(h('p', { class: 'empty__hint', text: '这个班还没有学生。到「设置」里导入名册。' }));
+    grid.append(h('p', { class: 'empty__hint', text: '这个班还没有学生，请在「设置」中导入名册。' }));
   }
   // 点到「没来」的人沉到后面，中间画一条线说清那是另一拨人。
   // 正在点名时不画：那时格子按名册冻着，这条线指的「后面那一拨」并不成立，
@@ -135,18 +141,20 @@ export function renderSessionMask() {
 }
 
 /**
- * 待机蒙版：自习中一段时间没人碰屏幕，就换成这一块。
+ * 待机屏：自习中一段时间没人碰屏幕，就换成这一块。
  *
  * 教室前面那块屏，老师不操作时不该一直亮着几十个名字。中间一个大钟，底下「谁还在
  * 外面」—— 从最后一排也看得见。碰哪儿都回到自习看板；点某一张离开的卡片，直接把
  * 那个人记成归来（那是最常用的一手，不必再进一层）。
+ *
+ * 班名与日期摆在**左上角一条**，不跟大钟竖着叠在中间：那一行是「这是哪个班、今天几号」
+ * 的抬头，站远了看它一眼就够，不该把中间那块留给它 —— 中间是给钟的。
  */
 export function renderIdleMask() {
   const klass = state.klass;
   const session = state.session;
   const section = h('section', {
     class: 'mask mask--idle',
-    'data-theme': klass.theme,
     onClick: () => {
       state.mask = 'session';
       noteActivity();
@@ -155,8 +163,12 @@ export function renderIdleMask() {
   });
   idleMaskNode = section;
 
+  const head = h('header', { class: 'idle__head' });
+  head.append(h('span', { class: 'idle__class', text: klass.name }));
+  head.append(h('span', { class: 'idle__date', dataset: { date: 'wall' }, text: '' }));
+  section.append(head);
+
   const center = h('div', { class: 'idle__center' });
-  center.append(h('span', { class: 'idle__class', text: klass.name }));
   center.append(h('span', { class: 'idle__wall', dataset: { clock: 'wall' }, text: '--:--' }));
   center.append(
     h('span', { class: 'idle__elapsed' }, [
@@ -171,15 +183,14 @@ export function renderIdleMask() {
   center.append(idleVolumeNode);
   section.append(center);
 
+  // 「谁还在外面」那一块只在真的有人在外面时才画 —— 一个空标题加一条横贯整屏的
+  // 分割线，只是把这一屏切成两半，什么也没说
   const away = session === null ? [] : awayStudents(klass, session);
-  const foot = h('div', { class: 'idle__away' });
-  foot.append(
-    h('span', {
-      class: 'idle__away-title',
-      text: away.length === 0 ? '现在没有人在外面' : `离开中 ${away.length} 人，点一下名字就记他回来`,
-    }),
-  );
   if (away.length > 0) {
+    const foot = h('div', { class: 'idle__away' });
+    foot.append(
+      h('span', { class: 'idle__away-title', text: `离开中 ${away.length} 人，点击名字记他归来` }),
+    );
     const cards = h('div', { class: 'idle__cards' });
     for (const item of away) {
       const card = h('button', {
@@ -204,15 +215,15 @@ export function renderIdleMask() {
       cards.append(card);
     }
     foot.append(cards);
+    section.append(foot);
   }
-  section.append(foot);
-  section.append(h('p', { class: 'idle__hint', text: '点屏幕回到看板' }));
+  section.append(h('p', { class: 'idle__hint', text: '点击屏幕返回看板' }));
   paintIdleVolume();
   return section;
 }
 
 /**
- * 待机页按教室的响度染色。
+ * 待机屏按教室的响度染色。
  *
  * 只染**底**那一层：大钟的字、统计、还有那几张「离开中」的卡片都不动 —— 卡片刷的是那条
  * 备注的颜色，压在淡底上本来就得看得清；字色再跟着底色走，从后排反而更难读。
@@ -300,7 +311,7 @@ function renderControls() {
     }, [icon('users'), h('span', { text: '多人离开' })]),
   );
 
-  // 本场的开关（听教室 / 自动待机 / 看大时钟 / 静音）与收尾那一组一起靠右：
+  // 本场的开关（听教室 / 自动待机 / 待机屏 / 静音）与收尾那一组一起靠右：
   // 左边是「接着上课」，右边是「这一场怎么过、什么时候完」
   const end = h('div', { class: 'board__foot-group board__foot-group--end' });
   end.append(restartButton());
@@ -373,12 +384,12 @@ function restartButton() {
 }
 
 /**
- * 本场不切待机蒙版。
+ * 本场不自动切到待机屏。
  *
  * 教室里老师正讲着一道题、或者那会儿就是要一直盯着花名册，屏幕上忽然换成一个大钟
  * 很碍事 —— 与「本场静音」同理，这一颗当场就能按住，而不是去设置里翻。
  *
- * 班级设置里那个「多久不动就换成大时钟」管的是**多快切**，这一颗管的是**这一场切不切**：
+ * 班级设置里那个「多久不动换成待机屏」管的是**多快切**，这一颗管的是**这一场切不切**：
  * 设成「不切」的班这一颗压暗按不动（本来就永不切），说清原因而不是让它按下去没反应。
  */
 function idleButton() {
@@ -393,7 +404,7 @@ function idleButton() {
         return;
       }
       state.idleOff = !state.idleOff;
-      showToast(state.idleOff ? '这一场不再自动换成大时钟' : '这一场恢复自动待在待机屏');
+      showToast(state.idleOff ? '已关闭自动待机' : '已开启自动待机');
       render();
     },
   }, [icon(on ? 'moon' : 'sun'), h('span', { text: '自动待机' })]);
@@ -430,7 +441,7 @@ function idleJumpButton() {
       state.mask = 'idle';
       render();
     },
-  }, [icon('clock'), h('span', { text: '大时钟' })]);
+  }, [icon('clock'), h('span', { text: '待机屏' })]);
 }
 
 /**
@@ -446,7 +457,7 @@ function muteButton() {
     'aria-pressed': muted ? 'true' : 'false',
     onClick: () => {
       state.muted = !state.muted;
-      showToast(state.muted ? '这一场不再出声' : '这一场恢复出声');
+      showToast(state.muted ? '已静音' : '已取消静音');
       render();
     },
   }, [icon(muted ? 'volume-off' : 'volume'), h('span', { text: muted ? '已静音' : '静音' })]);
@@ -486,6 +497,9 @@ function renderStatusBar() {
  *
  * 教室前面的屏，老师抬头第一眼要能读到「这一节自习走了多久」。所以它比统计那几个
  * 数都大，值单独挂 `data-clock` 给走秒那条路定点改，不整块重画。
+ *
+ * 暂停时不另挂一颗「已暂停」的牌子：数字压暗（`.is-paused`）加上底栏那颗变成「继续自习」，
+ * 已经说清了这一相。再挂一颗牌子是在最大的那个数旁边又塞一句话，反把时间挤小。
  */
 function renderClock() {
   const clock = h('div', { class: 'clock' });
@@ -493,8 +507,6 @@ function renderClock() {
   const value = h('span', { class: 'clock__value', text: '00:00:00' });
   value.dataset.clock = 'study';
   clock.append(value);
-  // 「已暂停」跟在数字后面，由走秒那条路定点改（不重画整块）
-  clock.append(h('span', { class: 'clock__paused', dataset: { pause: 'tag' }, text: '' }));
   return clock;
 }
 
@@ -672,16 +684,12 @@ export function updateDynamic() {
     ? { total: state.klass.students.length, present: 0, absent: state.klass.students.length, left: 0, overtime: 0, leaveCount: 0 }
     : summarize(state.klass, session, now);
 
-  // 自习时间：开始自习就在走；暂停时停住并标注；结束后定住
+  // 自习时间：开始自习就在走；暂停时压暗；结束后定住
   const clock = root.querySelector('[data-clock="study"]');
   if (clock !== null) {
     clock.textContent = formatStudyTime(session === null ? 0 : studyMs(session, now));
     clock.classList.toggle('is-idle', session === null);
     clock.classList.toggle('is-paused', session !== null && isPaused(session));
-  }
-  const pauseTag = root.querySelector('[data-pause="tag"]');
-  if (pauseTag !== null) {
-    pauseTag.textContent = session !== null && isPaused(session) ? '已暂停' : '';
   }
   const values = {
     total: String(summary.total),
@@ -708,14 +716,21 @@ function updateCardClocks(now) {
   }
 }
 
-/** 待机蒙版：墙钟、自习已进行、统计一行、每张卡片上的时长。 */
+/** 待机屏：日期、墙钟、自习已进行、统计一行、每张卡片上的时长。 */
+/** 两位补零。墙钟只用这一处，不必从 format.js 再引一个。 */
+const pad2 = (value) => String(value).padStart(2, '0');
+
 function updateIdle() {
   const now = state.now;
   const session = state.session;
+  const date = new Date(now);
+  const dateLine = root.querySelector('[data-date="wall"]');
+  if (dateLine !== null) {
+    dateLine.textContent = formatIdleDate(now);
+  }
   const wall = root.querySelector('[data-clock="wall"]');
   if (wall !== null) {
-    const date = new Date(now);
-    wall.textContent = `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+    wall.textContent = `${pad2(date.getHours())}:${pad2(date.getMinutes())}`;
   }
   const elapsed = root.querySelector('[data-clock="elapsed"]');
   if (elapsed !== null) {

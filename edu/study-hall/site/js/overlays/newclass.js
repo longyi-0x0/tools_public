@@ -15,12 +15,12 @@ export function renderNewClass() {
   body.push(
     h('p', {
       class: 'modal__hint',
-      text: '选一份花名册，表里有一列写着「姓名」就行。',
+      text: '选择一份花名册，表中有一列「姓名」即可。',
     }),
   );
   const nameInput = h('input', {
     class: 'input',
-    placeholder: '比如「高二（3）班」',
+    placeholder: '例如「高二（3）班」',
     value: state.newClassName ?? state.pendingNewClass?.defaultName ?? '',
   });
   // 选表会重画这一块，名字要留在状态里，不然刚打的字就没了
@@ -35,7 +35,7 @@ export function renderNewClass() {
     try {
       const students = rosterFromSheets(await readSheetFile(file));
       if (students.length === 0) {
-        showToast('表里没找到「姓名」列');
+        showToast('表中没有「姓名」列');
         return;
       }
       state.pendingNewClass = {
@@ -44,14 +44,14 @@ export function renderNewClass() {
       };
       render();
     } catch (error) {
-      showToast('读不了这个文件。换一份 .xlsx 或 .xls 试试');
+      showToast('无法读取该文件，请换一份 .xlsx 或 .xls');
     }
   });
 
   if (state.pendingNewClass === null) {
     body.push(
       h('div', { class: 'pick' }, [
-        h('p', { class: 'pick__title', text: '还没选文件' }),
+        h('p', { class: 'pick__title', text: '尚未选择文件' }),
         h('button', { class: 'btn btn--primary', text: '选文件', onClick: () => fileInput.click() }),
       ]),
     );
@@ -59,9 +59,9 @@ export function renderNewClass() {
     const students = state.pendingNewClass.students;
     body.push(
       h('div', { class: 'pick' }, [
-        h('p', { class: 'pick__title', text: `读到 ${students.length} 位同学` }),
+        h('p', { class: 'pick__title', text: `已读取 ${students.length} 人` }),
         h('p', { class: 'pick__list', text: students.slice(0, 12).map((item) => item.name).join('、') + (students.length > 12 ? ' …' : '') }),
-        h('button', { class: 'btn', text: '换一个文件', onClick: () => fileInput.click() }),
+        h('button', { class: 'btn', text: '更换文件', onClick: () => fileInput.click() }),
       ]),
     );
   }
@@ -75,7 +75,7 @@ export function renderNewClass() {
       text: '创建班级',
       onClick: async () => {
         if (state.pendingNewClass === null) {
-          showToast('先选一份花名册文件');
+          showToast('请先选择花名册文件');
           return;
         }
         const name = nameInput.value.trim() !== '' ? nameInput.value.trim() : state.pendingNewClass.defaultName;

@@ -40,8 +40,8 @@ export function renderListen() {
     h('p', {
       class: 'modal__hint',
       text: available.ok
-        ? '只读教室有多响，不录音、不保存。'
-        : `这台电脑听不了：${available.reason}`,
+        ? '仅读取教室响度，不录音、不保存。'
+        : `无法听教室：${available.reason}`,
     }),
   );
 
@@ -55,7 +55,7 @@ export function renderListen() {
   statusNode = h('span', { class: 'listen__status' });
   body.push(
     h('div', { class: 'field' }, [
-      h('span', { class: 'field__label', text: '现在多响' }),
+      h('span', { class: 'field__label', text: '当前响度' }),
       bar,
       h('div', { class: 'listen__readout' }, [levelNode, thresholdNode, statusNode]),
     ]),
@@ -79,7 +79,7 @@ export function renderListen() {
   });
   body.push(
     h('div', { class: 'field' }, [
-      h('span', { class: 'field__label', text: '超过多少算吵' }),
+      h('span', { class: 'field__label', text: '判定为吵的阈值' }),
       rangeNode,
       h('div', { class: 'field__row' }, [noteNode, resetNode]),
     ]),
@@ -88,16 +88,17 @@ export function renderListen() {
   body.push(
     h('p', {
       class: 'modal__hint',
-      text: '安静时读数落在线下、正常说话时贴着线，就差不多。',
+      text: '安静时读数略低于阈值、正常说话时接近阈值，即可。',
     }),
   );
 
   const foot = [];
-  foot.push(h('button', { class: 'btn', text: '关闭', onClick: closeOverlay }));
+  // 这一层没有「关闭」那一颗：它只是一扇窗，看一眼、拧一下就完事 —— 收窗由右上角那个 ✕
+  // 与 Esc、点窗外管。脚上只留这一层唯一的那一手：开听 / 停听
   foot.push(
     h('button', {
-      // 听着的时候永远能按（哪怕是这台机器后来不让听了），不然老师就关不掉了
-      class: on ? 'btn' : 'btn btn--primary',
+      // 停听永远能按（哪怕是这台机器后来不让听了，或者权限被撤了），不然老师就关不掉了
+      class: on ? 'btn btn--danger' : 'btn btn--primary',
       text: on ? '停止听' : '开始听',
       disabled: on || available.ok ? undefined : '',
       onClick: () => void toggleListening(),
@@ -148,9 +149,9 @@ export function paintListenPanel() {
 
   const fromClass = state.klass?.volumeThreshold ?? threshold;
   if (state.volumeThreshold === null) {
-    noteNode.textContent = `班级默认 ${fromClass}`;
+    noteNode.textContent = `班级默认值：${fromClass}`;
   } else {
-    noteNode.textContent = `这一场用 ${threshold}（班级默认 ${fromClass}）`;
+    noteNode.textContent = `本场使用 ${threshold}（班级默认值 ${fromClass}）`;
   }
   resetNode.disabled = state.volumeThreshold === null;
 

@@ -24,7 +24,7 @@ function templateRow(template) {
   row.append(
     h('input', {
       class: 'input tpl__text',
-      placeholder: '比如「上厕所」',
+      placeholder: '例如「上厕所」',
       value: template.text,
       dataset: { tplText: '1' },
     }),
@@ -49,7 +49,7 @@ function templateRow(template) {
   row.append(
     h('button', {
       class: 'btn btn--icon tpl__remove',
-      'aria-label': '删掉这条',
+      'aria-label': '删除这一条',
       onClick: () => row.remove(),
     }, [icon('trash')]),
   );
@@ -154,7 +154,7 @@ export function renderSettings() {
   }
   alerts.append(
     h('label', { class: 'field' }, [
-      h('span', { class: 'field__label', text: '多久不动换成大时钟' }),
+      h('span', { class: 'field__label', text: '多久不动换成待机屏' }),
       idleSelect,
     ]),
   );
@@ -171,9 +171,9 @@ export function renderSettings() {
   });
   alerts.append(
     h('label', { class: 'field' }, [
-      h('span', { class: 'field__label', text: '教室多响算吵' }),
+      h('span', { class: 'field__label', text: '判定为吵的响度' }),
       thresholdInput,
-      h('span', { class: 'field__note', text: `开「听教室」当场调最准。默认 ${THRESHOLD_DEFAULT}。` }),
+      h('span', { class: 'field__note', text: `开着「听教室」当场调整最准。默认 ${THRESHOLD_DEFAULT}。` }),
     ]),
   );
   body.push(alerts);
@@ -214,13 +214,13 @@ export function renderSettings() {
     try {
       const students = rosterFromSheets(await readSheetFile(file));
       if (students.length === 0) {
-        showToast('表里没找到「姓名」列');
+        showToast('表中没有「姓名」列');
         return;
       }
       await commitClass({ ...state.klass, students });
-      showToast(`名册已换成 ${students.length} 人`);
+      showToast(`名册已更新为 ${students.length} 人`);
     } catch {
-      showToast('读不了这个文件。换一份 .xlsx 或 .xls 试试');
+      showToast('无法读取该文件，请换一份 .xlsx 或 .xls');
     }
   });
   roster.append(
@@ -255,7 +255,7 @@ export function renderSettings() {
   });
   body.push(
     h('div', { class: 'field field--danger' }, [
-      h('span', { class: 'field__note', text: '连同全部记录一起删，不能撤回。' }),
+      h('span', { class: 'field__note', text: '连同全部记录一并删除，无法撤回。' }),
       danger,
     ]),
   );

@@ -100,7 +100,7 @@ function scheduleAuto() {
   auto.timer = window.setTimeout(() => {
     if (!announce(auto.index + 1)) {
       stopAuto();
-      showToast('名册念完了');
+      showToast('名册已念完');
       return;
     }
     scheduleAuto();
@@ -114,13 +114,13 @@ function toggleAuto() {
     return;
   }
   if (!(state.klass?.students ?? []).length || !speech.canSpeak()) {
-    showToast('这台电脑不能朗读名字');
+    showToast('本机无法朗读名字');
     return;
   }
   // 接着上一次停下的地方往下走；已经念到最后一位了就从头再来
   if (!announce(auto.index + 1)) {
     announce(0);
-    showToast('名册念完了，从头开始念');
+    showToast('名册已念完，从头开始');
   }
   auto.running = true;
   scheduleAuto();
@@ -143,7 +143,7 @@ function restartAuto() {
     auto.running = true;
     scheduleAuto();
   } else {
-    showToast('回到名册开头了');
+    showToast('已回到名册开头');
   }
   paintAuto();
 }
@@ -287,8 +287,8 @@ export function renderRollCall() {
     h('p', {
       class: 'modal__hint',
       text: state.session?.rollCallAt === null
-        ? '点到谁，谁算到。这个班还没点过名，所以打开时全班都是灰的。'
-        : '点到谁，谁算到。点错了再点一下退回灰色。',
+        ? '点一下名字即记为他已到。本场还没点过名，所以打开时全班都记为没来。'
+        : '点一下名字即记为他已到，再点一次退回没来。',
     }),
   );
 
@@ -336,7 +336,7 @@ export function renderRollCall() {
     rollCells.set(student.id, cell);
   }
   if (klass.students.length === 0) {
-    list.append(h('p', { class: 'empty__hint', text: '这个班还没有学生。到「设置」里导入名册。' }));
+    list.append(h('p', { class: 'empty__hint', text: '这个班还没有学生，请在「设置」中导入名册。' }));
   }
   body.push(list);
 
@@ -373,7 +373,7 @@ export function renderRollCall() {
   paintAuto();
   return modalFrame('点名', body, foot, {
     class: 'modal--rollcall',
-    closeLabel: '收窗，这一趟不算数',
+    closeLabel: '关闭，本次点名不保存',
     onClose: closeOverlay,
   });
 }
@@ -390,9 +390,9 @@ function rollDoneText(absentCount) {
  * 听见）。念不出来（这台机器没有中文嗓音之类）就顶一句提示，不默不作声。
  */
 function sayName(name) {
-  const status = speech.speak(name, () => showToast('这台电脑念不出中文名字'));
+  const status = speech.speak(name, () => showToast('本机无法朗读中文名字'));
   if (!status.ok) {
-    showToast('这台电脑念不出中文名字');
+    showToast('本机无法朗读中文名字');
   }
 }
 
@@ -430,7 +430,7 @@ function doInvert(allPresent) {
   const students = state.klass.students;
   draft.absentIds = allPresent ? [] : students.map((student) => student.id);
   updateRollCall();
-  showToast(allPresent ? '全班都算在座了' : '全班都算没来了；点一下谁到了，他变回蓝色');
+  showToast(allPresent ? '已全部记为在座' : '已全部记为没来，点名字可记为他已到');
 }
 
 /**

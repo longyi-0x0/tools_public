@@ -4,6 +4,21 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>自习点名</title>
+    <script>
+      // 亮暗要在第一帧之前定下来，否则会先闪一下浅底再翻成暗的。这里的判法与 js/mode.js
+      // 一致（那一份管切换，这一份只管首屏 —— 模块是延迟执行的，等不到它）。
+      try {
+        var saved = localStorage.getItem('study-hall:mode');
+        document.documentElement.dataset.mode =
+          saved === 'light' || saved === 'dark'
+            ? saved
+            : window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches
+              ? 'light'
+              : 'dark';
+      } catch (error) {
+        document.documentElement.dataset.mode = 'dark';
+      }
+    </script>
     <!-- 工具页是静态页，不经过打包器，也不依赖工具箱外壳的样式。 -->
     <link rel="stylesheet" href="styles.css" />
   </head>

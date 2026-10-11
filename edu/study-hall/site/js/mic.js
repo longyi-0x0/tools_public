@@ -54,7 +54,7 @@ export function availability() {
     return { ok: false, reason: '这个浏览器不支持麦克风' };
   }
   if (window.isSecureContext === false) {
-    return { ok: false, reason: '要用 https 打开（本机 localhost 也行）' };
+    return { ok: false, reason: '需通过 https 打开（本机 localhost 亦可）' };
   }
   return { ok: true, reason: '' };
 }
@@ -82,11 +82,11 @@ function troubleOf(error) {
 export function explainTrouble(trouble) {
   switch (trouble) {
     case MIC_TROUBLE.NO_DEVICE:
-      return '没找到麦克风，插一个就能听';
+      return '未检测到麦克风，接入后即可使用';
     case MIC_TROUBLE.DENIED:
-      return '没给麦克风权限。去地址栏左边的锁里放行';
+      return '未获得麦克风权限，请在地址栏左侧的锁形图标中允许';
     default:
-      return '麦克风打不开，可能被别的程序占着';
+      return '麦克风无法打开，可能被其他程序占用';
   }
 }
 

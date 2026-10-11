@@ -189,12 +189,3 @@ export function toggleFullscreen() {
     void document.exitFullscreen?.();
   }
 }
-
-/** 进自习那一下顺手要一次浏览器全屏：教室前面的屏，不该留着地址栏。 */
-export function requestFullscreen() {
-  try {
-    void document.documentElement.requestFullscreen?.();
-  } catch {
-    /* 浏览器不给就算了，蒙版本身已经盖满视口 */
-  }
-}

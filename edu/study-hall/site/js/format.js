@@ -32,7 +32,7 @@ export function formatDuration(ms) {
 /**
  * 写给人看的时长：`1 小时 12 分` / `20 分 02 秒` / `40 秒`。
  *
- * 小结是念出来的一句话，用中文单位；大时钟是给教室看的表盘，才用 `时:分:秒`。
+ * 小结是念出来的一句话，用中文单位；待机屏是给教室看的表盘，才用 `时:分:秒`。
  */
 export function formatSpan(ms) {
   const total = Math.max(0, Math.floor(ms / 1000));
@@ -67,4 +67,17 @@ export function formatDate(ms) {
 export function today() {
   const date = new Date();
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+const WEEKDAYS = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'];
+
+/**
+ * 待机屏上那行日期：`2026 年 10 月 11 日 星期日`。
+ *
+ * 写中文而不是 `2026-10-11`：这块屏是给教室看的，站远了「10 月」比「10-11」一眼认得出。
+ * 星期几要带上 —— 待机屏常常是老师抬头看「今天上到几号、今天周几」的那一眼。
+ */
+export function formatIdleDate(ms) {
+  const date = new Date(ms);
+  return `${date.getFullYear()} 年 ${date.getMonth() + 1} 月 ${date.getDate()} 日 ${WEEKDAYS[date.getDay()]}`;
 }
