@@ -1053,3 +1053,215 @@ body {
     font-size: 17px;
   }
 }
+
+/* ---------- 四色图例 ---------- */
+
+/**
+ * 这一行是四色的字典。
+ *
+ * 平时压得很暗（不跟统计抢），指针靠近整块蒙版时也不变 —— 老师要看得见时才看它，
+ * 不需要它一直喊。色块与格子用同一套语义变量，换主题跟着走。
+ */
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  flex: none;
+  padding: 0 2px;
+  color: var(--ink-dim);
+  font-size: 12.5px;
+}
+
+.legend__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.legend__dot {
+  width: 11px;
+  height: 11px;
+  border-radius: 3px;
+  background: var(--present);
+}
+
+.legend__dot[data-status="absent"] {
+  background: var(--absent);
+}
+
+.legend__dot[data-status="present"] {
+  background: var(--present);
+}
+
+.legend__dot[data-status="left"] {
+  background: var(--left);
+}
+
+.legend__dot[data-status="overtime"] {
+  background: var(--overtime);
+}
+
+/* ---------- 低频动作 ---------- */
+
+/* 与主行动拉开：一条细线 + 小一号的字 */
+.controls__quiet {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 6px;
+  padding-left: 10px;
+  border-left: 1px solid var(--rule);
+}
+
+.controls__quiet .btn {
+  padding: 6px 10px;
+  font-size: 13px;
+}
+
+.btn--icon.is-on {
+  background: color-mix(in srgb, var(--overtime) 10%, var(--surface));
+  border-color: color-mix(in srgb, var(--overtime) 45%, var(--rule));
+}
+
+/* ---------- 本场小结 ---------- */
+
+.summary {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0 16px 14px;
+  padding: 13px 16px 14px;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+}
+
+.summary__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.summary__title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 650;
+}
+
+.summary__when {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 7px;
+  color: var(--ink-dim);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.summary__dot {
+  opacity: 0.5;
+}
+
+.summary__facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 22px;
+}
+
+.summary__fact {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 7px;
+}
+
+.summary__fact-label {
+  color: var(--ink-dim);
+  font-size: 12.5px;
+}
+
+.summary__fact-value {
+  font: 600 15px/1.2 var(--font);
+  font-variant-numeric: tabular-nums;
+}
+
+.summary__fact-value.is-present {
+  color: color-mix(in srgb, var(--present-ink) 70%, var(--ink-dim));
+}
+
+.summary__fact-value.is-absent {
+  color: var(--absent);
+}
+
+.summary__fact-value.is-overtime {
+  color: var(--overtime);
+}
+
+.summary__list {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin: 0;
+  padding: 8px 0 0;
+  border-top: 1px solid var(--rule);
+  list-style: none;
+  font-size: 13px;
+}
+
+.summary__list li {
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+}
+
+.summary__list li.is-overtime .summary__name,
+.summary__list li.is-overtime .summary__time {
+  color: var(--overtime);
+}
+
+.summary__name {
+  min-width: 4.5em;
+  font-weight: 600;
+}
+
+.summary__time {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.summary__count {
+  color: var(--ink-dim);
+  font-size: 12px;
+}
+
+.summary__remark {
+  color: var(--ink-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.summary__more {
+  color: var(--ink-dim);
+  font-size: 12px;
+}
+
+/* ---------- 空态里的三步 ---------- */
+
+.empty__steps {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  max-width: 46em;
+  margin: 0 auto 14px;
+  padding-left: 1.4em;
+  color: var(--ink-dim);
+  font-size: 13.5px;
+  line-height: 1.65;
+  text-align: left;
+}
+
+.empty .legend {
+  justify-content: center;
+}

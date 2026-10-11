@@ -370,6 +370,43 @@ export function pausedMs(session, now) {
   return pausedOverlapMs(session.pauses, session.rollCallEndedAt, end);
 }
 
+/**
+ * 本场的离开账：按人汇总，出去得最久的排前面。
+ *
+ * 下课那一刻老师要交代的是「谁出去过、多久、超时没有」。一次离开一条记录，同一个人
+ * 出去两次就在这儿并成一行；时长用有效时长（扣掉暂停段），与格子上的算法一致。
+ */
+export function leaveReport(klass, session, now) {
+  const rows = new Map();
+  for (const leave of session.leaves) {
+    const ms = awayMsOf(session, leave, now);
+    const row = rows.get(leave.studentId) ?? {
+      studentId: leave.studentId,
+      count: 0,
+      totalMs: 0,
+      overtime: false,
+      remark: '',
+    };
+    row.count += 1;
+    row.totalMs += ms;
+    if (ms > klass.overtimeThresholdMs) {
+      row.overtime = true;
+    }
+    // 只留第一条有内容的备注：一行里放不下这个人出去过的每一次
+    const text = remarkTextOf(klass, leave);
+    if (text !== '' && row.remark === '') {
+      row.remark = text;
+    }
+    rows.set(leave.studentId, row);
+  }
+  return [...rows.values()].sort((left, right) => right.totalMs - left.totalMs);
+}
+
+/** 本场有多少人至少超时过一次。 */
+export function overtimeCount(klass, session, now) {
+  return leaveReport(klass, session, now).filter((row) => row.overtime).length;
+}
+
 /** 把模板与补充拼成一行备注。 */
 export function remarkTextOf(klass, leave) {
   if (leave === undefined) {

@@ -17,12 +17,14 @@ import {
   endRollCall,
   endSession,
   isPaused,
+  leaveReport,
   markLeft,
   markNotified,
   markPresent,
   markReturned,
   normaliseKlass,
   normaliseSession,
+  pausedMs,
   pauseSession,
   remarkTextOf,
   resumeSession,
@@ -78,6 +80,11 @@ const state = {
   now: Date.now(),
   /** 最后一次碰屏幕的时刻，用来判该不该切待机蒙版 */
   lastActivityAt: Date.now(),
+  /**
+   * 本场静音。教室里铃突然响起来时当场就能掐掉；只存内存，刷新即恢复 ——
+   * 宁可多提醒一次，也别一直静着没人知道。
+   */
+  muted: false,
   /** 正在开着的浮层：null / 'newClass' / 'remark' / 'settings' / 'history' / 'conflict' */
   overlay: null,
   /** 备注浮层当前针对的学生 id */
@@ -154,6 +161,26 @@ export function formatDuration(ms) {
 }
 
 /**
+ * 写给人看的时长：`1 小时 12 分` / `20 分 02 秒` / `40 秒`。
+ *
+ * 小结是念出来的一句话，用中文单位；大时钟是给教室看的表盘，才用 `时:分:秒`。
+ */
+function formatSpan(ms) {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  const seconds = total % 60;
+  const minutes = Math.floor(total / 60) % 60;
+  const hours = Math.floor(total / 3600);
+  const two = (value) => String(value).padStart(2, '0');
+  if (hours > 0) {
+    return `${hours} 小时 ${minutes} 分`;
+  }
+  if (minutes > 0) {
+    return seconds > 0 ? `${minutes} 分 ${two(seconds)} 秒` : `${minutes} 分`;
+  }
+  return `${seconds} 秒`;
+}
+
+/**
  * 自习时间的写法：一律 `时:分:秒`，两位一段。
  *
  * 大屏上的数字宽度得稳 —— 分秒那种「12:34」走到一小时忽然变成「1:02:03」，
@@ -163,6 +190,13 @@ export function formatStudyTime(ms) {
   const total = Math.max(0, Math.floor(ms / 1000));
   const pad = (value) => String(value).padStart(2, '0');
   return `${pad(Math.floor(total / 3600))}:${pad(Math.floor(total / 60) % 60)}:${pad(total % 60)}`;
+}
+
+/** 时刻，只用时分 —— 小结那一行里写「19:00 – 20:12」。 */
+function formatClock(ms) {
+  const date = new Date(ms);
+  const pad = (value) => String(value).padStart(2, '0');
+  return `${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
 function formatDate(ms) {
@@ -178,7 +212,9 @@ function phaseHint(klass, session) {
       return '按「开始点名」，然后逐个点花名册上到了的同学。';
     case PHASE.ROLL_CALL: {
       const missing = klass.students.length - session.markedIds.length;
-      return missing > 0 ? `点名中：还有 ${missing} 人没点到（蓝色就是没到）。` : '全班点到，按「结束点名」进入自习。';
+      return missing > 0
+        ? `点名中：还有 ${missing} 人没点到（蓝色）。点错了再点一下可以退回。`
+        : '全班点到，按「结束点名」进入自习。';
     }
     case PHASE.SELF_STUDY: {
       if (isPaused(session)) {
@@ -186,11 +222,11 @@ function phaseHint(klass, session) {
       }
       const summary = summarize(klass, session, state.now);
       return summary.absent > 0
-        ? `自习中：蓝色 ${summary.absent} 人未到。要是有人临时离开，点一下他。`
-        : '自习中。要是有人临时离开，点一下他，会开始计时。';
+        ? `自习中：蓝色 ${summary.absent} 人未到（迟到的人点一下就变灰）。有人临时离开，点一下他开始计时。`
+        : '自习中。有人临时离开就点一下他，会开始计时；回来再点一下。';
     }
     default:
-      return `这一场已结束，开始于 ${formatDate(session.startedAt)}。`;
+      return '这一场结束了。接着来一场就按「再开一场自习」，要回班级列表就按「收起」。';
   }
 }
 
@@ -265,6 +301,8 @@ async function enterSession() {
   state.session = session;
   state.sessions = [...state.sessions, session];
   syncRunning(session);
+  // 静音只管一场：新场从头来，出声也回来 —— 不然老师不知道自己是静音的
+  state.muted = false;
   state.mask = 'session';
   render();
 }
@@ -347,9 +385,7 @@ async function doEndRollCall() {
 
 async function doEndSession() {
   await commitSession(endSession(state.session, Date.now()));
-  // 这一场定格了，蒙版收起来 —— 结束自习就是回班级列表
-  state.mask = null;
-  render();
+  // 留在蒙版上：下课那一刻老师要看到这一场的账（小结就在下面），看完了自己按「收起」
 }
 
 /** 暂停自习。 */
@@ -407,6 +443,19 @@ async function tapStudent(studentId) {
   await commitSession(markReturned(session, studentId, Date.now()));
 }
 
+/**
+ * 浮层里点「他没到」：把这个人退回蓝色。
+ *
+ * 自习中点一个蓝的会把他标成到了（当成迟到到场），可要是点错了就没路可退 ——
+ * 再点一下只会弹出「临时离开」。这一手就是那条退路。
+ */
+async function confirmNotHere() {
+  const studentId = state.remarkStudentId;
+  state.overlay = null;
+  state.remarkStudentId = null;
+  await commitSession(unmarkPresent(state.session, studentId), true);
+}
+
 /** 备注浮层点「确定」。浮层要收起来，所以这一笔要整块重画。 */
 async function confirmLeave(templateId, remark) {
   const studentId = state.remarkStudentId;
@@ -434,7 +483,7 @@ async function checkAlerts() {
   if (isPaused(state.session)) {
     return;
   }
-  if (!state.klass.alertSound || !sound.isSupported()) {
+  if (!state.klass.alertSound || !sound.isSupported() || state.muted) {
     return;
   }
   const due = dueAlerts(state.session, state.now, state.klass.overtimeThresholdMs, state.klass.alertRepeatMs);
@@ -534,7 +583,14 @@ function download(filename, bytes) {
 async function exportClass(klass) {
   const sessions = await store.listSessions(klass.id);
   const bytes = await exportClassWorkbook(klass, sessions);
-  download(`${klass.name}.xlsx`, bytes);
+  download(`${klass.name}-${today()}.xlsx`, bytes);
+}
+
+/** 文件名里的日期：`2026-10-11`。 */
+function today() {
+  const date = new Date();
+  const pad = (value) => String(value).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
 
 /** 删掉一个班（连同它的全部记录）。问一句，确认了才动手。 */
@@ -682,22 +738,29 @@ function renderClassesPage() {
     h('div', { class: 'home__actions' }, [
       h('button', {
         class: 'btn btn--primary',
-        text: '新建班级（导入名册）',
+        text: '新建班级',
         onClick: () => openOverlay('newClass'),
       }),
-      h('button', { class: 'btn', text: '导入班级文件', onClick: () => pickFile('.xlsx', importClassFile) }),
+      h('button', { class: 'btn', text: '从文件恢复一个班', title: '导入之前导出的整班 xlsx（含记录）', onClick: () => pickFile('.xlsx', importClassFile) }),
     ]),
   );
   body.append(bar);
 
   if (state.classes.length === 0) {
+    // 第一次打开没人教，所以把「怎么用」直接写在这里
+    const steps = h('ol', { class: 'empty__steps' });
+    steps.append(
+      h('li', {
+        text: '导入一份花名册建班（.xlsx 或 .xls，网页表格改名的 .xls 也认；表里有一列写着「姓名」即可）',
+      }),
+    );
+    steps.append(h('li', { text: '开始自习，逐个点名字 —— 蓝色的点到就变灰（到了）' }));
+    steps.append(h('li', { text: '有人临时离开，点一下他，会开始计时；超过设定时长转红并提醒' }));
     body.append(
       h('div', { class: 'empty' }, [
         h('p', { class: 'empty__title', text: '还没有班级' }),
-        h('p', {
-          class: 'empty__hint',
-          text: '导入一份花名册就能建班（.xlsx 或 .xls，网页表格改名的 .xls 也认）。表里有一列写着「姓名」即可，学号与座位列可选。',
-        }),
+        steps,
+        renderLegend(),
       ]),
     );
     main.append(body);
@@ -779,7 +842,7 @@ function renderClassCard(klass) {
 }
 
 function themeLabel(theme) {
-  return { junior: '童趣（小学）', middle: '标准', senior: '沉稳（高中）' }[theme] ?? theme;
+  return { junior: '童趣（小学）', middle: '标准', senior: '简洁（高中）' }[theme] ?? theme;
 }
 
 /**
@@ -805,8 +868,9 @@ function renderSessionMask() {
       actions: [
         h('button', {
           class: 'btn',
-          text: '收起',
-          title: '收起这块，自习继续跑',
+          // 「收起」两个字没说清收起之后还在计时，容易被读成「结束」
+          text: running ? '先收起' : '收起',
+          title: running ? '收起看板，自习继续计时' : '收起看板，回到班级列表',
           onClick: () => {
             state.mask = null;
             render();
@@ -819,7 +883,14 @@ function renderSessionMask() {
 
   const body = h('div', { class: 'board' });
   body.append(renderControls());
-  body.append(h('div', { class: 'board__head' }, [renderClock(), renderStatusBar()]));
+  if (!running && state.session !== null) {
+    // 结束态：一张小结顶上来，时钟与统计让位 —— 那两组数小结里都有，
+    // 而且「离开中 N」在结束后就不成立了
+    body.append(renderSummary(klass, state.session));
+  } else {
+    body.append(h('div', { class: 'board__head' }, [renderClock(), renderStatusBar()]));
+  }
+  body.append(renderLegend());
 
   const grid = h('div', { class: 'grid' });
   grid.style.setProperty('--cols', String(GRID_COLUMNS[klass.theme] ?? 6));
@@ -834,12 +905,83 @@ function renderSessionMask() {
   body.append(grid);
   section.append(body);
 
-  if (!running) {
-    section.append(
-      h('p', { class: 'mask__foot', text: '这一场已结束，收起这块回到班级列表。' }),
-    );
-  }
   return section;
+}
+
+/**
+ * 本场小结。
+ *
+ * 下课铃响，老师要交代的是「多少人到了、谁出去过、超时没有」。这一段只读：
+ * 定格的颜色还在上面的格子里，要不要收起或再开一场由上面那颗钮决定。
+ */
+function renderSummary(klass, session) {
+  const now = state.now;
+  const end = session.endedAt ?? now;
+  const summary = summarize(klass, session, end);
+  const paused = pausedMs(session, end);
+  const report = leaveReport(klass, session, end);
+  const overtimePeople = report.filter((row) => row.overtime);
+
+  const box = h('section', { class: 'summary' });
+
+  const head = h('div', { class: 'summary__head' });
+  head.append(h('h2', { class: 'summary__title', text: '本场自习' }));
+  const from = formatClock(session.startedAt);
+  const to = formatClock(end);
+  const span = h('span', { class: 'summary__when' });
+  // 几个人的小班会遇到起止落在同一分钟，那就只写一个时刻
+  span.append(h('span', { text: from === to ? from : `${from} – ${to}` }));
+  span.append(h('span', { class: 'summary__dot', text: '·' }));
+  span.append(h('span', { text: `自习 ${formatSpan(studyMs(session, end))}` }));
+  if (paused > 0) {
+    span.append(h('span', { class: 'summary__dot', text: '·' }));
+    span.append(h('span', { text: `暂停 ${formatSpan(paused)}` }));
+  }
+  head.append(span);
+  box.append(head);
+
+  const facts = h('div', { class: 'summary__facts' });
+  const fact = (label, value, tone) =>
+    h('div', { class: 'summary__fact' }, [
+      h('span', { class: 'summary__fact-label', text: label }),
+      h('span', { class: `summary__fact-value ${tone === undefined ? '' : `is-${tone}`}`, text: value }),
+    ]);
+  facts.append(fact('应到', String(summary.total)));
+  facts.append(fact('到了', String(summary.present), 'present'));
+  facts.append(fact('没到', String(summary.absent), 'absent'));
+  facts.append(
+    fact(
+      '离开',
+      report.length === 0 ? '没有' : `${summary.leaveCount} 人次 · ${formatSpan(summary.leaveDurationMs)}`,
+    ),
+  );
+  facts.append(
+    fact('超时', overtimePeople.length === 0 ? '没有' : `${overtimePeople.length} 人`, overtimePeople.length === 0 ? undefined : 'overtime'),
+  );
+  box.append(facts);
+
+  if (report.length > 0) {
+    const list = h('ul', { class: 'summary__list' });
+    for (const row of report.slice(0, 4)) {
+      const student = klass.students.find((item) => item.id === row.studentId);
+      const line = h('li', { class: row.overtime ? 'is-overtime' : '' });
+      line.append(h('span', { class: 'summary__name', text: student?.name ?? '（已不在名册）' }));
+      line.append(h('span', { class: 'summary__time', text: formatSpan(row.totalMs) }));
+      if (row.count > 1) {
+        line.append(h('span', { class: 'summary__count', text: `${row.count} 次` }));
+      }
+      if (row.remark !== '') {
+        line.append(h('span', { class: 'summary__remark', text: row.remark }));
+      }
+      list.append(line);
+    }
+    if (report.length > 4) {
+      list.append(h('li', { class: 'summary__more', text: `还有 ${report.length - 4} 人出去过，见「全班记录」` }));
+    }
+    box.append(list);
+  }
+
+  return box;
 }
 
 /**
@@ -945,6 +1087,8 @@ function renderControls() {
   hint.dataset.hint = '1';
   bar.append(hint);
 
+  // 主行动、普通行动、低频破坏性各占一档：原来全是 btn--tall，一排按钮一样重，
+  // 手快就会按到「结束并重开」上
   const buttons = h('div', { class: 'controls__buttons' });
   const session = state.session;
   if (session === null || session.phase === PHASE.ENDED) {
@@ -957,8 +1101,14 @@ function renderControls() {
       }),
     );
   } else if (session.phase === PHASE.PREPARING) {
-    buttons.append(beginButton());
-    buttons.append(restartButton());
+    buttons.append(
+      h('button', {
+        class: 'btn btn--primary btn--tall',
+        text: '开始点名',
+        onClick: () => void doBeginRollCall(),
+      }),
+    );
+    buttons.append(quietGroup([restartButton(), muteButton()]));
   } else if (session.phase === PHASE.ROLL_CALL) {
     buttons.append(
       h('button', {
@@ -967,7 +1117,7 @@ function renderControls() {
         onClick: () => void doEndRollCall(),
       }),
     );
-    buttons.append(restartButton());
+    buttons.append(quietGroup([restartButton(), muteButton()]));
   } else {
     buttons.append(
       isPaused(session)
@@ -976,28 +1126,40 @@ function renderControls() {
             text: '继续自习',
             onClick: () => void doResume(),
           })
-        : h('button', { class: 'btn btn--tall', text: '暂停自习', onClick: () => void doPause() }),
+        : h('button', {
+            class: 'btn btn--tall',
+            text: '暂停自习',
+            title: '自习时间与外面的人都一起停表',
+            onClick: () => void doPause(),
+          }),
     );
-    buttons.append(restartButton());
     buttons.append(
-      h('button', { class: 'btn btn--tall', text: '结束自习', onClick: () => void doEndSession() }),
+      h('button', {
+        class: 'btn btn--tall',
+        text: '结束自习',
+        title: '这一场定格，回到班级列表',
+        onClick: () => void doEndSession(),
+      }),
     );
+    buttons.append(quietGroup([restartButton(), muteButton()]));
   }
   bar.append(buttons);
   return bar;
 }
 
+
 /**
- * 「重新开始」：把这一场结束掉，另开一场。
+ * 「结束并重开」：把这一场结束掉，另开一场。
  *
  * 上课时什么情况都能遇到（点错一堆、被别的事打断、想从头记），所以给一手干净的：
- * 先确认，再结束 + 开新场。旧的那一场留在记录里，不删。
+ * 先确认，再结束 + 开新场。旧的那一场留在记录里，不删。低频又不可回退，所以摆在小
+ * 字那格里，不与「暂停 / 结束」同重。
  */
 function restartButton() {
   return h('button', {
-    class: 'btn btn--tall',
-    text: '重新开始',
-    title: '结束这一场，另开一场',
+    class: 'btn',
+    text: '结束并重开',
+    title: '结束这一场，另开一场（这一场的记录会留着）',
     onClick: () => {
       if (window.confirm('结束这一场并另开一场？这一场的记录会留着。')) {
         void doRestart();
@@ -1006,24 +1168,43 @@ function restartButton() {
   });
 }
 
-function beginButton() {
-  // 开始点名是一次用户手势，顺手把 AudioContext 唤醒 —— 之后超时提示音才响得出来
+/** 低频动作盛在一条细分隔线之后，与主行动拉开距离。 */
+function quietGroup(children) {
+  return h('div', { class: 'controls__quiet' }, children);
+}
+
+/**
+ * 本场静音。
+ *
+ * 教室里铃突然响起来，老师需要当场掐掉，而不是去设置里翻。这一下只影响这一场
+ * （不改班级设置）；刷新页面会恢复 —— 宁可多响一次，也别一直静着没人知道。
+ */
+function muteButton() {
+  const muted = state.muted;
   return h('button', {
-    class: 'btn btn--primary btn--tall',
-    text: '开始点名',
-    onClick: () => void doBeginRollCall(),
+    class: muted ? 'btn btn--icon is-on' : 'btn btn--icon',
+    text: muted ? '🔇' : '🔊',
+    title: muted ? '本场已静音超时提醒，点一下开回来' : '本场静音超时提醒',
+    'aria-label': muted ? '本场已静音' : '本场静音',
+    onClick: () => {
+      state.muted = !state.muted;
+      showToast(state.muted ? '本场不再出声' : '本场恢复出声');
+    },
   });
 }
 
+
 function renderStatusBar() {
   const bar = h('div', { class: 'status' });
+  // 准备阶段还没点名，说「没到」不合逻辑 —— 那几个人只是还没点到
+  const preparing = state.session === null || state.session.phase === PHASE.PREPARING;
   const items = [
     { key: 'total', label: '应到', tone: '' },
     { key: 'present', label: '已到', tone: 'present' },
-    { key: 'absent', label: '没到', tone: 'absent' },
+    { key: 'absent', label: preparing ? '未点' : '没到', tone: 'absent' },
     { key: 'left', label: '离开中', tone: 'left' },
     { key: 'overtime', label: '超时', tone: 'overtime' },
-    { key: 'leaves', label: '累计人次', tone: '' },
+    { key: 'leaves', label: '离开人次', tone: '' },
   ];
   for (const item of items) {
     const cell = h('div', { class: 'status__cell' });
@@ -1054,7 +1235,11 @@ function renderClock() {
 }
 
 function renderTile(student) {
-  const tile = h('button', { class: 'tile', dataset: { studentId: student.id } });
+  const tile = h('button', {
+    class: 'tile',
+    dataset: { studentId: student.id },
+    title: tileTitle(student),
+  });
   tile.append(h('span', { class: 'tile__name', text: student.name }));
   const meta = h('span', { class: 'tile__meta', text: seatLine(student) });
   tile.append(meta);
@@ -1066,9 +1251,61 @@ function renderTile(student) {
   return tile;
 }
 
-/** 座位与学号那一行。 */
+/**
+ * 四色图例。
+ *
+ * 蓝 / 灰 / 黄 / 红是这一屏的全部语言，但界面上原本一个字都没解释 —— 第一次用的老师
+ * 看到一片蓝，分不清那是「还没点」还是「没来」。这一行就是那本小字典，平时压得很暗。
+ */
+function renderLegend() {
+  const legend = h('div', { class: 'legend' });
+  for (const [status, label] of [
+    ['absent', '没到'],
+    ['present', '到了'],
+    ['left', '离开中'],
+    ['overtime', '超时'],
+  ]) {
+    const item = h('span', { class: 'legend__item' });
+    item.append(h('i', { class: 'legend__dot', dataset: { status } }));
+    item.append(h('span', { text: label }));
+    legend.append(item);
+  }
+  return legend;
+}
+
+/**
+ * 格子第二行。
+ *
+ * 只给一样：有座位号就给座位号，没有才退到学号。原来两个并排写成「1号 · 01」，
+ * 看着像写重了 —— 老师认人靠座位，学号留给悬停提示。
+ */
 function seatLine(student) {
-  return [student.seat === '' ? '' : `${student.seat}号`, student.code].filter(Boolean).join(' · ');
+  if (student.seat !== '') {
+    return `${student.seat}号`;
+  }
+  return student.code;
+}
+
+/** 格子的悬停提示：座位与学号都写全。 */
+function tileTitle(student) {
+  const bits = [student.name];
+  if (student.seat !== '') {
+    bits.push(`${student.seat}号`);
+  }
+  if (student.code !== '') {
+    bits.push(`学号 ${student.code}`);
+  }
+  return bits.join(' · ');
+}
+
+/**
+ * 读表的时刻。
+ *
+ * 一场结束之后再走秒就是错的：格子里的数字会一直往上爬，比小结里的账还大，
+ * 超时判定也跟着漂。所以结束了就一律定格在下课那一刻。墙钟不走这里 —— 那是真时间。
+ */
+function readAt(session, now) {
+  return session?.endedAt ?? now;
 }
 
 /**
@@ -1093,7 +1330,8 @@ function updateDynamic() {
   }
   const threshold = state.klass.overtimeThresholdMs;
   const session = state.session;
-  updateCardClocks(now);
+  const at = readAt(session, now);
+  updateCardClocks(at);
 
   if (state.mask !== 'session') {
     return;
@@ -1116,13 +1354,13 @@ function updateDynamic() {
       }
       continue;
     }
-    const status = statusOf(session, student.id, now, threshold);
+    const status = statusOf(session, student.id, at, threshold);
     tile.dataset.status = status;
     if (timer === undefined) {
       continue;
     }
     if (status === STATUS.LEFT || status === STATUS.OVERTIME) {
-      timer.textContent = formatDuration(awayMs(session, student.id, now));
+      timer.textContent = formatDuration(awayMs(session, student.id, at));
       // 离开时这一行换成原因：老师更要知道为什么，而不是他坐哪
       if (meta !== undefined) {
         const remark = remarkTextOf(state.klass, activeLeave(session, student.id));
@@ -1181,7 +1419,9 @@ function updateCardClocks(now) {
   for (const node of root.querySelectorAll('[data-clock^="card:"]')) {
     const session = state.running.get(node.dataset.clock.slice('card:'.length)) ?? null;
     node.textContent =
-      session !== null && session.rollCallEndedAt !== undefined ? formatStudyTime(studyMs(session, now)) : '00:00:00';
+      session !== null && session.rollCallEndedAt !== undefined
+        ? formatStudyTime(studyMs(session, readAt(session, now)))
+        : '00:00:00';
   }
 }
 
@@ -1196,17 +1436,18 @@ function updateIdle() {
   }
   const elapsed = root.querySelector('[data-clock="elapsed"]');
   if (elapsed !== null) {
-    elapsed.textContent = formatStudyTime(session === null ? 0 : studyMs(session, now));
+    elapsed.textContent = formatStudyTime(session === null ? 0 : studyMs(session, readAt(session, now)));
   }
   if (session !== null) {
-    const summary = summarize(state.klass, session, now);
+    const at = readAt(session, now);
+    const summary = summarize(state.klass, session, at);
     const counts = root.querySelector('[data-idle="counts"]');
     if (counts !== null) {
       counts.textContent = `应到 ${summary.total} · 已到 ${summary.present} · 没到 ${summary.absent} · 离开中 ${summary.left}`;
     }
     for (const node of root.querySelectorAll('[data-away]')) {
       const studentId = node.dataset.away;
-      node.textContent = formatDuration(awayMs(session, studentId, now));
+      node.textContent = formatDuration(awayMs(session, studentId, at));
     }
   }
 }
@@ -1452,6 +1693,15 @@ function renderRemark() {
 
   const foot = [];
   foot.push(h('button', { class: 'btn', text: '取消', onClick: closeOverlay }));
+  // 退路：自习中点错了人（他其实没来），得能退回蓝色。不给这条，一次手抖就改不掉了。
+  foot.push(
+    h('button', {
+      class: 'btn',
+      text: '他没到',
+      title: '改成没到（蓝色）',
+      onClick: () => void confirmNotHere(),
+    }),
+  );
   foot.push(
     h('button', {
       class: 'btn btn--primary',
@@ -1484,7 +1734,7 @@ function renderSettings() {
   });
   body.push(
     h('label', { class: 'field' }, [
-      h('span', { class: 'field__label', text: '超时阈值（分钟）' }),
+      h('span', { class: 'field__label', text: '离开多久算超时（分钟）' }),
       thresholdInput,
       h('span', { class: 'field__note', text: '离开超过这个时长，格子转红并出声提醒。' }),
     ]),
@@ -1507,7 +1757,7 @@ function renderSettings() {
   });
   body.push(
     h('label', { class: 'field' }, [
-      h('span', { class: 'field__label', text: '补响间隔（秒）' }),
+      h('span', { class: 'field__label', text: '隔多久再提醒一次（秒）' }),
       repeatInput,
       h('span', { class: 'field__note', text: '还没回来就每隔这么久再响一次。' }),
     ]),
@@ -1532,7 +1782,7 @@ function renderSettings() {
   }
   body.push(
     h('label', { class: 'field' }, [
-      h('span', { class: 'field__label', text: '待机蒙版' }),
+      h('span', { class: 'field__label', text: '多久不动就换成大时钟' }),
       idleSelect,
       h('span', {
         class: 'field__note',
@@ -1643,8 +1893,17 @@ function renderHistory() {
   const body = [];
   const sessions = [...state.sessions].sort((left, right) => right.startedAt - left.startedAt);
   if (sessions.length === 0) {
-    body.push(h('p', { class: 'modal__hint', text: '还没有记录。' }));
+    body.push(h('p', { class: 'modal__hint', text: '这个班还没有自习记录。' }));
   } else {
+    const end = Date.now();
+    const total = sessions.reduce((sum, item) => sum + studyMs(item, item.endedAt ?? end), 0);
+    const leaves = sessions.reduce((sum, item) => sum + item.leaves.length, 0);
+    body.push(
+      h('p', {
+        class: 'modal__hint',
+        text: `共 ${sessions.length} 场 · 自习合计 ${formatDuration(total)} · 离开 ${leaves} 人次`,
+      }),
+    );
     const table = h('table', { class: 'table' });
     const head = h('tr');
     for (const label of ['开始', '结束', '自习时长', '已到', '离开人次']) {
