@@ -41,6 +41,14 @@ export const DEFAULT_OVERTIME_THRESHOLD_MS = 10 * 60 * 1000;
 /** 默认补响间隔：60 秒。 */
 export const DEFAULT_ALERT_REPEAT_MS = 60 * 1000;
 
+/**
+ * 默认的待机时间：自习中一分钟没人碰屏幕，就切到待机蒙版。
+ *
+ * 教室前面那块屏，老师不操作时不该一直亮着密密麻麻的名字；换成一个大钟加「谁还在
+ * 外面」，从最后一排也看得见。0 表示不切。
+ */
+export const DEFAULT_IDLE_MASK_MS = 60 * 1000;
+
 /** 新班的默认备注模板。 */
 export const DEFAULT_REMARK_TEMPLATES = ['上厕所', '打水', '去办公室', '身体不适', '被老师叫走'];
 
@@ -55,6 +63,7 @@ export function createKlass(input) {
     overtimeThresholdMs: input.overtimeThresholdMs ?? DEFAULT_OVERTIME_THRESHOLD_MS,
     alertSound: input.alertSound ?? true,
     alertRepeatMs: input.alertRepeatMs ?? DEFAULT_ALERT_REPEAT_MS,
+    idleMaskMs: input.idleMaskMs ?? DEFAULT_IDLE_MASK_MS,
     remarkTemplates: templates.map((text, index) => ({ id: `tpl-${index + 1}`, text })),
     students: input.students ?? [],
   };
@@ -84,6 +93,29 @@ export function canTransition(session, to) {
     default:
       return false;
   }
+}
+
+/**
+ * 把库里读出来的班补齐成当前形状。
+ *
+ * 数据只存在老师自己的浏览器里，没有服务端可以跑迁移，所以后来加的字段只能在读的时候
+ * 补默认值 —— 不然老班上的 `idleMaskMs` 是 `undefined`，切换到待机那道判断会当场成立。
+ * 对一个已经是完整形状的班是幂等的。
+ */
+export function normaliseKlass(raw) {
+  const templates = Array.isArray(raw.remarkTemplates) ? raw.remarkTemplates : [];
+  return {
+    id: raw.id,
+    name: raw.name,
+    createdAt: raw.createdAt,
+    theme: raw.theme ?? 'middle',
+    overtimeThresholdMs: raw.overtimeThresholdMs ?? DEFAULT_OVERTIME_THRESHOLD_MS,
+    alertSound: raw.alertSound ?? true,
+    alertRepeatMs: raw.alertRepeatMs ?? DEFAULT_ALERT_REPEAT_MS,
+    idleMaskMs: raw.idleMaskMs ?? DEFAULT_IDLE_MASK_MS,
+    remarkTemplates: templates,
+    students: Array.isArray(raw.students) ? raw.students : [],
+  };
 }
 
 /** 开始点名。 */

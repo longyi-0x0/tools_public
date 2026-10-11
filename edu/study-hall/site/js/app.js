@@ -20,6 +20,7 @@ import {
   markNotified,
   markPresent,
   markReturned,
+  normaliseKlass,
   remarkTextOf,
   startSession,
   statusOf,
@@ -52,12 +53,21 @@ function baseName(fileName) {
 
 const state = {
   view: 'home',
+  /**
+   * 盖在页上的蒙版：null 是没盖，'session' 是自习看板，'idle' 是待机。
+   *
+   * 自习不再挤在班级页里，而是盖住整屏的一块 —— 一次自习就是这一块。老师可以随时
+   * 把它收起来（会话继续跑），班级页上那颗钮变成「继续自习」。
+   */
+  mask: null,
   classes: [],
   klass: null,
   session: null,
   sessions: [],
   now: Date.now(),
-  /** 正在开着的浮层：null / 'newClass' / 'remark' / 'settings' / 'history' */
+  /** 最后一次碰屏幕的时刻，用来判该不该切待机蒙版 */
+  lastActivityAt: Date.now(),
+  /** 正在开着的浮层：null / 'newClass' / 'remark' / 'settings' / 'history' / 'conflict' */
   overlay: null,
   /** 备注浮层当前针对的学生 id */
   remarkStudentId: null,
@@ -92,6 +102,14 @@ function h(tag, props = {}, children = []) {
       node.checked = value;
     } else if (key === 'selected') {
       node.selected = value;
+    } else if (key === 'dataset') {
+      // dataset 不是 HTML 属性，得逐项写到元素上；走 setAttribute 只会得到
+      // "[object Object]" 这样的垃圾属性，之后再 querySelector('[data-x]') 就找不着
+      for (const [name, item] of Object.entries(value)) {
+        if (item !== undefined && item !== null) {
+          node.dataset[name] = String(item);
+        }
+      }
     } else if (key.startsWith('on')) {
       node.addEventListener(key.slice(2).toLowerCase(), value);
     } else if (value === true) {
@@ -169,17 +187,43 @@ function phaseLabel(phase) {
 /* ---------- 数据动作 ---------- */
 
 async function refreshClasses() {
-  state.classes = await store.listClasses();
+  state.classes = (await store.listClasses()).map(normaliseKlass);
 }
 
 async function openClass(klass) {
-  state.klass = klass;
+  state.klass = normaliseKlass(klass);
   const sessions = await store.listSessions(klass.id);
   state.sessions = sessions;
   const active = sessions.find((item) => item.phase !== PHASE.ENDED);
   state.session = active ?? null;
   state.view = 'class';
+  state.mask = null;
   await store.putSetting('lastClassId', klass.id);
+  render();
+}
+
+/**
+ * 进自习：没有进行中的那场就先开一场，然后盖上蒙版。
+ *
+ * 这是老师按下去的一下，顺手要一次浏览器全屏 —— 教室前面的屏不该留地址栏。
+ * 已有进行中的那场就直接盖上（「继续自习」）。
+ */
+async function enterSession() {
+  sound.unlock();
+  noteActivity();
+  requestFullscreen();
+
+  if (state.session !== null && state.session.phase !== PHASE.ENDED) {
+    state.mask = 'session';
+    render();
+    return;
+  }
+
+  const session = startSession({ id: uid('s'), classId: state.klass.id, startedAt: Date.now() });
+  await store.putSession(session);
+  state.session = session;
+  state.sessions = [...state.sessions, session];
+  state.mask = 'session';
   render();
 }
 
@@ -235,15 +279,6 @@ async function commitClass(next) {
 
 /* ---------- 会话流程 ---------- */
 
-async function startRecording() {
-  sound.unlock();
-  const session = startSession({ id: uid('s'), classId: state.klass.id, startedAt: Date.now() });
-  await store.putSession(session);
-  state.session = session;
-  state.sessions = [...state.sessions, session];
-  render();
-}
-
 async function doBeginRollCall() {
   await commitSession(beginRollCall(state.session, Date.now()));
 }
@@ -254,6 +289,9 @@ async function doEndRollCall() {
 
 async function doEndSession() {
   await commitSession(endSession(state.session, Date.now()));
+  // 这一场定格了，蒙版收起来 —— 结束自习就是回花名册
+  state.mask = null;
+  render();
 }
 
 /** 点一个格子。走哪条路看当前相与该学生现在的颜色。 */
@@ -453,66 +491,53 @@ function render() {
   timerText.clear();
   metaText.clear();
   root.replaceChildren(renderShell());
-  // 挂上去了才算数：updateDynamic 是去已挂的 DOM 里按 data-metric 找格子的
+  // 挂上去了才算数：updateDynamic 是去已挂的 DOM 里找那些要逐拍改的节点
   updateDynamic();
 }
 
+/**
+ * 三层：班级列表 → 班级页（花名册）→ 自习蒙版 / 待机蒙版。
+ *
+ * 蒙版盖住整屏，所以有蒙版时就不再画底下那一页 —— 反正看不见，白画一遍还慢。
+ */
 function renderShell() {
-  const body = h('div', { class: 'shell' });
-  body.append(renderHeader());
+  const shell = h('div', { class: 'shell' });
 
-  if (state.view === 'home') {
-    body.append(renderHome());
+  if (state.mask === 'session') {
+    shell.append(renderSessionMask());
+  } else if (state.mask === 'idle') {
+    shell.append(renderIdleMask());
+  } else if (state.view === 'class' && state.klass !== null) {
+    shell.append(renderClassPage());
   } else {
-    body.append(renderClassView());
+    shell.append(renderClassesPage());
   }
 
   if (state.toast !== '') {
-    body.append(h('div', { class: 'toast', text: state.toast }));
+    shell.append(h('div', { class: 'toast', text: state.toast }));
   }
-  body.append(renderOverlay());
-  return body;
+  shell.append(renderOverlay());
+  return shell;
 }
 
-function renderHeader() {
+/** 顶栏：三处共用，只在左头与右钮上不同。 */
+function tabBar(options) {
   const header = h('header', { class: 'tab' });
   const left = h('div', { class: 'tab__left' });
   left.append(h('span', { class: 'tab__mark', 'aria-hidden': 'true' }));
   left.append(h('h1', { class: 'tab__title', text: '自习点名' }));
-  if (state.klass !== null && state.view === 'class') {
+  if (options.crumb !== undefined) {
     left.append(h('span', { class: 'tab__sep', text: '/' }));
-    left.append(h('span', { class: 'tab__sub', text: state.klass.name }));
-    if (state.session !== null) {
-      left.append(
-        h('span', {
-          class: `chip chip--${state.session.phase}`,
-          text: phaseLabel(state.session.phase),
-        }),
-      );
-    }
+    left.append(h('span', { class: 'tab__sub', text: options.crumb }));
+  }
+  if (options.chip !== undefined) {
+    left.append(options.chip);
   }
   header.append(left);
 
   const right = h('div', { class: 'tab__right' });
-  if (state.view === 'class') {
-    right.append(
-      h('button', { class: 'btn', text: '全班记录', onClick: () => openOverlay('history') }),
-    );
-    right.append(
-      h('button', { class: 'btn', text: '班级设置', onClick: () => openOverlay('settings') }),
-    );
-    right.append(
-      h('button', {
-        class: 'btn',
-        text: '返回',
-        onClick: () => {
-          state.view = 'home';
-          state.klass = null;
-          state.session = null;
-          render();
-        },
-      }),
-    );
+  for (const node of options.actions ?? []) {
+    right.append(node);
   }
   right.append(
     h('button', {
@@ -535,8 +560,20 @@ function toggleFullscreen() {
   }
 }
 
-function renderHome() {
-  const main = h('main', { class: 'home' });
+/** 进自习那一下顺手要一次浏览器全屏：教室前面的屏，不该留着地址栏。 */
+function requestFullscreen() {
+  try {
+    void document.documentElement.requestFullscreen?.();
+  } catch {
+    /* 浏览器不给就算了，蒙版本身已经盖满视口 */
+  }
+}
+
+function renderClassesPage() {
+  const main = h('main', { class: 'page' });
+  main.append(tabBar({}));
+
+  const body = h('div', { class: 'home' });
   const bar = h('div', { class: 'home__bar' });
   bar.append(h('h2', { class: 'home__title', text: '班级' }));
   bar.append(
@@ -549,10 +586,10 @@ function renderHome() {
       h('button', { class: 'btn', text: '导入班级文件', onClick: () => pickFile('.xlsx', importClassFile) }),
     ]),
   );
-  main.append(bar);
+  body.append(bar);
 
   if (state.classes.length === 0) {
-    main.append(
+    body.append(
       h('div', { class: 'empty' }, [
         h('p', { class: 'empty__title', text: '还没有班级' }),
         h('p', {
@@ -561,6 +598,7 @@ function renderHome() {
         }),
       ]),
     );
+    main.append(body);
     return main;
   }
 
@@ -568,7 +606,8 @@ function renderHome() {
   for (const klass of state.classes) {
     grid.append(renderClassCard(klass));
   }
-  main.append(grid);
+  body.append(grid);
+  main.append(body);
   return main;
 }
 
@@ -610,24 +649,246 @@ function themeLabel(theme) {
   return { junior: '童趣（小学）', middle: '标准', senior: '沉稳（高中）' }[theme] ?? theme;
 }
 
-function renderClassView() {
-  const main = h('main', { class: 'board', 'data-theme': state.klass.theme });
-  main.append(renderControls());
-  // 时钟与统计同排：宽屏上一左一右，窄屏上折行
-  main.append(h('div', { class: 'board__head' }, [renderClock(), renderStatusBar()]));
+/**
+ * 班级页：这个班的花名册，加一颗「开始自习」。
+ *
+ * 花名册在这里是**中性**的 —— 不带四色，因为四色只在一次自习里才有意义（没到 / 到了 /
+ * 离开）。这一页回答的是「这个班有谁」，自习里那套状态归蒙版管。
+ */
+function renderClassPage() {
+  const klass = state.klass;
+  // 「还在跑」指的是有**没结束**的一场。结束过的那一场仍留在 state.session 里
+  // （要给历史和导出看），所以不能只看非空。
+  const running = state.session !== null && state.session.phase !== PHASE.ENDED;
+  const main = h('main', { class: 'page', 'data-theme': klass.theme });
+  main.append(
+    tabBar({
+      crumb: klass.name,
+      actions: [
+        running ? renderRunningChip() : undefined,
+        h('button', { class: 'btn', text: '全班记录', onClick: () => openOverlay('history') }),
+        h('button', { class: 'btn', text: '设置', onClick: () => openOverlay('settings') }),
+        h('button', {
+          class: 'btn',
+          text: '返回',
+          onClick: () => {
+            state.view = 'home';
+            state.klass = null;
+            state.session = null;
+            state.mask = null;
+            render();
+          },
+        }),
+      ].filter((node) => node !== undefined),
+    }),
+  );
+
+  const body = h('div', { class: 'school' });
+  const bar = h('div', { class: 'school__bar' });
+  bar.append(
+    h('button', {
+      class: 'btn btn--primary btn--tall',
+      text: running ? '继续自习' : '开始自习',
+      onClick: () => void enterSession(),
+    }),
+  );
+  const bits = [
+    `${klass.students.length} 人`,
+    `超时 ${Math.round(klass.overtimeThresholdMs / 60000)} 分钟`,
+    themeLabel(klass.theme),
+  ];
+  if (running) {
+    bits.push('有一次自习还没结束');
+  }
+  bar.append(h('p', { class: 'school__meta', text: bits.join(' · ') }));
+  body.append(bar);
+
+  const grid = h('div', { class: 'grid grid--roster' });
+  grid.style.setProperty('--cols', String(GRID_COLUMNS[klass.theme] ?? 6));
+  if (klass.students.length === 0) {
+    grid.append(h('p', { class: 'empty__hint', text: '这个班还没有学生。到「设置」里导入名册。' }));
+  }
+  for (const student of klass.students) {
+    grid.append(renderRosterTile(student));
+  }
+  body.append(grid);
+  main.append(body);
+  return main;
+}
+
+/** 班级页顶栏那颗「还在跑」的牌子：相名加自习时间。 */
+function renderRunningChip() {
+  const session = state.session;
+  const children = [h('span', { text: `${phaseLabel(session.phase)} ` })];
+  if (session.rollCallEndedAt !== undefined) {
+    children.push(h('span', { class: 'chip__clock', dataset: { clock: 'page' }, text: '00:00:00' }));
+  }
+  return h('span', { class: `chip chip--${session.phase}` }, children);
+}
+
+/** 花名册上的一格：只有名字与座位 · 学号，点不动。 */
+function renderRosterTile(student) {
+  const tile = h('div', { class: 'tile tile--roster' });
+  tile.append(h('span', { class: 'tile__name', text: student.name }));
+  tile.append(h('span', { class: 'tile__meta', text: seatLine(student) }));
+  return tile;
+}
+
+/**
+ * 一次自习：盖住整屏的一块。
+ *
+ * 相变了才整块重画（钮要换），走秒的数字由 `updateDynamic` 定点改。
+ */
+function renderSessionMask() {
+  const klass = state.klass;
+  const section = h('section', { class: 'mask mask--session', 'data-theme': klass.theme });
+
+  const running = state.session !== null && state.session.phase !== PHASE.ENDED;
+  section.append(
+    tabBar({
+      crumb: klass.name,
+      chip:
+        state.session === null
+          ? undefined
+          : h('span', {
+              class: `chip chip--${state.session.phase}`,
+              text: phaseLabel(state.session.phase),
+            }),
+      actions: [
+        h('button', {
+          class: 'btn',
+          text: '收起',
+          title: '收起这块，自习继续跑',
+          onClick: () => {
+            state.mask = null;
+            render();
+          },
+        }),
+        h('button', { class: 'btn', text: '全班记录', onClick: () => openOverlay('history') }),
+      ].filter((node) => node !== undefined),
+    }),
+  );
+
+  const body = h('div', { class: 'board' });
+  body.append(renderControls());
+  body.append(h('div', { class: 'board__head' }, [renderClock(), renderStatusBar()]));
 
   const grid = h('div', { class: 'grid' });
-  grid.style.setProperty('--cols', String(GRID_COLUMNS[state.klass.theme] ?? 6));
-  if (state.klass.students.length === 0) {
-    grid.append(h('p', { class: 'empty__hint', text: '这个班还没有学生。到「班级设置」里导入名册。' }));
+  grid.style.setProperty('--cols', String(GRID_COLUMNS[klass.theme] ?? 6));
+  if (klass.students.length === 0) {
+    grid.append(h('p', { class: 'empty__hint', text: '这个班还没有学生。收起这块，到「设置」里导入名册。' }));
   }
-  for (const student of state.klass.students) {
+  for (const student of klass.students) {
     const tile = renderTile(student);
     tiles.set(student.id, tile);
     grid.append(tile);
   }
-  main.append(grid);
-  return main;
+  body.append(grid);
+  section.append(body);
+
+  if (!running) {
+    section.append(
+      h('p', { class: 'mask__foot', text: '这一场已结束，收起这块回到花名册。' }),
+    );
+  }
+  return section;
+}
+
+/**
+ * 待机蒙版：自习中一段时间没人碰屏幕，就换成这一块。
+ *
+ * 教室前面那块屏，老师不操作时不该一直亮着几十个名字。中间一个大钟，底下「谁还在
+ * 外面」—— 从最后一排也看得见。碰哪儿都回到自习看板；点某一张离开的卡片，直接把
+ * 那个人记成归来（那是最常用的一手，不必再进一层）。
+ */
+function renderIdleMask() {
+  const klass = state.klass;
+  const session = state.session;
+  const section = h('section', {
+    class: 'mask mask--idle',
+    'data-theme': klass.theme,
+    onClick: () => {
+      state.mask = 'session';
+      noteActivity();
+      render();
+    },
+  });
+
+  const center = h('div', { class: 'idle__center' });
+  center.append(h('span', { class: 'idle__wall', dataset: { clock: 'wall' }, text: '--:--' }));
+  center.append(
+    h('span', { class: 'idle__elapsed' }, [
+      h('span', { text: '自习已进行 ' }),
+      h('b', { dataset: { clock: 'elapsed' }, text: '00:00:00' }),
+    ]),
+  );
+  center.append(h('span', { class: 'idle__counts', dataset: { idle: 'counts' }, text: '' }));
+  section.append(center);
+
+  const away = session === null ? [] : awayStudents(klass, session);
+  const foot = h('div', { class: 'idle__away' });
+  foot.append(
+    h('span', {
+      class: 'idle__away-title',
+      text: away.length === 0 ? '现在没有人在外面' : `离开中 ${away.length} 人 · 点一下记归来`,
+    }),
+  );
+  if (away.length > 0) {
+    const cards = h('div', { class: 'idle__cards' });
+    for (const item of away) {
+      const card = h('button', {
+        class: `idle__card idle__card--${item.status}`,
+        onClick: (event) => {
+          // 这一下不要冒到蒙版上（冒上去就变成「回到看板」了）
+          event.stopPropagation();
+          void markReturnedFromIdle(item.student.id);
+        },
+      });
+      card.append(h('span', { class: 'idle__card-name', text: item.student.name }));
+      if (item.remark !== '') {
+        card.append(h('span', { class: 'idle__card-remark', text: item.remark }));
+      }
+      card.append(
+        h('span', {
+          class: 'idle__card-time',
+          dataset: { away: item.student.id },
+          text: formatDuration(item.awayMs),
+        }),
+      );
+      cards.append(card);
+    }
+    foot.append(cards);
+  }
+  section.append(foot);
+  section.append(h('p', { class: 'idle__hint', text: '点一下屏幕回到花名册' }));
+  return section;
+}
+
+/** 现在在外面的人，按离开的先后排。 */
+function awayStudents(klass, session) {
+  const now = state.now;
+  const items = [];
+  for (const student of klass.students) {
+    const leave = activeLeave(session, student.id);
+    if (leave === undefined) {
+      continue;
+    }
+    const status = statusOf(session, student.id, now, klass.overtimeThresholdMs);
+    items.push({
+      student,
+      status,
+      awayMs: awayMs(session, student.id, now),
+      remark: remarkTextOf(klass, leave),
+    });
+  }
+  return items.sort((left, right) => right.awayMs - left.awayMs);
+}
+
+/** 待机蒙版上点一张卡片：直接记归来。 */
+async function markReturnedFromIdle(studentId) {
+  const student = state.klass.students.find((item) => item.id === studentId);
+  await commitSession(markReturned(state.session, studentId, Date.now()), true);
+  showToast(`${student?.name ?? ''} 已记归来`);
 }
 
 function renderControls() {
@@ -639,11 +900,12 @@ function renderControls() {
   const buttons = h('div', { class: 'controls__buttons' });
   const session = state.session;
   if (session === null || session.phase === PHASE.ENDED) {
+    // 蒙版上走到这里只有一种情形：上一场已结束，老师要接着开下一场
     buttons.append(
       h('button', {
         class: 'btn btn--primary btn--tall',
-        text: session === null ? '开始记录' : '再开一场记录',
-        onClick: () => void startRecording(),
+        text: '再开一场自习',
+        onClick: () => void enterSession(),
       }),
     );
   } else if (session.phase === PHASE.PREPARING) {
@@ -734,12 +996,22 @@ function seatLine(student) {
  * 每 500ms 一次。格子多的时候这是唯一不闪的做法 —— 重画会把还没落的手势打断。
  */
 function updateDynamic() {
-  if (state.view !== 'class' || state.klass === null) {
+  if (state.klass === null) {
+    return;
+  }
+  if (state.mask === 'idle') {
+    updateIdle();
     return;
   }
   const now = state.now;
   const threshold = state.klass.overtimeThresholdMs;
   const session = state.session;
+  updatePageClock(now);
+
+  // 花名册那一页没有会话状态可更新：格子是中性的
+  if (state.mask !== 'session') {
+    return;
+  }
 
   for (const student of state.klass.students) {
     const tile = tiles.get(student.id);
@@ -803,6 +1075,50 @@ function updateDynamic() {
     overtime: String(summary.overtime),
     leaves: String(summary.leaveCount),
   };
+  applyMetricValues(values);
+}
+
+/* ---------- 逐拍更新 ---------- */
+
+/** 班级页顶栏那个「自习中 00:12:33」—— 蒙版收起来时也要看得到还在走。 */
+function updatePageClock(now) {
+  const node = root.querySelector('[data-clock="page"]');
+  if (node === null) {
+    return;
+  }
+  const session = state.session;
+  const running = session !== null && session.rollCallEndedAt !== undefined && session.phase !== PHASE.ENDED;
+  node.textContent = formatStudyTime(running ? studyMs(session, now) : 0);
+}
+
+/** 待机蒙版：墙钟、自习已进行、统计一行、每张卡片上的时长。 */
+function updateIdle() {
+  const now = state.now;
+  const session = state.session;
+  const wall = root.querySelector('[data-clock="wall"]');
+  if (wall !== null) {
+    const date = new Date(now);
+    wall.textContent = `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+  }
+  const elapsed = root.querySelector('[data-clock="elapsed"]');
+  if (elapsed !== null) {
+    elapsed.textContent = formatStudyTime(session === null ? 0 : studyMs(session, now));
+  }
+  if (session !== null) {
+    const summary = summarize(state.klass, session, now);
+    const counts = root.querySelector('[data-idle="counts"]');
+    if (counts !== null) {
+      counts.textContent = `应到 ${summary.total} · 已到 ${summary.present} · 没到 ${summary.absent} · 离开中 ${summary.left}`;
+    }
+    for (const node of root.querySelectorAll('[data-away]')) {
+      const studentId = node.dataset.away;
+      node.textContent = formatDuration(awayMs(session, studentId, now));
+    }
+  }
+}
+
+/** 走的计时与「离开中」的亮灭。模式与格子上那一套一致。 */
+function applyMetricValues(values) {
   for (const node of root.querySelectorAll('[data-metric]')) {
     const next = values[node.dataset.metric];
     if (next !== undefined && node.textContent !== next) {
@@ -1103,6 +1419,33 @@ function renderSettings() {
     ]),
   );
 
+  const idleSelect = h('select', { class: 'input' });
+  for (const [value, label] of [
+    ['0', '不切（一直显示花名册）'],
+    ['30', '30 秒'],
+    ['60', '1 分钟'],
+    ['120', '2 分钟'],
+    ['300', '5 分钟'],
+  ]) {
+    idleSelect.append(
+      h('option', {
+        value,
+        text: label,
+        ...(String(Math.round(klass.idleMaskMs / 1000)) === value ? { selected: true } : {}),
+      }),
+    );
+  }
+  body.push(
+    h('label', { class: 'field' }, [
+      h('span', { class: 'field__label', text: '待机蒙版' }),
+      idleSelect,
+      h('span', {
+        class: 'field__note',
+        text: '自习中这么久没人碰屏幕，就换成一个大钟加「谁还在外面」。点一下屏幕回来。',
+      }),
+    ]),
+  );
+
   const templatesArea = h('textarea', {
     class: 'input input--area',
     rows: 5,
@@ -1164,6 +1507,7 @@ function renderSettings() {
           overtimeThresholdMs: Math.max(1, Number(thresholdInput.value) || 10) * 60000,
           alertSound: soundToggle.checked,
           alertRepeatMs: Math.max(15, Number(repeatInput.value) || 60) * 1000,
+          idleMaskMs: Math.max(0, Number(idleSelect.value) || 0) * 1000,
           remarkTemplates: templates,
         });
         showToast('设置已保存');
@@ -1288,10 +1632,49 @@ function pickFile(accept, handler) {
 
 let listening = null;
 
+/* ---------- 待机 ---------- */
+
+/**
+ * 有人碰了屏幕。
+ *
+ * 任何一次指针按下或按键都算 —— 老师伸手那一刻就不该再是待机。切回看板由待机蒙版
+ * 自己的点击处理（这样点某张卡片能拦住，不冒到蒙版上）。
+ */
+function noteActivity() {
+  state.lastActivityAt = Date.now();
+}
+
+/** 自习中一段时间没人碰，就切待机蒙版。 */
+function maybeGoIdle() {
+  if (state.mask !== 'session' || state.klass === null || state.session === null) {
+    return false;
+  }
+  // 只在正式自习时间里切：点名时屏幕上正等着老师点人，不该自己走掉
+  if (state.session.phase !== PHASE.SELF_STUDY) {
+    return false;
+  }
+  const threshold = state.klass.idleMaskMs;
+  if (threshold <= 0) {
+    return false;
+  }
+  if (state.now - state.lastActivityAt < threshold) {
+    return false;
+  }
+  state.mask = 'idle';
+  render();
+  return true;
+}
+
+document.addEventListener('pointerdown', noteActivity, true);
+document.addEventListener('keydown', noteActivity, true);
+
 /* ---------- 启动 ---------- */
 
 function tick() {
   state.now = Date.now();
+  if (maybeGoIdle()) {
+    return;
+  }
   updateDynamic();
   void checkAlerts();
 }
@@ -1299,16 +1682,20 @@ function tick() {
 async function boot() {
   await store.requestPersistence();
   await refreshClasses();
-  let lastId = await store.getSetting('lastClassId', null);
+  const lastId = await store.getSetting('lastClassId', null);
   if (lastId !== null) {
     const klass = await store.getClass(lastId);
     if (klass !== null) {
       await openClass(klass);
+      // 有一场自习还在跑就直接盖上蒙版：刷新或崩了重开，老师要回到看板接着用。
+      // 上一场已经结束的不会盖上 —— 那种情形该看到花名册。
+      if (state.session !== null && state.session.phase !== PHASE.ENDED) {
+        state.mask = 'session';
+      }
     }
   }
-  if (state.view === 'home') {
-    render();
-  }
+  noteActivity();
+  render();
   window.setInterval(tick, TICK_MS);
 }
 

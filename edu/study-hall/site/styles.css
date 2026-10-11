@@ -99,6 +99,43 @@ body {
   min-height: 100dvh;
 }
 
+/* 班级页 / 班级列表页：顶栏 + 内容 */
+.page {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+/* ---------- 蒙版 ---------- */
+
+/**
+ * 一次自习就是盖住整屏的这一块。
+ *
+ * 用 fixed 而不是靠 absolute：蒙版不该被底下那一页的布局影响，也不该让底下的滚动
+ * 传上来。教室前面那块屏，这一块就是全部。
+ */
+.mask {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--paper);
+  z-index: 40;
+}
+
+.mask--session {
+  overflow: hidden;
+}
+
+.mask__foot {
+  flex: none;
+  margin: 0;
+  padding: 8px 16px 14px;
+  color: var(--ink-dim);
+  font-size: 13px;
+}
+
 /* ---------- 顶栏 ---------- */
 
 .tab {
@@ -245,6 +282,161 @@ body {
   background: color-mix(in srgb, var(--overtime) 10%, var(--surface));
   border-color: color-mix(in srgb, var(--overtime) 45%, var(--rule));
   color: var(--overtime);
+}
+
+/* ---------- 班级页 ---------- */
+
+.school {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 14px 16px 16px;
+  gap: 12px;
+}
+
+.school__bar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  flex: none;
+}
+
+.school__meta {
+  margin: 0;
+  color: var(--ink-dim);
+  font-size: 13.5px;
+}
+
+/* 花名册那一页的格子是中性的：四色只在一次自习里才有意义 */
+.grid--roster .tile--roster {
+  background: var(--surface);
+  border-color: var(--rule);
+  color: var(--ink);
+  cursor: default;
+}
+
+.grid--roster .tile--roster .tile__meta {
+  color: var(--ink-dim);
+  opacity: 1;
+}
+
+/* ---------- 待机蒙版 ---------- */
+
+/**
+ * 自习中没人碰屏幕时的那一块。
+ *
+ * 教室前面那块屏，老师不操作时不该一直亮着几十个名字。中间一个大钟，底下「谁还在
+ * 外面」—— 从最后一排也看得见，而且是这一块里唯一能点的东西。
+ */
+.mask--idle {
+  cursor: pointer;
+  padding: 0 4vw;
+}
+
+.idle__center {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 0;
+}
+
+.idle__wall {
+  font: 700 clamp(72px, 17vw, 240px) / 1 var(--mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+
+.idle__elapsed {
+  color: var(--ink-dim);
+  font-size: clamp(14px, 1.5vw, 20px);
+}
+
+.idle__elapsed b {
+  color: var(--ink);
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.idle__counts {
+  color: var(--ink-dim);
+  font-size: clamp(13px, 1.3vw, 18px);
+}
+
+.idle__away {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px 0 8px;
+  border-top: 1px solid var(--rule);
+}
+
+.idle__away-title {
+  color: var(--ink-dim);
+  font-size: 13.5px;
+}
+
+.idle__cards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+/* 卡片上那一手是「记归来」，所以看着像能点的钮 */
+.idle__card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 150px;
+  padding: 10px 16px;
+  border: 0;
+  border-radius: var(--tile-radius);
+  font: inherit;
+  color: var(--left-ink);
+  background: var(--left);
+  cursor: pointer;
+  text-align: left;
+}
+
+.idle__card--overtime {
+  color: var(--overtime-ink);
+  background: var(--overtime);
+}
+
+.idle__card-name {
+  font-size: clamp(18px, 1.9vw, 26px);
+  font-weight: 650;
+}
+
+.idle__card-remark {
+  font-size: clamp(12px, 1.1vw, 15px);
+  opacity: 0.8;
+}
+
+.idle__card-time {
+  font: 600 clamp(14px, 1.3vw, 19px) / 1.2 var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.idle__hint {
+  flex: none;
+  margin: 0;
+  padding: 6px 0 20px;
+  color: var(--ink-dim);
+  font-size: 12.5px;
+  text-align: center;
+}
+
+/* 顶栏里那颗跟着走的自习时钟 */
+.chip__clock {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
 }
 
 /* ---------- 班级列表 ---------- */
