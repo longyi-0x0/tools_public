@@ -6,6 +6,7 @@
  */
 
 import { h, toggleFullscreen } from './dom.js';
+import { themeLabel } from './domain.js';
 import * as store from './store.js';
 import { exportClassWorkbook } from './klassFile.js';
 import { buildZip } from './xlsx.js';
@@ -370,8 +371,4 @@ export function displayOrder(klass, session) {
     ...klass.students.filter((student) => !absent.has(student.id)),
     ...klass.students.filter((student) => absent.has(student.id)),
   ];
-}
-
-function themeLabel(theme) {
-  return { junior: '童趣（小学）', middle: '标准', senior: '简洁（高中）' }[theme] ?? theme;
 }

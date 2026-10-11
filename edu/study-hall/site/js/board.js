@@ -19,6 +19,7 @@ import {
   statusOf,
   studyMs,
   summarize,
+  themeColumns,
 } from './domain.js';
 import {
   doEndSession,
@@ -35,9 +36,6 @@ import {
 import { displayOrder, tabBar } from './classes.js';
 import { openOverlay } from './overlays/index.js';
 import { openRollCall, updateRollCall } from './overlays/rollcall.js';
-
-/** 一屏格子的网格：按人数选列数，人多列多、字小。 */
-export const GRID_COLUMNS = { junior: 5, middle: 6, senior: 8 };
 
 const tiles = new Map();
 
@@ -103,7 +101,7 @@ export function renderSessionMask() {
   body.append(renderLegend());
 
   const grid = h('div', { class: 'grid' });
-  grid.style.setProperty('--cols', String(GRID_COLUMNS[klass.theme] ?? 6));
+  grid.style.setProperty('--cols', String(themeColumns(klass.theme)));
   if (klass.students.length === 0) {
     grid.append(h('p', { class: 'empty__hint', text: '这个班还没有学生。收起这块，到「设置」里导入名册。' }));
   }
