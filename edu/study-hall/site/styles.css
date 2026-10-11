@@ -42,6 +42,21 @@
   --accent: #2f68d8;
   --danger: #c8362f;
 
+  /*
+   * 教室的响度：静 → 临界 → 吵。
+   *
+   * 这是一套**环境**的色，与人物的四色（灰没来 / 蓝在座 / 红超时）说的不是一件事 ——
+   * 待机页上两者同时在场（底色偏暖，卡片上写着谁超时了），所以这套只染整屏的底，
+   * 淡淡的五档，不去碰名字、卡片与字色。越吵越暖，越静越绿。
+   */
+  --volume-calm: #dcebe0;
+  --volume-quiet: #e8f0e6;
+  --volume-edge: #f6ecd6;
+  --volume-warm: #f8e3cc;
+  --volume-over: #f7d9c8;
+  /* 写在浅底上的那一行读数，越过阈值时用这个色点一下 */
+  --volume-over-ink: #c2410c;
+
   --radius: 10px;
   --tile-radius: 12px;
   --tile-pad: 12px;
@@ -328,6 +343,48 @@ body {
 .mask--idle {
   cursor: pointer;
   padding: 0 4vw;
+  /* 底色换档时不「啪」一下 —— 从后排看，五档加上这一段过渡就像慢慢变暖的 */
+  transition: background-color 600ms ease;
+}
+
+/*
+ * 教室的响度染的那一层底。
+ *
+ * 五档而不是三档：从后排看，档位之间跳一下很明显。五档的边界按「读数离阈值多远」算 ——
+ * 染色要回答的是「现在离那条线多近」，那个带迟滞的「吵着」判定回答的是「算不算吵起来了」，
+ * 两个问法不一样，所以这里不用 `is-over`。
+ *
+ * 没在听（`off`）时一条规则都不给，底色回到 `.mask` 的纸底 —— 屏幕上偏绿偏暖，总该有来由。
+ */
+.mask--idle[data-volume="calm"] {
+  background: var(--volume-calm);
+}
+
+.mask--idle[data-volume="quiet"] {
+  background: var(--volume-quiet);
+}
+
+.mask--idle[data-volume="edge"] {
+  background: var(--volume-edge);
+}
+
+.mask--idle[data-volume="warm"] {
+  background: var(--volume-warm);
+}
+
+.mask--idle[data-volume="over"] {
+  background: var(--volume-over);
+}
+
+/* 写着读数的那个数。没在听时是空的，占不到地方 */
+.idle__volume {
+  color: var(--ink-dim);
+  font-size: clamp(13px, 1.3vw, 18px);
+}
+
+.idle__volume.is-over {
+  color: var(--volume-over-ink);
+  font-weight: 650;
 }
 
 .idle__center {
@@ -1105,6 +1162,92 @@ body {
 
 .field__note {
   color: var(--ink-dim);
+  font-size: 12.5px;
+}
+
+/* ---------- 听教室那一层 ---------- */
+
+/*
+ * 一条横着的量尺：底是 0–100 的刻度，填起来的是当下的读数，竖着那道是阈值。
+ *
+ * 横着摆而不是像教室大屏上那样竖着：这一层是老师坐着看的一扇窗，眼睛本来就横着扫。
+ */
+.listen__bar {
+  position: relative;
+  height: 14px;
+  border-radius: 7px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--ink) 6%, var(--surface));
+}
+
+.listen__fill {
+  display: block;
+  width: 0;
+  height: 100%;
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--accent) 55%, var(--surface));
+  transition: width 120ms linear, background-color 240ms ease;
+}
+
+/* 越过阈值：填起来的那一段换成暖色，扫一眼就知道现在落在线的哪一边 */
+.listen__fill.is-over {
+  background: var(--volume-over-ink);
+}
+
+/* 阈值那一道压在填色上面，所以描一圈纸色 —— 底下是填色还是空槽都看得见 */
+.listen__mark {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--ink);
+  box-shadow: 0 0 0 1px var(--surface);
+}
+
+.listen__readout {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.listen__level {
+  font: 700 26px/1 var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.listen__level.is-over {
+  color: var(--volume-over-ink);
+}
+
+.listen__threshold {
+  color: var(--ink-dim);
+  font-size: 13px;
+}
+
+.listen__status {
+  margin-left: auto;
+  color: var(--ink-dim);
+  font-size: 13px;
+}
+
+.listen__status.is-over {
+  color: var(--volume-over-ink);
+  font-weight: 650;
+}
+
+/* 一条横尺：轨道自己画，把手交给系统默认的那一个 */
+.input--range {
+  height: 24px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  accent-color: var(--accent);
+}
+
+/* 说明旁边那颗小钮：压一档，不与这一层的主行动同重 */
+.btn--note {
+  flex: none;
+  padding: 4px 9px;
   font-size: 12.5px;
 }
 

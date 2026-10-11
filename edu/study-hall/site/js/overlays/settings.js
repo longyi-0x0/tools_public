@@ -6,6 +6,7 @@
 
 import { h, modalFrame } from '../dom.js';
 import { AWAY_COLORS, DEFAULT_AWAY_COLOR } from '../domain.js';
+import { THRESHOLD_DEFAULT, THRESHOLD_MAX, THRESHOLD_MIN, THRESHOLD_STEP, clampThreshold } from '../volume.js';
 import { ROSTER_ACCEPT, rosterFromSheets } from '../roster.js';
 import { readSheetFile } from '../readSheets.js';
 import { removeClass } from '../classes.js';
@@ -148,6 +149,30 @@ export function renderSettings() {
     ]),
   );
 
+  // 「听教室」的默认线。与上面那几项不同的是：这一项**多半要当场调**才准，
+  // 所以看板上另有一颗钮能拧（本场有效）。这里管的是这个班的默认值
+  const thresholdInput = h('input', {
+    class: 'input',
+    type: 'number',
+    min: String(THRESHOLD_MIN),
+    max: String(THRESHOLD_MAX),
+    step: String(THRESHOLD_STEP),
+    value: String(klass.volumeThreshold),
+  });
+  body.push(
+    h('label', { class: 'field' }, [
+      h('span', { class: 'field__label', text: '教室多响算「吵」（听教室）' }),
+      thresholdInput,
+      h('span', {
+        class: 'field__note',
+        text:
+          `0 到 100 不是分贝，是这台机器读出来的相对刻度（默认 ${THRESHOLD_DEFAULT}）—— 换个麦克风，` +
+          '同一个教室就是另一个数。所以这一项多半要开着「听教室」当场调：安静时读数落在线的下面一点、' +
+          '正常说话时贴着线，就差不多。自习看板上那颗钮能当场拧（只管那一场，不改这里）。',
+      }),
+    ]),
+  );
+
   // 每条备注自带颜色与时长。原来这里是「一行一条」的输入框 —— 现在一条有三个字段，
   // 就得一行一行摆：文本、颜色、分钟数，右边一个删。
   const templateList = h('div', { class: 'tpls' });
@@ -252,6 +277,7 @@ export function renderSettings() {
           alertSound: soundToggle.checked,
           alertRepeatMs: Math.max(15, Number(repeatInput.value) || 60) * 1000,
           idleMaskMs: Math.max(0, Number(idleSelect.value) || 0) * 1000,
+          volumeThreshold: clampThreshold(thresholdInput.value),
           remarkTemplates: templates,
         });
         showToast('设置已保存');

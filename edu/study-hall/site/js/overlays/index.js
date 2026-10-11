@@ -9,6 +9,7 @@ import { h } from '../dom.js';
 import { render, state } from '../state.js';
 import { renderConflict } from './conflict.js';
 import { renderHistory } from './history.js';
+import { renderListen, resetListenRefs } from './listen.js';
 import { renderNewClass } from './newclass.js';
 import { renderRemark } from './remark.js';
 import { renderRollCall, resetRollCallRefs, stopAutoRollCall } from './rollcall.js';
@@ -53,6 +54,8 @@ export function renderOverlay() {
       return renderConflict();
     case 'rollCall':
       return renderRollCall();
+    case 'listen':
+      return renderListen();
     default:
       return h('span');
   }
@@ -61,4 +64,5 @@ export function renderOverlay() {
 /** 清掉上一帧浮层留下的节点索引。 */
 export function resetOverlayRefs() {
   resetRollCallRefs();
+  resetListenRefs();
 }

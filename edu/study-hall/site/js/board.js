@@ -35,6 +35,7 @@ import {
   startPickingStudents,
   state,
   tapStudent,
+  volumeThresholdInUse,
 } from './state.js';
 import { displayOrder, tabBar } from './classes.js';
 import { openOverlay } from './overlays/index.js';
@@ -53,6 +54,11 @@ const pickMarks = new Map();
 let pickedCountNode = null;
 
 let leaveButtonNode = null;
+
+/** 待机蒙版那一块与它里面写响度的那一行，由 [`paintIdleVolume`] 定点改。 */
+let idleMaskNode = null;
+
+let idleVolumeNode = null;
 
 /** 一句话说清当前这一相要老师做什么。 */
 function phaseHint(klass, session) {
@@ -166,6 +172,7 @@ export function renderIdleMask() {
       render();
     },
   });
+  idleMaskNode = section;
 
   const center = h('div', { class: 'idle__center' });
   center.append(h('span', { class: 'idle__wall', dataset: { clock: 'wall' }, text: '--:--' }));
@@ -176,6 +183,10 @@ export function renderIdleMask() {
     ]),
   );
   center.append(h('span', { class: 'idle__counts', dataset: { idle: 'counts' }, text: '' }));
+  // 教室的响度：听着的时候才有这一行 —— 老师得看得见机器读的是什么数，
+  // 不然那条阈值线凭什么是那个位置就没法判断
+  idleVolumeNode = h('span', { class: 'idle__volume' });
+  center.append(idleVolumeNode);
   section.append(center);
 
   const away = session === null ? [] : awayStudents(klass, session);
@@ -214,7 +225,38 @@ export function renderIdleMask() {
   }
   section.append(foot);
   section.append(h('p', { class: 'idle__hint', text: '点一下屏幕回到看板' }));
+  paintIdleVolume();
   return section;
+}
+
+/**
+ * 待机页按教室的响度染色。
+ *
+ * 只染**底**那一层：大钟的字、统计、还有那几张「离开中」的卡片都不动 —— 卡片刷的是那条
+ * 备注的颜色，压在淡底上本来就得看得清；字色再跟着底色走，从后排反而更难读。
+ *
+ * 底与那一行读数都按「读数离阈值多远」算，**不用**那个带迟滞的判定：染色要回答的是
+ * 「现在离那条线多近」，判定要回答的是「算不算吵起来了」（那一套要守 3 拍、回落要守 1 秒，
+ * 拿它染色会看到「教室已经安静了、屏幕还暖着」）。两处用同一个问法，屏幕上才不会自相矛盾。
+ */
+export function paintIdleVolume() {
+  if (idleMaskNode === null) {
+    return;
+  }
+  if (!state.listening) {
+    // 没在听就一点颜色都不留，回到纸底 —— 屏幕上偏绿偏暖总该有来由
+    idleMaskNode.dataset.volume = 'off';
+    idleVolumeNode.textContent = '';
+    idleVolumeNode.classList.remove('is-over');
+    return;
+  }
+  const threshold = volumeThresholdInUse();
+  const level = state.volumeLevel;
+  const gap = level - threshold;
+  idleMaskNode.dataset.volume =
+    gap >= 20 ? 'over' : gap >= 8 ? 'warm' : gap > -8 ? 'edge' : gap > -20 ? 'quiet' : 'calm';
+  idleVolumeNode.textContent = `教室 ${level} · 阈值 ${threshold}`;
+  idleVolumeNode.classList.toggle('is-over', gap >= 0);
 }
 
 /** 现在在外面的人，按离开的先后排。 */
@@ -296,7 +338,7 @@ function renderControls() {
       onClick: () => void doEndSession(),
     }),
   );
-  buttons.append(quietGroup([restartButton(), idleButton(), muteButton()]));
+  buttons.append(quietGroup([restartButton(), listenButton(), idleButton(), muteButton()]));
   bar.append(buttons);
   return bar;
 }
@@ -387,6 +429,28 @@ function idleButton() {
       state.idleOff = !state.idleOff;
       showToast(state.idleOff ? '本场不再自己换成大时钟' : '本场恢复自动待机');
     },
+  });
+}
+
+/**
+ * 听教室。
+ *
+ * 教室的响度是**整场自习**的事，不是待机页那一块屏的事 —— 所以这一颗管的是「这一场
+ * 听不听」，待机页只是它的一块显示屏。麦克风是一只能伸进教室的耳朵，所以默认不听：
+ * 老师按开浮层、再按「开始听教室」才开，关掉或这一场结束就真的放手。
+ *
+ * 点开的是浮层而不是当场切换：浮层里要摆那条阈值尺与当前的读数（老师得看着数拧它）。
+ */
+function listenButton() {
+  const on = state.listening;
+  return h('button', {
+    class: on ? 'btn btn--icon is-on' : 'btn btn--icon',
+    text: '🎙️',
+    title: on
+      ? `正在听教室（阈值 ${volumeThresholdInUse()}）—— 点开可以调那条线或者关掉`
+      : '读教室有多响：待机页按它染色，吵得停不下来会提醒。点开调阈值',
+    'aria-label': on ? '正在听教室' : '听教室',
+    onClick: () => openOverlay('listen'),
   });
 }
 
@@ -711,4 +775,6 @@ export function resetTileRefs() {
   pickMarks.clear();
   pickedCountNode = null;
   leaveButtonNode = null;
+  idleMaskNode = null;
+  idleVolumeNode = null;
 }

@@ -27,13 +27,16 @@ import {
 } from './domain.js';
 import * as store from './store.js';
 import * as sound from './sound.js';
+import * as mic from './mic.js';
+import { THRESHOLD_DEFAULT, VolumeWatch, clampThreshold } from './volume.js';
 import { exportClassWorkbook, parseClassWorkbook } from './klassFile.js';
 import { download } from './roster.js';
 import { formatSpan, today } from './format.js';
 import { focusIntoOverlay, h, requestFullscreen, root, uid } from './dom.js';
 import { renderClassesPage } from './classes.js';
-import { renderIdleMask, renderSessionMask, resetTileRefs, updateDynamic, paintPicking } from './board.js';
+import { paintIdleVolume, renderIdleMask, renderSessionMask, resetTileRefs, updateDynamic, paintPicking } from './board.js';
 import { renderOverlay, resetOverlayRefs } from './overlays/index.js';
+import { paintListenPanel } from './overlays/listen.js';
 
 export const state = {
   /**
@@ -73,9 +76,32 @@ export const state = {
    */
   idleOff: false,
   /**
-   * 正在开着的浮层：null / 'newClass' / 'remark' / 'settings' / 'history' / 'conflict' / 'rollCall'
+   * 本场听教室：开着就用麦克风读教室的响度。
+   *
+   * 与 [`muted`] / [`idleOff`] 同一个规矩 —— 只存内存、只管这一场：新场从头来，默认不听。
+   * 麦克风是一只手能伸进教室的耳朵，所以**不自动开**：老师按一下才开，关一下、或者
+   * 这一场结束就放手（不是只停下读数，是真的放开装置）。
+   *
+   * 开着的时候一直在读，不只在待机页上读 —— 教室吵不吵是整场自习的事，而待机页只是
+   * 老师不碰屏幕时才出现的一块显示屏。
+   */
+  listening: false,
+  /** 本场的响度读数（0–100，平滑过的）与「现在算不算吵着」。由读数回调往里写。 */
+  volumeLevel: 0,
+  volumeOver: false,
+  /**
+   * 本场临时改的响度阈值；`null` 是跟着班级设置走。
+   *
+   * 与「多久不动就换成大时钟」一样分两处：班级设置里那个是**这个班的默认**（换台机器、
+   * 或者教室换了，都该回去改它），看板上这一处是**本场当场拧一下** —— 那会儿老师
+   * 正听着教室，拧完就上课，不该为此进设置里翻一层。
+   */
+  volumeThreshold: null,
+  /**
+   * 正在开着的浮层：null / 'newClass' / 'remark' / 'settings' / 'history' / 'conflict' / 'rollCall' / 'listen'
    *
    * 「点名」就是这一层里的一个 —— 它是叠在自习看板上的一层可选的窗，不再是一个相。
+   * 「听教室」也是：开不开、阈值拧到哪儿，当场看着数调。
    */
   overlay: null,
   /**
@@ -124,6 +150,25 @@ export const state = {
   toast: '',
 };
 
+/**
+ * 正在跑的那一份响度判定。
+ *
+ * 不放进 `state`：它是「一个开着的机器」，不是界面要读的数据 —— 界面读的是它算出来的
+ * [`state.volumeLevel`] 与 [`state.volumeOver`]，那两样跟着读数一起写进 state。
+ */
+let volumeWatch = null;
+
+/** 提醒音是不是正在响。同一时刻只响一声。 */
+let noiseAlerting = false;
+
+/**
+ * 是不是正在问权限。
+ *
+ * 浏览器自己会弹一个权限提示，老师那会儿看见的反馈就是那个框 —— 但这一趟要等它回来，
+ * 所以这中间的连点得挡住，不然会同时挂起好几次请求。
+ */
+let listeningOpening = false;
+
 export async function refreshClasses() {
   state.classes = (await store.listClasses()).map(normaliseKlass);
   state.running = await readRunningSessions();
@@ -152,6 +197,8 @@ export async function loadClass(klass) {
   const sessions = (await store.listSessions(klass.id)).map(normaliseSession);
   state.sessions = sessions;
   state.session = sessions.find((item) => item.phase !== PHASE.ENDED) ?? null;
+  // 本场临时拧的阈值是「这个班这一刻」的事，换个班就不作数了
+  state.volumeThreshold = null;
 }
 
 /** 从班级卡上进自习：先把这个班装上。 */
@@ -195,6 +242,9 @@ async function enterSession() {
   // 不然老师不知道自己是静音的、也不知道屏幕为什么不切了
   state.muted = false;
   state.idleOff = false;
+  // 听教室同样是本场的事：新场从头来 —— 不听、麦克风也放开。老师上一场忘了关，
+  // 这一场不该接着被听着
+  dropListening();
   state.mask = 'session';
   render();
 }
@@ -293,6 +343,8 @@ export async function doEndSession() {
   state.mask = null;
   // 多选态跟着这一场一起收：都下课了，回来不该还留着上一轮的勾
   state.pickingStudents = null;
+  // 麦克风也一起放手：这一场都结束了，没有理由还听着教室
+  dropListening();
   render();
   showToast(
     klass === null
@@ -323,6 +375,160 @@ export async function doRestart() {
   await commitSession(endSession(state.session, now));
   await enterSession();
   showToast('上一场已结束，新的一场从头开始');
+}
+
+/** 这一场现在用的响度阈值：本场拧过就用拧过的，没拧过就跟着班级设置。 */
+export function volumeThresholdInUse() {
+  return state.volumeThreshold ?? state.klass?.volumeThreshold ?? THRESHOLD_DEFAULT;
+}
+
+/**
+ * 开听。
+ *
+ * 开不成时退回来，把原因说给老师 —— 麦克风开不了有三种，各有各的动法
+ * （见 [`mic.explainTrouble`]）。
+ */
+export async function startListening() {
+  if (state.listening || listeningOpening) {
+    return;
+  }
+  const can = mic.availability();
+  if (!can.ok) {
+    showToast(`听教室用不了：${can.reason}`);
+    return;
+  }
+  const watch = new VolumeWatch(volumeThresholdInUse());
+  listeningOpening = true;
+  let opened;
+  try {
+    opened = await mic.start({
+      onLevel: (level, at) => readVolume(watch, level, at),
+      onLost: () => {
+        dropListening();
+        render();
+        showToast('麦克风断了，听教室停了');
+      },
+    });
+  } finally {
+    listeningOpening = false;
+  }
+  if (!opened.ok) {
+    showToast(mic.explainTrouble(opened.trouble));
+    return;
+  }
+  volumeWatch = watch;
+  state.listening = true;
+  state.volumeLevel = watch.level;
+  state.volumeOver = watch.isOver;
+  render();
+  showToast('开始听教室了');
+}
+
+/** 老师按了「不听」。 */
+export function stopListening() {
+  if (!state.listening) {
+    return;
+  }
+  dropListening();
+  render();
+  showToast('不听教室了');
+}
+
+export async function toggleListening() {
+  if (state.listening) {
+    stopListening();
+    return;
+  }
+  await startListening();
+}
+
+/**
+ * 本场把阈值拧一下。
+ *
+ * 只改这一场，**不写回班级** —— 与「本场不切大时钟」同一件事：班级上那个是这个班的
+ * 默认，看板上这一下是当场听着教室拧的，多半只想管这一节。
+ */
+export function setVolumeThreshold(value) {
+  const next = clampThreshold(value);
+  if (next === volumeThresholdInUse()) {
+    return;
+  }
+  state.volumeThreshold = next;
+  // 阈值一动判定就跟着重判（在 [`VolumeWatch`] 里），所以屏幕上「吵着」那一态当场就对得上
+  if (volumeWatch !== null) {
+    volumeWatch.threshold = next;
+    state.volumeOver = volumeWatch.isOver;
+  }
+  paintVolume();
+}
+
+/** 本场拧的那一下作废，回去跟班级设置。 */
+export function resetVolumeThreshold() {
+  if (state.volumeThreshold === null) {
+    return;
+  }
+  state.volumeThreshold = null;
+  if (volumeWatch !== null) {
+    volumeWatch.threshold = volumeThresholdInUse();
+    state.volumeOver = volumeWatch.isOver;
+  }
+  render();
+}
+
+/**
+ * 读到一拍。
+ *
+ * 这是每 100 毫秒一次的路，所以**不重画整块** —— 只把该变的那几个数定点改掉
+ * （待机页的底色、浮层里的读数）。一秒钟把花名册重画十遍，老师正点着的位置与键盘
+ * 焦点都会跟着抖。
+ */
+function readVolume(watch, level, at) {
+  const alert = watch.push(level, at);
+  state.volumeLevel = watch.level;
+  state.volumeOver = watch.isOver;
+  paintVolume();
+  if (alert) {
+    // 吵得停不下来才出声，一次吵只响一次（见 [`VolumeWatch.push`]）
+    void ringNoiseAlert();
+  }
+}
+
+/** 读数引起的定点重画：待机页与浮层各画各的，没开的那一处直接跳过。 */
+function paintVolume() {
+  paintIdleVolume();
+  paintListenPanel();
+}
+
+/**
+ * 吵得停不下来，出一声。
+ *
+ * 与超时提醒同一套规矩：本场静音了就不响，班里关掉了出声提醒也不响。用不同的音
+ * 是有意的 —— 老师听着得能分出「有人超时没回来」与「教室吵起来了」。
+ */
+async function ringNoiseAlert() {
+  if (noiseAlerting || state.muted || !state.klass?.alertSound || !sound.isSupported()) {
+    return;
+  }
+  noiseAlerting = true;
+  try {
+    await sound.playNoiseAlert();
+  } finally {
+    noiseAlerting = false;
+  }
+}
+
+/**
+ * 放开麦克风，把这一场听教室的那点状态清掉。
+ *
+ * 走的是真的放手（[`mic.close`] 会停掉轨道），不是只停下读数 —— 老师关了、或者这一场
+ * 结束了，浏览器上那个「正在录音」的记号就该灭。界面要不要重画由调用方定。
+ */
+function dropListening() {
+  mic.close();
+  volumeWatch = null;
+  state.listening = false;
+  state.volumeLevel = 0;
+  state.volumeOver = false;
 }
 
 /**

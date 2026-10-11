@@ -6,6 +6,8 @@
  * 在脑子里推演时拿假时钟跑，结果一致。
  */
 
+import { THRESHOLD_DEFAULT, clampThreshold } from './volume.js';
+
 /** 一次记录（一场自习）走到哪一相。 */
 export const PHASE = {
   /** 自习中：按「开始自习」之后的常态。全班默认在座，计时已经在走。 */
@@ -114,6 +116,8 @@ export function createKlass(input) {
     alertSound: input.alertSound ?? true,
     alertRepeatMs: input.alertRepeatMs ?? DEFAULT_ALERT_REPEAT_MS,
     idleMaskMs: input.idleMaskMs ?? DEFAULT_IDLE_MASK_MS,
+    // 听教室的阈值。每台机器的麦克风利得不同，所以这是一个班一个数，不是一个通用标准
+    volumeThreshold: clampThreshold(input.volumeThreshold ?? THRESHOLD_DEFAULT),
     remarkTemplates: templates.map(normaliseTemplate),
     students: input.students ?? [],
   };
@@ -172,6 +176,7 @@ export function normaliseKlass(raw) {
     alertSound: raw.alertSound ?? true,
     alertRepeatMs: raw.alertRepeatMs ?? DEFAULT_ALERT_REPEAT_MS,
     idleMaskMs: raw.idleMaskMs ?? DEFAULT_IDLE_MASK_MS,
+    volumeThreshold: clampThreshold(raw.volumeThreshold ?? THRESHOLD_DEFAULT),
     remarkTemplates: templates.map(normaliseTemplate),
     students: students.map((student) => ({
       id: student.id,

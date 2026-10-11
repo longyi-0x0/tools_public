@@ -52,6 +52,25 @@ function beep(at, frequency, duration) {
 }
 
 /**
+ * 响一次「教室太吵了」。
+ *
+ * 与超时那声**不一样**是有意的：老师背对着屏幕也听得出来是哪一件事 —— 那边是
+ * 「叮·咚·叮」一路往下，这边是短促的两下往上。
+ */
+export function playNoiseAlert() {
+  unlock();
+  if (context === null) {
+    return Promise.resolve(false);
+  }
+  const now = context.currentTime + 0.02;
+  beep(now, 660, 0.16);
+  beep(now + 0.2, 990, 0.26);
+  return new Promise((resolve) => {
+    window.setTimeout(() => resolve(true), 600);
+  });
+}
+
+/**
  * 响一次。
  *
  * 连响三声、音高一路往下 —— 比单音更容易从教室的嘈杂里被听出来。返回一个

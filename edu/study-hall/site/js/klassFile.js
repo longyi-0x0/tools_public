@@ -51,6 +51,7 @@ export async function exportClassWorkbook(klass, sessions, now = Date.now()) {
     [text('超时出声提醒'), text(klass.alertSound ? '是' : '否')],
     [text('补响间隔（秒）'), number(klass.alertRepeatMs / 1000)],
     [text('待机蒙版（秒）'), number(klass.idleMaskMs / 1000)],
+    [text('响度阈值'), number(klass.volumeThreshold)],
     [text('导出于'), date(now)],
   ];
 
@@ -239,6 +240,8 @@ export async function parseClassWorkbook(bytes) {
   // 待机蒙版可以是 0（不切），所以这里不能像补响间隔那样把 0 当成缺省
   const idleRaw = settings.get('待机蒙版（秒）');
   const idleMaskMs = idleRaw === undefined ? DEFAULT_IDLE_MASK_MS : Number(idleRaw) * 1000;
+  // 响度阈值缺了、或者不是个数，都交给 `normaliseKlass` 收进范围和默认值
+  const thresholdRaw = Number(settings.get('响度阈值'));
 
   // 备注模板过一遍 `normaliseKlass`：颜色与时长在两处都有默认，这里不重复那套判断
   const klass = normaliseKlass({
@@ -249,6 +252,7 @@ export async function parseClassWorkbook(bytes) {
     alertSound,
     alertRepeatMs: Number.isFinite(alertRepeatMs) && alertRepeatMs > 0 ? alertRepeatMs : 60000,
     idleMaskMs: Number.isFinite(idleMaskMs) && idleMaskMs >= 0 ? idleMaskMs : DEFAULT_IDLE_MASK_MS,
+    volumeThreshold: Number.isFinite(thresholdRaw) ? thresholdRaw : undefined,
     remarkTemplates: templates,
     students,
   });
