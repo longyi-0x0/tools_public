@@ -8,7 +8,7 @@
  * 表里时间写成 Excel 日期（不是文本），老师拿到文件能直接排序与筛。
  */
 
-import { DEFAULT_IDLE_MASK_MS, PHASE, remarkTextOf, summarize } from './domain.js';
+import { DEFAULT_IDLE_MASK_MS, PHASE, awayMsOf, pausedMs, remarkTextOf, summarize } from './domain.js';
 import { buildWorkbook, date, number, parseWorkbook, text } from './xlsx.js';
 
 export const SHEET = {
@@ -18,6 +18,7 @@ export const SHEET = {
   SESSIONS: '会话',
   MARKS: '点名明细',
   LEAVES: '离开明细',
+  PAUSES: '暂停明细',
 };
 
 /** 会话的落点时间：结束过就用结束时间，还在进行就用「现在」。 */
@@ -64,8 +65,11 @@ export async function exportClassWorkbook(klass, sessions, now = Date.now()) {
     text('没到'),
     text('离开人次'),
     text('累计离开（分钟）'),
+    text('暂停次数'),
+    text('暂停（分钟）'),
   ]];
   const markRows = [[text('会话开始时间'), text('学号'), text('姓名'), text('是否点到')]];
+  const pauseRows = [[text('会话开始时间'), text('暂停时间'), text('继续时间'), text('时长（分钟）')]];
   const leaveRows = [[
     text('会话开始时间'),
     text('学号'),
@@ -90,6 +94,8 @@ export async function exportClassWorkbook(klass, sessions, now = Date.now()) {
       number(summary.absent),
       number(summary.leaveCount),
       number(Math.round(summary.leaveDurationMs / 60000)),
+      number((session.pauses ?? []).length),
+      number(Math.round(pausedMs(session, end) / 60000)),
     ]);
 
     for (const student of klass.students) {
@@ -103,20 +109,26 @@ export async function exportClassWorkbook(klass, sessions, now = Date.now()) {
 
     for (const leave of session.leaves) {
       const student = studentOf.get(leave.studentId);
-      const endAt = leave.returnedAt ?? end;
+      const effectiveMs = awayMsOf(session, leave, end);
       leaveRows.push([
         date(session.startedAt),
         text(student?.code ?? ''),
         text(student?.name ?? ''),
         date(leave.leftAt),
         leave.returnedAt === undefined ? text('未归') : date(leave.returnedAt),
-        number(Math.round(Math.max(0, endAt - leave.leftAt) / 60000)),
-        text(
-          leave.returnedAt !== undefined && leave.returnedAt - leave.leftAt > klass.overtimeThresholdMs
-            ? '是'
-            : '否',
-        ),
+        number(Math.round(effectiveMs / 60000)),
+        text(effectiveMs > klass.overtimeThresholdMs ? '是' : '否'),
         text(remarkLine(klass, leave)),
+      ]);
+    }
+
+    for (const pause of session.pauses ?? []) {
+      const closed = pause.to ?? end;
+      pauseRows.push([
+        date(session.startedAt),
+        date(pause.from),
+        pause.to === undefined ? text('未继续') : date(pause.to),
+        number(Math.round(Math.max(0, closed - pause.from) / 60000)),
       ]);
     }
   }
@@ -127,6 +139,7 @@ export async function exportClassWorkbook(klass, sessions, now = Date.now()) {
     { name: SHEET.SESSIONS, rows: sessionRows },
     { name: SHEET.MARKS, rows: markRows },
     { name: SHEET.LEAVES, rows: leaveRows },
+    { name: SHEET.PAUSES, rows: pauseRows },
   ]);
 }
 
@@ -245,6 +258,7 @@ export async function parseClassWorkbook(bytes) {
         startedAt,
         markedIds: [],
         leaves: [],
+        pauses: [],
       };
       if (Number.isFinite(rollCallStartedAt)) {
         session.rollCallStartedAt = rollCallStartedAt;
@@ -304,6 +318,23 @@ export async function parseClassWorkbook(bytes) {
         leave.remark = note;
       }
       session.leaves.push(leave);
+    }
+  }
+
+  const pauseSheet = findSheet(sheets, SHEET.PAUSES);
+  if (pauseSheet !== undefined) {
+    for (const row of pauseSheet.rows.slice(1)) {
+      const startedAt = Number(row?.[0]);
+      const session = sessionByStart.get(startedAt);
+      if (session === undefined) {
+        continue;
+      }
+      const from = Number(row?.[1]);
+      if (!Number.isFinite(from)) {
+        continue;
+      }
+      const to = Number(row?.[2]);
+      session.pauses.push(Number.isFinite(to) ? { from, to } : { from });
     }
   }
 

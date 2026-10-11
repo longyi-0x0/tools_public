@@ -574,6 +574,23 @@ body {
   color: color-mix(in srgb, var(--ink-dim) 55%, var(--surface));
 }
 
+/* 暂停中：数字压暗一点，后面跟一颗「已暂停」 */
+.clock__value.is-paused {
+  color: color-mix(in srgb, var(--ink) 45%, var(--surface));
+}
+
+.clock__paused {
+  color: var(--ink-dim);
+  font-size: 13px;
+}
+
+.clock__paused:not(:empty) {
+  padding: 2px 8px;
+  border: 1px solid color-mix(in srgb, var(--ink-dim) 35%, var(--rule));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ink) 5%, var(--surface));
+}
+
 @media (max-width: 720px) {
   .clock__value {
     font-size: 30px;

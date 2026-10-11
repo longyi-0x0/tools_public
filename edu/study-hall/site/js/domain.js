@@ -79,6 +79,7 @@ export function startSession(input) {
     startedAt: input.startedAt,
     markedIds: [],
     leaves: [],
+    pauses: [],
   };
 }
 
@@ -119,6 +120,21 @@ export function normaliseKlass(raw) {
   };
 }
 
+/**
+ * 把库里读出来的一场记录补齐成当前形状。
+ *
+ * 与 [`normaliseKlass`] 同理：后来才加的 `pauses` 在老数据上是 `undefined`，
+ * 而算时长要读它。补齐之后是幂等的。
+ */
+export function normaliseSession(raw) {
+  return {
+    ...raw,
+    markedIds: Array.isArray(raw.markedIds) ? raw.markedIds : [],
+    leaves: Array.isArray(raw.leaves) ? raw.leaves : [],
+    pauses: Array.isArray(raw.pauses) ? raw.pauses : [],
+  };
+}
+
 /** 开始点名。 */
 export function beginRollCall(session, at) {
   if (!canTransition(session, PHASE.ROLL_CALL)) {
@@ -135,12 +151,70 @@ export function endRollCall(session, at) {
   return { ...session, phase: PHASE.SELF_STUDY, rollCallEndedAt: at };
 }
 
+/**
+ * 暂停 / 继续。
+ *
+ * 上课时什么情况都能遇到：临时集合、有人进来找、整班被叫走。暂停记的是**区间**
+ * （`{ from, to }`，`to` 为空表示正暂停着），仍然只存时刻不存累加秒数 —— 跨刷新
+ * 重算的结果一致。
+ *
+ * 暂停停的不止是自习时间：有人正离开的话，那一段也不该算到他头上。不然暂停二十分钟
+ * 再回来，谁都变成超时了。
+ */
+export function isPaused(session) {
+  const pauses = session.pauses ?? [];
+  const last = pauses[pauses.length - 1];
+  return last !== undefined && last.to === undefined;
+}
+
+/** 暂停区间与 `[from, to]` 的重叠时长。 */
+export function pausedOverlapMs(pauses, from, to) {
+  if (!Array.isArray(pauses) || to <= from) {
+    return 0;
+  }
+  let total = 0;
+  for (const pause of pauses) {
+    const start = Math.max(from, pause.from);
+    const end = Math.min(to, pause.to === undefined ? to : pause.to);
+    if (end > start) {
+      total += end - start;
+    }
+  }
+  return total;
+}
+
+/** 暂停自习。 */
+export function pauseSession(session, at) {
+  if (session.phase !== PHASE.SELF_STUDY) {
+    throw new Error(`当前阶段（${session.phase}）不能暂停`);
+  }
+  if (isPaused(session)) {
+    return session;
+  }
+  return { ...session, pauses: [...(session.pauses ?? []), { from: at }] };
+}
+
+/** 继续自习。 */
+export function resumeSession(session, at) {
+  if (session.phase !== PHASE.SELF_STUDY) {
+    throw new Error(`当前阶段（${session.phase}）不能继续`);
+  }
+  const pauses = session.pauses ?? [];
+  const last = pauses[pauses.length - 1];
+  if (last === undefined || last.to !== undefined) {
+    return session;
+  }
+  return { ...session, pauses: [...pauses.slice(0, -1), { from: last.from, to: at }] };
+}
+
 /** 结束自习。这一场就此定格。 */
 export function endSession(session, at) {
   if (!canTransition(session, PHASE.ENDED)) {
     throw new Error(`当前阶段（${session.phase}）不能结束自习`);
   }
-  return { ...session, phase: PHASE.ENDED, endedAt: at };
+  // 正暂停着结束的话，把那段合上 —— 不然后面再算时长会一路算到「现在」
+  const closed = isPaused(session) ? resumeSession(session, at) : session;
+  return { ...closed, phase: PHASE.ENDED, endedAt: at };
 }
 
 /** 点到一个人：蓝 → 灰。点名阶段与自习阶段都成立（后者是迟到到场）。 */
@@ -248,29 +322,52 @@ export function statusOf(session, studentId, now, thresholdMs) {
   }
   const leave = activeLeave(session, studentId);
   if (leave !== undefined) {
-    return now - leave.leftAt > thresholdMs ? STATUS.OVERTIME : STATUS.LEFT;
+    // 用有效时长判，不是「现在 − 离开时刻」：暂停的那几段不算他的
+    return awayMsOf(session, leave, now) > thresholdMs ? STATUS.OVERTIME : STATUS.LEFT;
   }
   return session.markedIds.includes(studentId) ? STATUS.PRESENT : STATUS.ABSENT;
 }
 
-/** 当前这次离开已持续的毫秒数；不在离开中为 0。 */
+/** 当前这次离开已持续的毫秒数（扣掉暂停段）；不在离开中为 0。 */
 export function awayMs(session, studentId, now) {
   const leave = activeLeave(session, studentId);
-  return leave === undefined ? 0 : Math.max(0, now - leave.leftAt);
+  return leave === undefined ? 0 : awayMsOf(session, leave, now);
+}
+
+/**
+ * 一条离开记录到 `now` 为止的实际时长。
+ *
+ * 扣掉与暂停区间重叠的部分 —— 暂停期间人还在外面，但那段时间不算他的。
+ */
+export function awayMsOf(session, leave, now) {
+  const end = leave.returnedAt === undefined ? now : leave.returnedAt;
+  return Math.max(0, end - leave.leftAt - pausedOverlapMs(session.pauses, leave.leftAt, end));
 }
 
 /**
  * 这一场已经自习了多久。
  *
- * 从**结束点名**那一刻算起 —— 点名一结束就是正式的自习时间。还在点名或准备时是 0；
- * 已经结束的那一场定格在结束那一刻，不再往前走。
+ * 从**结束点名**那一刻算起 —— 点名一结束就是正式的自习时间；暂停的那几段不算。
+ * 还在点名或准备时是 0；已经结束的那一场定格在结束那一刻，不再往前走。
  */
 export function studyMs(session, now) {
   if (session.rollCallEndedAt === undefined) {
     return 0;
   }
   const end = session.endedAt ?? now;
-  return Math.max(0, end - session.rollCallEndedAt);
+  return Math.max(
+    0,
+    end - session.rollCallEndedAt - pausedOverlapMs(session.pauses, session.rollCallEndedAt, end),
+  );
+}
+
+/** 这一场暂停了多少（毫秒）。 */
+export function pausedMs(session, now) {
+  if (session.rollCallEndedAt === undefined) {
+    return 0;
+  }
+  const end = session.endedAt ?? now;
+  return pausedOverlapMs(session.pauses, session.rollCallEndedAt, end);
 }
 
 /** 把模板与补充拼成一行备注。 */
@@ -319,8 +416,7 @@ export function summarize(klass, session, now) {
   }
   let leaveDurationMs = 0;
   for (const leave of session.leaves) {
-    const end = leave.returnedAt ?? now;
-    leaveDurationMs += Math.max(0, end - leave.leftAt);
+    leaveDurationMs += awayMsOf(session, leave, now);
   }
   return {
     total: klass.students.length,
@@ -330,6 +426,7 @@ export function summarize(klass, session, now) {
     overtime,
     leaveCount: session.leaves.length,
     leaveDurationMs,
+    pausedMs: pausedMs(session, now),
   };
 }
 
@@ -346,7 +443,8 @@ export function dueAlerts(session, now, thresholdMs, repeatMs) {
     if (leave.returnedAt !== undefined) {
       continue;
     }
-    if (now - leave.leftAt <= thresholdMs) {
+    // 按有效时长判：暂停期间不算，暂停时也不该响（调用方会跳过）
+    if (awayMsOf(session, leave, now) <= thresholdMs) {
       continue;
     }
     if (leave.overtimeNotifiedAt === undefined || now - leave.overtimeNotifiedAt >= repeatMs) {

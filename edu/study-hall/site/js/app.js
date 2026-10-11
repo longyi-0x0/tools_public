@@ -16,12 +16,16 @@ import {
   dueAlerts,
   endRollCall,
   endSession,
+  isPaused,
   markLeft,
   markNotified,
   markPresent,
   markReturned,
   normaliseKlass,
+  normaliseSession,
+  pauseSession,
   remarkTextOf,
+  resumeSession,
   startSession,
   statusOf,
   studyMs,
@@ -170,6 +174,9 @@ function phaseHint(klass, session) {
       return missing > 0 ? `点名中：还有 ${missing} 人没点到（蓝色就是没到）。` : '全班点到，按「结束点名」进入自习。';
     }
     case PHASE.SELF_STUDY: {
+      if (isPaused(session)) {
+        return `已暂停：自习时间停在 ${formatStudyTime(studyMs(session, state.now))}，外面的人也一起停表。按「继续自习」接着走。`;
+      }
       const summary = summarize(klass, session, state.now);
       return summary.absent > 0
         ? `自习中：蓝色 ${summary.absent} 人未到。要是有人临时离开，点一下他。`
@@ -192,7 +199,7 @@ async function refreshClasses() {
 
 async function openClass(klass) {
   state.klass = normaliseKlass(klass);
-  const sessions = await store.listSessions(klass.id);
+  const sessions = (await store.listSessions(klass.id)).map(normaliseSession);
   state.sessions = sessions;
   const active = sessions.find((item) => item.phase !== PHASE.ENDED);
   state.session = active ?? null;
@@ -294,6 +301,30 @@ async function doEndSession() {
   render();
 }
 
+/** 暂停自习。 */
+async function doPause() {
+  await commitSession(pauseSession(state.session, Date.now()));
+  showToast('已暂停，谁在外面也一起停表');
+}
+
+/** 继续自习。 */
+async function doResume() {
+  await commitSession(resumeSession(state.session, Date.now()));
+  showToast('已继续');
+}
+
+/**
+ * 重新开始：结束这一场，另开一场。
+ *
+ * 这一场已结束（定格、留着），新的一场从头来（准备相，需要重新点名）。
+ */
+async function doRestart() {
+  const now = Date.now();
+  await commitSession(endSession(state.session, now));
+  await enterSession();
+  showToast('上一场已结束，新的一场从头开始');
+}
+
 /** 点一个格子。走哪条路看当前相与该学生现在的颜色。 */
 async function tapStudent(studentId) {
   const session = state.session;
@@ -346,6 +377,10 @@ let alerting = false;
 
 async function checkAlerts() {
   if (alerting || state.session === null || state.session.phase !== PHASE.SELF_STUDY) {
+    return;
+  }
+  // 暂停期间不响：那段时间不算在外面，一直响只会吵
+  if (isPaused(state.session)) {
     return;
   }
   if (!state.klass.alertSound || !sound.isSupported()) {
@@ -910,6 +945,7 @@ function renderControls() {
     );
   } else if (session.phase === PHASE.PREPARING) {
     buttons.append(beginButton());
+    buttons.append(restartButton());
   } else if (session.phase === PHASE.ROLL_CALL) {
     buttons.append(
       h('button', {
@@ -918,13 +954,43 @@ function renderControls() {
         onClick: () => void doEndRollCall(),
       }),
     );
+    buttons.append(restartButton());
   } else {
+    buttons.append(
+      isPaused(session)
+        ? h('button', {
+            class: 'btn btn--primary btn--tall',
+            text: '继续自习',
+            onClick: () => void doResume(),
+          })
+        : h('button', { class: 'btn btn--tall', text: '暂停自习', onClick: () => void doPause() }),
+    );
+    buttons.append(restartButton());
     buttons.append(
       h('button', { class: 'btn btn--tall', text: '结束自习', onClick: () => void doEndSession() }),
     );
   }
   bar.append(buttons);
   return bar;
+}
+
+/**
+ * 「重新开始」：把这一场结束掉，另开一场。
+ *
+ * 上课时什么情况都能遇到（点错一堆、被别的事打断、想从头记），所以给一手干净的：
+ * 先确认，再结束 + 开新场。旧的那一场留在记录里，不删。
+ */
+function restartButton() {
+  return h('button', {
+    class: 'btn btn--tall',
+    text: '重新开始',
+    title: '结束这一场，另开一场',
+    onClick: () => {
+      if (window.confirm('结束这一场并另开一场？这一场的记录会留着。')) {
+        void doRestart();
+      }
+    },
+  });
 }
 
 function beginButton() {
@@ -969,6 +1035,8 @@ function renderClock() {
   const value = h('span', { class: 'clock__value', text: '00:00:00' });
   value.dataset.clock = 'study';
   clock.append(value);
+  // 「已暂停」跟在数字后面，由走秒那条路定点改（不重画整块）
+  clock.append(h('span', { class: 'clock__paused', dataset: { pause: 'tag' }, text: '' }));
   return clock;
 }
 
@@ -1060,12 +1128,17 @@ function updateDynamic() {
     hint.textContent = phaseHint(state.klass, session ?? { phase: PHASE.PREPARING, markedIds: [], leaves: [], startedAt: now });
   }
 
-  // 自习时间：点名结束前是 0 且暗淡，自习中一路走，结束后定住
+  // 自习时间：点名结束前是 0 且暗淡；自习中一路走；暂停时停住并标注；结束后定住
   const clock = root.querySelector('[data-clock="study"]');
   if (clock !== null) {
-    const running = session !== null && session.rollCallEndedAt !== undefined;
-    clock.textContent = formatStudyTime(running ? studyMs(session, now) : 0);
-    clock.classList.toggle('is-idle', !running);
+    const started = session !== null && session.rollCallEndedAt !== undefined;
+    clock.textContent = formatStudyTime(started ? studyMs(session, now) : 0);
+    clock.classList.toggle('is-idle', !started);
+    clock.classList.toggle('is-paused', session !== null && isPaused(session));
+  }
+  const pauseTag = root.querySelector('[data-pause="tag"]');
+  if (pauseTag !== null) {
+    pauseTag.textContent = session !== null && isPaused(session) ? '已暂停' : '';
   }
   const values = {
     total: String(summary.total),
@@ -1653,8 +1726,9 @@ function maybeGoIdle() {
   if (state.mask !== 'session' || state.klass === null || state.session === null) {
     return false;
   }
-  // 只在正式自习时间里切：点名时屏幕上正等着老师点人，不该自己走掉
-  if (state.session.phase !== PHASE.SELF_STUDY) {
+  // 只在正式自习时间里切：点名时屏幕上正等着老师点人，不该自己走掉。
+  // 暂停时也不切：那时什么都没在计时，屏幕上留着「已暂停」比换成大钟有用。
+  if (state.session.phase !== PHASE.SELF_STUDY || isPaused(state.session)) {
     return false;
   }
   const threshold = state.klass.idleMaskMs;
