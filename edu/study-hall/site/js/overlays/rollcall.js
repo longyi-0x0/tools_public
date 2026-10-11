@@ -171,7 +171,8 @@ function rollDoneText(absentCount) {
  * 听见）。念不出来（浏览器没有中文嗓音之类）就顶一句提示，不默不作声。
  */
 function sayName(name) {
-  const status = speech.speak(name, () => showToast('念不出来：这台机器的语音不可用'));
+  // 掐掉上一句也会走到引擎的 error（interrupted），那一类由 speech 层咽掉，不落到这里
+  const status = speech.speak(name, (reason) => showToast(`念不出来：${reason}`));
   if (!status.ok) {
     showToast(`念不出来：${status.reason}`);
   }

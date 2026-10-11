@@ -39,10 +39,39 @@ export function canSpeak() {
 }
 
 /**
+ * 引擎报的错码 → 跟老师说得清的一句话。
+ *
+ * `interrupted` / `canceled` 不在这里：那是我们自己掐掉上一句时报的，属正常流程
+ * （见 `speak`）。
+ */
+function explain(code) {
+  switch (code) {
+    case 'not-allowed':
+      return '这台机器不给念（语音被系统或权限挡住了）';
+    case 'synthesis-failed':
+      return '这台机器合成不了这段声音';
+    case 'voice-unavailable':
+      return '这台机器没有能念中文的嗓音';
+    case 'audio-busy':
+      return '声音设备正被别的程序占着';
+    default:
+      return `念不出来（${code}）`;
+  }
+}
+
+/**
+ * 正在念的那一句。
+ *
+ * 留着这个引用是必要的：某些引擎在 `speak()` 之后若对象没被引用，会在念到一半时被
+ * 回收掉，话就吞了（Chrome 现在不这样，别的引擎与版本有过）。
+ */
+let current = null;
+
+/**
  * 念一句中文。
  *
  * 连点几个名字时把上一句掐掉再念新的 —— 老师要的是**这一个**的名字，不是排队念一串。
- * 引擎自己在念的时候出错（没有中文嗓音之类）走 `onError`。
+ * 引擎真的出错（没有中文嗓音之类）走 `onError`，收到的是一句能直接给老师看的话。
  *
  * 返回「起没起来」与原因，由调用方决定怎么跟老师说。
  */
@@ -52,13 +81,27 @@ export function speak(text, onError) {
   }
   const utterance = new window.SpeechSynthesisUtterance(text);
   utterance.lang = 'zh-CN';
-  utterance.onerror = (event) => onError?.(event.error ?? 'unknown');
+  utterance.onerror = (event) => {
+    const code = event.error ?? 'unknown';
+    // 掐掉上一句时引擎报的是 interrupted / canceled，那是这一手自己的动作，不是出错
+    if (code === 'interrupted' || code === 'canceled') {
+      return;
+    }
+    onError?.(explain(code));
+  };
+  utterance.onend = () => {
+    if (current === utterance) {
+      current = null;
+    }
+  };
   if (window.speechSynthesis.speaking || window.speechSynthesis.pending) {
     window.speechSynthesis.cancel();
   }
+  current = utterance;
   try {
     window.speechSynthesis.speak(utterance);
   } catch (error) {
+    current = null;
     return { ok: false, reason: error instanceof Error ? error.message : '念不出来' };
   }
   return { ok: true, reason: '' };
