@@ -604,6 +604,12 @@ function renderShell() {
 }
 
 /** 顶栏：三处共用，只在左头与右钮上不同。 */
+/**
+ * 顶栏。三处共用，只在左头与右钮上不同。
+ *
+ * `fullscreen` 默认开着：蒙版上需要它（投影开着时可以随手进出全屏）。班级列表页关掉 ——
+ * 那一页不在教室前面用，多这一颗只是碍事；进自习时会自己向浏览器要一次全屏。
+ */
 function tabBar(options) {
   const header = h('header', { class: 'tab' });
   const left = h('div', { class: 'tab__left' });
@@ -622,15 +628,17 @@ function tabBar(options) {
   for (const node of options.actions ?? []) {
     right.append(node);
   }
-  right.append(
-    h('button', {
-      class: 'btn btn--icon',
-      title: '全屏',
-      'aria-label': '全屏',
-      text: '⛶',
-      onClick: toggleFullscreen,
-    }),
-  );
+  if (options.fullscreen !== false) {
+    right.append(
+      h('button', {
+        class: 'btn btn--icon',
+        title: '全屏',
+        'aria-label': '全屏',
+        text: '⛶',
+        onClick: toggleFullscreen,
+      }),
+    );
+  }
   header.append(right);
   return header;
 }
@@ -654,7 +662,8 @@ function requestFullscreen() {
 
 function renderClassesPage() {
   const main = h('main', { class: 'page' });
-  main.append(tabBar({}));
+  // 这一页不在教室前面用，用不上全屏钮
+  main.append(tabBar({ fullscreen: false }));
 
   const body = h('div', { class: 'home' });
   const bar = h('div', { class: 'home__bar' });
@@ -700,20 +709,27 @@ function renderClassesPage() {
  * 这里就是入口 —— 不再有单独的班级页。花名册在自习蒙版里看，设置与全班记录从这张卡
  * 上开（都是浮层）。
  */
+/**
+ * 一张班级卡：谁、多少人、有没有在跑的一场。
+ *
+ * 排布按「按下去的频次」分三处：卡右上角是导出 / 设置 / 删除（平时才动），
+ * 底下一条是全班记录（靠左）与开始自习（靠右）—— 自习时最常按的就是右边那颗。
+ */
 function renderClassCard(klass) {
   const running = state.running.get(klass.id) ?? null;
   const card = h('article', { class: 'card' });
 
   const head = h('div', { class: 'card__head' });
-  head.append(h('h3', { class: 'card__name', text: klass.name }));
+  const title = h('div', { class: 'card__title' });
+  title.append(h('h3', { class: 'card__name', text: klass.name }));
   const bits = [
     `${klass.students.length} 人`,
     `超时 ${Math.round(klass.overtimeThresholdMs / 60000)} 分钟`,
     themeLabel(klass.theme),
   ];
-  head.append(h('p', { class: 'card__meta', text: bits.join(' · ') }));
+  title.append(h('p', { class: 'card__meta', text: bits.join(' · ') }));
   if (running !== null) {
-    head.append(
+    title.append(
       h('span', { class: `chip chip--${running.phase}` }, [
         h('span', { text: `${phaseLabel(running.phase)} ` }),
         h('span', {
@@ -724,36 +740,14 @@ function renderClassCard(klass) {
       ]),
     );
   }
-  card.append(head);
+  head.append(title);
 
-  const actions = h('div', { class: 'card__actions' });
-  actions.append(
-    h('button', {
-      class: 'btn btn--primary',
-      text: running === null ? '开始自习' : '继续自习',
-      onClick: () => void enterSessionFrom(klass),
-    }),
+  const tools = h('div', { class: 'card__tools' });
+  tools.append(h('button', { class: 'btn', text: '导出', onClick: () => void exportClass(klass) }));
+  tools.append(
+    h('button', { class: 'btn', text: '设置', onClick: () => void openFromCard(klass, 'settings') }),
   );
-  actions.append(
-    h('button', {
-      class: 'btn',
-      text: '全班记录',
-      onClick: () => void openFromCard(klass, 'history'),
-    }),
-  );
-  actions.append(
-    h('button', {
-      class: 'btn',
-      text: '设置',
-      onClick: () => void openFromCard(klass, 'settings'),
-    }),
-  );
-  card.append(actions);
-
-  // 资料动作另起一行：上一行是「上课时随手按的」，这一行是「平时才动的」
-  const quiet = h('div', { class: 'card__actions card__actions--quiet' });
-  quiet.append(h('button', { class: 'btn', text: '导出', onClick: () => void exportClass(klass) }));
-  quiet.append(
+  tools.append(
     h('button', {
       class: 'btn btn--danger',
       text: '删除',
@@ -766,7 +760,25 @@ function renderClassCard(klass) {
       },
     }),
   );
-  card.append(quiet);
+  head.append(tools);
+  card.append(head);
+
+  const foot = h('div', { class: 'card__foot' });
+  foot.append(
+    h('button', {
+      class: 'btn',
+      text: '全班记录',
+      onClick: () => void openFromCard(klass, 'history'),
+    }),
+  );
+  foot.append(
+    h('button', {
+      class: 'btn btn--primary btn--tall',
+      text: running === null ? '开始自习' : '继续自习',
+      onClick: () => void enterSessionFrom(klass),
+    }),
+  );
+  card.append(foot);
   return card;
 }
 
