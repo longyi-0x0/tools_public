@@ -288,7 +288,15 @@ site/
 ├── index.html          页面骨架，只挂样式与入口
 ├── styles.css          配色、三套主题、看板与浮层的样式
 └── js/
-    ├── app.js          界面与装配：两层视图（班级列表 / 蒙版）、一个状态、走秒定点更新
+    ├── app.js          启动与主循环：走秒、待机判定、超时提醒、键盘的退路
+    ├── state.js        一份状态、往库里写的动作、整块重画的分发
+    ├── classes.js      班级列表：班级卡、多选、导出与删除
+    ├── board.js        自习看板与待机蒙版，以及走秒那条定点更新的路
+    ├── overlays/       六块浮层：新建班级 / 备注 / 设置 / 记录 / 同名 / 点名
+    ├── dom.js          `h`、浮层壳、全屏、浮层焦点
+    ├── format.js       时长与日期的写法
+    ├── roster.js       读花名册（认列、取名学生）、把文件下下来
+    ├── legend.js       四色图例
     ├── domain.js       状态机、颜色与超时推导、统计、该响哪几条、老数据补齐。纯函数，不认识浏览器
     ├── store.js        IndexedDB 两个 store（classes / sessions）
     ├── readSheets.js   按内容读表格（不看扩展名），花名册走这里
@@ -300,6 +308,9 @@ site/
     ├── sound.js        超时提示音，WebAudio 现场合成
     └── speech.js       备注的语音输入
 ```
+
+`state.js` 与视图之间成环：视图要调 `state.js` 的动作（`onClick` 得接得上），`state.js`
+又要画视图。环上只走函数声明与已经建好的对象，模块求值期谁也不调谁。
 
 `xlsx.js` 是自己写的：工具页不经打包器，拿不到 npm 上的表格库。压缩走浏览器的
 `CompressionStream('deflate-raw')`，不支持时退回不压缩的 stored。批量导出复用的也是
