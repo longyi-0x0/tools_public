@@ -7,18 +7,21 @@
  */
 
 import {
+  AWAY_COLORS,
+  DEFAULT_AWAY_COLOR,
   PHASE,
   STATUS,
   activeLeave,
+  awayColorOf,
   awayMs,
-  beginRollCall,
+  awayTimeoutMsOf,
   createKlass,
   dueAlerts,
-  endRollCall,
   endSession,
+  invertAbsent,
+  isAwayStatus,
   isPaused,
-  leaveReport,
-  markAllPresent,
+  markAbsent,
   markLeft,
   markNotified,
   markPresent,
@@ -26,7 +29,6 @@ import {
   normaliseKlass,
   normaliseSession,
   overtimeCount,
-  pausedMs,
   pauseSession,
   remarkTextOf,
   resumeSession,
@@ -34,7 +36,6 @@ import {
   statusOf,
   studyMs,
   summarize,
-  unmarkPresent,
 } from './domain.js';
 import * as store from './store.js';
 import * as sound from './sound.js';
@@ -88,8 +89,29 @@ const state = {
    * 宁可多提醒一次，也别一直静着没人知道。
    */
   muted: false,
-  /** 正在开着的浮层：null / 'newClass' / 'remark' / 'settings' / 'history' / 'conflict' */
+  /**
+   * 本场不切待机蒙版。老师在教室里正讲着一道题、或者那会儿就是要一直看着花名册，
+   * 屏幕上忽然换成一个大钟很碍事 —— 看板上那颗钮当场就能按住。
+   *
+   * 只存内存、只管这一场，理由与 [`muted`] 一样：新场从头来，宁可多切一次，
+   * 也别一直不切而没人知道。班级设置里那个「多久不动就换成大时钟」管的是**多快切**，
+   * 这一颗管的是**这一场切不切** —— 两件事。
+   */
+  idleOff: false,
+  /**
+   * 正在开着的浮层：null / 'newClass' / 'remark' / 'settings' / 'history' / 'conflict' / 'rollCall'
+   *
+   * 「点名」就是这一层里的一个 —— 它是叠在自习看板上的一层可选的窗，不再是一个相。
+   */
   overlay: null,
+  /**
+   * 点名层的状态：`null` 是没开，`{ absentIds }` 是开着 —— 存的是**开门那一刻**的
+   * 没来名单，用来给右上角的 ✕ 撤销。
+   *
+   * `null` 之外的任何值都算「开着」（订正格子的分支也看它是否为空）—— 名单本身可能
+   * 正好是空的，不能拿它当开关。
+   */
+  rollCallOpen: null,
   /** 备注浮层当前针对的学生 id */
   remarkStudentId: null,
   /** 冲突导入：同名班级已在库时的待决文件 */
@@ -109,6 +131,10 @@ const root = document.getElementById('root');
 const tiles = new Map();
 const timerText = new Map();
 const metaText = new Map();
+/** 点名层里那些名字的格子：`学生 id → 格子`，与看板上那一套同理，走定点更新。 */
+const rollTiles = new Map();
+/** 点名层脚上那颗「完成」：人数变了要跟着改字，但不值得为它重画整块。 */
+let rollFoot = null;
 
 /* ---------- 小工具 ---------- */
 
@@ -203,13 +229,6 @@ export function formatStudyTime(ms) {
   return `${pad(Math.floor(total / 3600))}:${pad(Math.floor(total / 60) % 60)}:${pad(total % 60)}`;
 }
 
-/** 时刻，只用时分 —— 小结那一行里写「19:00 – 20:12」。 */
-function formatClock(ms) {
-  const date = new Date(ms);
-  const pad = (value) => String(value).padStart(2, '0');
-  return `${pad(date.getHours())}:${pad(date.getMinutes())}`;
-}
-
 function formatDate(ms) {
   const date = new Date(ms);
   const pad = (value) => String(value).padStart(2, '0');
@@ -218,31 +237,19 @@ function formatDate(ms) {
 
 /** 一句话说清当前这一相要老师做什么。 */
 function phaseHint(klass, session) {
-  switch (session.phase) {
-    case PHASE.PREPARING:
-      return '按「开始点名」，然后逐个点花名册上到了的同学。';
-    case PHASE.ROLL_CALL: {
-      const missing = klass.students.length - session.markedIds.length;
-      return missing > 0
-        ? `点名中：还有 ${missing} 人没点到（蓝色）。人多的话按「剩下都到」省点力气，点错了再点一下可以退回。`
-        : '全班都点到了。没来的人点一下退回蓝色，确认好就按「结束点名」进入自习。';
-    }
-    case PHASE.SELF_STUDY: {
-      if (isPaused(session)) {
-        return `已暂停：自习时间停在 ${formatStudyTime(studyMs(session, state.now))}，外面的人也一起停表。按「继续自习」接着走。`;
-      }
-      const summary = summarize(klass, session, state.now);
-      return summary.absent > 0
-        ? `自习中：蓝色 ${summary.absent} 人未到（迟到的人点一下就变灰）。有人临时离开，点一下他开始计时。`
-        : '自习中。有人临时离开就点一下他，会开始计时；回来再点一下。';
-    }
-    default:
-      return '这一场结束了。接着来一场就按「再开一场自习」，要回班级列表就按「收起」。';
+  if (session === null) {
+    return '按「开始自习」进入计时；想点名就按「点名」。';
   }
-}
-
-function phaseLabel(phase) {
-  return { preparing: '准备', roll_call: '点名中', self_study: '自习中', ended: '已结束' }[phase] ?? phase;
+  if (session.phase === PHASE.ENDED) {
+    return '这一场结束了。要接着来就按「收起」回班级列表，再开一场；记录在「自习记录」里。';
+  }
+  if (isPaused(session)) {
+    return `已暂停：自习时间停在 ${formatStudyTime(studyMs(session, state.now))}，外面的人也一起停表。按「继续自习」接着走。`;
+  }
+  const summary = summarize(klass, session, state.now);
+  return summary.absent > 0
+    ? `自习中：蓝色 ${summary.absent} 人没来。在座的人点一下就记他离开，回来再点一下；按「点名」可以把没来的人挑出来。`
+    : '自习中：全班都在座。有人临时离开就点一下他，会开始计时；回来再点一下。';
 }
 
 /* ---------- 数据动作 ---------- */
@@ -295,6 +302,8 @@ async function openFromCard(klass, overlay) {
  *
  * 这是老师按下去的一下，顺手要一次浏览器全屏 —— 教室前面的屏不该留地址栏。
  * 已有进行中的那场就直接盖上（「继续自习」）。
+ *
+ * 一按下去就在计时：**点名不在这一步里**，想点再按蒙版上的「点名」。
  */
 async function enterSession() {
   sound.unlock();
@@ -312,8 +321,10 @@ async function enterSession() {
   state.session = session;
   state.sessions = [...state.sessions, session];
   syncRunning(session);
-  // 静音只管一场：新场从头来，出声也回来 —— 不然老师不知道自己是静音的
+  // 静音与本场不切都只管一场：新场从头来，出声与自动待机都回来 ——
+  // 不然老师不知道自己是静音的、也不知道屏幕为什么不切了
   state.muted = false;
+  state.idleOff = false;
   state.mask = 'session';
   render();
 }
@@ -386,33 +397,52 @@ async function commitClass(next) {
 
 /* ---------- 会话流程 ---------- */
 
-async function doBeginRollCall() {
-  await commitSession(beginRollCall(state.session, Date.now()));
+/**
+ * 点错的人退回没来：灰 → 蓝。
+ *
+ * 隔了一阵再补记也说得通（他那天确实没来），所以自习里随时能做，不必正在点名。
+ */
+async function doNotHere(studentId) {
+  state.overlay = null;
+  state.remarkStudentId = null;
+  await commitSession(markAbsent(state.session, studentId, state.now), true);
 }
 
-async function doEndRollCall() {
-  await commitSession(endRollCall(state.session, Date.now()));
-}
-
-/** 点名阶段一键：剩下没点的都算到了。 */
-async function doAttendRest() {
-  const ids = state.klass.students.map((item) => item.id);
-  const before = state.session.markedIds.length;
-  const next = markAllPresent(state.session, ids);
-  if (next === state.session) {
+/**
+ * 结束自习。
+ *
+ * 这一场就此定格（记录、明细都留着，在「自习记录」里看），看板直接收起、回到班级列表 ——
+ * 课上结束时老师要的是干净地离开这一屏，不是再看一遍刚才那场的账。
+ *
+ * 先问一句：这一下不可回退（要接着来只能另开一场），课上一时记错就点上的事不新鲜。
+ */
+async function doEndSession() {
+  const klass = state.klass;
+  const session = state.session;
+  if (session === null || session.phase === PHASE.ENDED) {
     return;
   }
-  // 强制整块重画：相没变时 commitSession 只走定点更新，这颗钮的「压暗」状态
-  // 是它自己算出来的，不重画就一直显示成还能按
-  await commitSession(next, true);
-  const added = next.markedIds.length - before;
-  // 说清退路：一定会有没来的人，老师要知道怎么把他们点回来
-  showToast(`还有 ${added} 人算作到了；没来的点一下他，退回蓝色`);
-}
-
-async function doEndSession() {
-  await commitSession(endSession(state.session, Date.now()));
-  // 留在蒙版上：下课那一刻老师要看到这一场的账（小结就在下面），看完了自己按「收起」
+  const summary = summarize(klass, session, state.now);
+  const bits = [`应到 ${summary.total}`, `在座 ${summary.present}`, `没来 ${summary.absent}`];
+  if (summary.leaveCount > 0) {
+    bits.push(`离开 ${summary.leaveCount} 人次`);
+  }
+  if (
+    !window.confirm(
+      `结束这一场自习？\n已走了 ${formatSpan(studyMs(session, state.now))}（${bits.join(' · ')}）。\n\n` +
+        '结束时这一场就定格了，不能接着走；要看这一场就按「自习记录」。',
+    )
+  ) {
+    return;
+  }
+  await commitSession(endSession(session, Date.now()));
+  state.mask = null;
+  render();
+  showToast(
+    klass === null
+      ? '这一场已结束，记录里能看'
+      : `「${klass.name}」这一场已结束，${formatSpan(studyMs(state.session, state.now))}，记录里能看`,
+  );
 }
 
 /** 暂停自习。 */
@@ -430,7 +460,7 @@ async function doResume() {
 /**
  * 重新开始：结束这一场，另开一场。
  *
- * 这一场已结束（定格、留着），新的一场从头来（准备相，需要重新点名）。
+ * 这一场已结束（定格、留着），新的一场从零开始（全班在座，点名结果也清空）。
  */
 async function doRestart() {
   const now = Date.now();
@@ -439,35 +469,30 @@ async function doRestart() {
   showToast('上一场已结束，新的一场从头开始');
 }
 
-/** 点一个格子。走哪条路看当前相与该学生现在的颜色。 */
+/**
+ * 点一个格子。走哪条路看这个人现在的颜色。
+ *
+ * 点到没来的人（蓝）点一下就归队；点到在座的人（灰）就问一句备注、开始记他离开；
+ * 点到离开中的人（黄 / 红）就记归来。已结束的这一场只读，点格子顶一句。
+ */
 async function tapStudent(studentId) {
   const session = state.session;
   if (session === null) {
     return;
   }
 
-  // 准备阶段与已结束阶段点格子什么也不算 —— 不能默不作声：格子是按钮的样子，
-  // 点下去没反应，老师会以为坏了
-  if (session.phase === PHASE.PREPARING) {
-    showToast('先按「开始点名」，之后点名字才算数');
-    return;
-  }
+  // 已结束的一场点格子什么也不算 —— 不能默不作声：格子是按钮的样子，点下去没反应，
+  // 老师会以为坏了。（结束就收起看板，所以这里多半只在别处点开过记录时走到）
   if (session.phase === PHASE.ENDED) {
-    showToast('这一场已经结束。要改状态，先按「再开一场自习」');
+    showToast('这一场已经结束，记录里能看');
     return;
   }
 
-  const status = statusOf(session, studentId, state.now, state.klass.overtimeThresholdMs);
-  if (session.phase === PHASE.ROLL_CALL) {
-    await commitSession(
-      status === STATUS.PRESENT ? unmarkPresent(session, studentId) : markPresent(session, studentId),
-    );
-    return;
-  }
+  const status = statusOf(session, studentId, state.now, state.klass);
   if (status === STATUS.ABSENT) {
-    // 自习中按「到了的在前」排过：他这一下是归队，得整块重画 ——
-    // 不然格子还留在「没到」那一段里，分界线上的人数也不跟着变
-    await commitSession(markPresent(session, studentId), session.phase === PHASE.SELF_STUDY);
+    // 自习中按「在座的在前」排过：他这一下是归队，得整块重画 ——
+    // 不然格子还留在「没来」那一段里，分界线上的人数也不跟着变
+    await commitSession(markPresent(session, studentId), true);
     return;
   }
   if (status === STATUS.PRESENT) {
@@ -478,19 +503,6 @@ async function tapStudent(studentId) {
     return;
   }
   await commitSession(markReturned(session, studentId, Date.now()));
-}
-
-/**
- * 浮层里点「他没到」：把这个人退回蓝色。
- *
- * 自习中点一个蓝的会把他标成到了（当成迟到到场），可要是点错了就没路可退 ——
- * 再点一下只会弹出「临时离开」。这一手就是那条退路。
- */
-async function confirmNotHere() {
-  const studentId = state.remarkStudentId;
-  state.overlay = null;
-  state.remarkStudentId = null;
-  await commitSession(unmarkPresent(state.session, studentId), true);
 }
 
 /** 备注浮层点「确定」。浮层要收起来，所以这一笔要整块重画。 */
@@ -513,7 +525,7 @@ async function confirmLeave(templateId, remark) {
 let alerting = false;
 
 async function checkAlerts() {
-  if (alerting || state.session === null || state.session.phase !== PHASE.SELF_STUDY) {
+  if (alerting || state.session === null || state.session.phase !== PHASE.STUDYING) {
     return;
   }
   // 暂停期间不响：那段时间不算在外面，一直响只会吵
@@ -523,7 +535,7 @@ async function checkAlerts() {
   if (!state.klass.alertSound || !sound.isSupported() || state.muted) {
     return;
   }
-  const due = dueAlerts(state.session, state.now, state.klass.overtimeThresholdMs, state.klass.alertRepeatMs);
+  const due = dueAlerts(state.klass, state.session, state.now, state.klass.alertRepeatMs);
   if (due.length === 0) {
     return;
   }
@@ -780,6 +792,8 @@ function render() {
   tiles.clear();
   timerText.clear();
   metaText.clear();
+  rollTiles.clear();
+  rollFoot = null;
   // 判据放在这里而不是各个打开浮层的地方：直接设 state.overlay 的有好几处
   // （卡上的钮、导入撞名、点格子开备注），逐处打标记迟早漏一个
   const before = state.overlayShown;
@@ -941,8 +955,9 @@ function renderClassesPage() {
         text: '导入一份花名册建班（.xlsx 或 .xls，网页表格改名的 .xls 也认；表里有一列写着「姓名」即可）',
       }),
     );
-    steps.append(h('li', { text: '开始自习，逐个点名字 —— 蓝色的点到就变灰（到了）' }));
+    steps.append(h('li', { text: '开始自习 —— 一按下去就在计时，全班默认在座（灰）' }));
     steps.append(h('li', { text: '有人临时离开，点一下他，会开始计时；超过设定时长转红并提醒' }));
+    steps.append(h('li', { text: '想点名就按「点名」，点一下没来的人，他变蓝并沉到后面' }));
     steps.append(h('li', { text: '换机器或留档：按「多选」勾上几个班，导出成一个 zip；一个班一份 xlsx' }));
     body.append(
       h('div', { class: 'empty' }, [
@@ -999,16 +1014,12 @@ function renderClassCard(klass) {
   }
   const title = h('div', { class: 'card__title' });
   title.append(h('h3', { class: 'card__name', text: klass.name }));
-  const bits = [
-    `${klass.students.length} 人`,
-    `超时 ${Math.round(klass.overtimeThresholdMs / 60000)} 分钟`,
-    themeLabel(klass.theme),
-  ];
+  const bits = [`${klass.students.length} 人`, themeLabel(klass.theme)];
   title.append(h('p', { class: 'card__meta', text: bits.join(' · ') }));
   if (running !== null) {
     title.append(
-      h('span', { class: `chip chip--${running.phase}` }, [
-        h('span', { text: `${phaseLabel(running.phase)} ` }),
+      h('span', { class: 'chip chip--studying' }, [
+        h('span', { text: '自习中 ' }),
         h('span', {
           class: 'chip__clock',
           dataset: { clock: `card:${klass.id}` },
@@ -1054,21 +1065,21 @@ function renderClassCard(klass) {
 /**
  * 看板上花名册的排布。
  *
- * 点名一结束就把到了的排到前面：自习里老师看的是「谁在这儿、谁在外面」，
- * 没到的那几个沉到最后另起一块才不占眼睛。
+ * 点到「没来」的人沉到最后另起一块：自习里老师看的是「谁在这儿、谁在外面」，
+ * 那几个没来的放在最后才不占眼睛。**正在点名时不排** —— 那时老师正顺着名册逐个点，
+ * 格子一挪就会点错人，等关掉点名层再归位。
  *
- * 点名中（含准备）不排 —— 那时老师正顺着名册逐个点，格子一挪就会点错人。
  * 已结束也照排，免得下课那一刻整块跳回去。待机蒙版与导出的明细都另按名册顺序走，
  * 这里只管看板上的显示。
  */
 function displayOrder(klass, session) {
-  if (session === null || session.phase === PHASE.PREPARING || session.phase === PHASE.ROLL_CALL) {
+  if (session === null || state.rollCallOpen !== null) {
     return klass.students;
   }
-  const marked = new Set(session.markedIds);
+  const absent = new Set(session.absentIds);
   return [
-    ...klass.students.filter((student) => marked.has(student.id)),
-    ...klass.students.filter((student) => !marked.has(student.id)),
+    ...klass.students.filter((student) => !absent.has(student.id)),
+    ...klass.students.filter((student) => absent.has(student.id)),
   ];
 }
 
@@ -1086,16 +1097,13 @@ function renderSessionMask() {
   const section = h('section', { class: 'mask mask--session', 'data-theme': klass.theme });
 
   const running = state.session !== null && state.session.phase !== PHASE.ENDED;
+  // 点名层开着时顶栏也说得清：那时点格子是「他没来」，不是「他离开」
+  const chipText = state.rollCallOpen !== null ? '点名中' : running ? '自习中' : '已结束';
+  const chipClass = state.rollCallOpen !== null ? 'chip--calling' : `chip--${state.session?.phase ?? PHASE.ENDED}`;
   section.append(
     tabBar({
       crumb: klass.name,
-      chip:
-        state.session === null
-          ? undefined
-          : h('span', {
-              class: `chip chip--${state.session.phase}`,
-              text: phaseLabel(state.session.phase),
-            }),
+      chip: state.session === null ? undefined : h('span', { class: `chip ${chipClass}`, text: chipText }),
       actions: [
         h('button', {
           class: 'btn',
@@ -1112,15 +1120,11 @@ function renderSessionMask() {
     }),
   );
 
+  // 结束一场就收起看板（见 `doEndSession`），所以这里不会再画「已结束」的样子：
+  // 走到这个函数时要么在自习中，要么是刷新时读到一场还没结束的
   const body = h('div', { class: 'board' });
   body.append(renderControls());
-  if (!running && state.session !== null) {
-    // 结束态：一张小结顶上来，时钟与统计让位 —— 那两组数小结里都有，
-    // 而且「离开中 N」在结束后就不成立了
-    body.append(renderSummary(klass, state.session));
-  } else {
-    body.append(h('div', { class: 'board__head' }, [renderClock(), renderStatusBar()]));
-  }
+  body.append(h('div', { class: 'board__head' }, [renderClock(), renderStatusBar()]));
   body.append(renderLegend());
 
   const grid = h('div', { class: 'grid' });
@@ -1128,16 +1132,18 @@ function renderSessionMask() {
   if (klass.students.length === 0) {
     grid.append(h('p', { class: 'empty__hint', text: '这个班还没有学生。收起这块，到「设置」里导入名册。' }));
   }
-  // 自习阶段：到了的排前面，没到的沉到后面，中间画一条线说清那是另一拨人
+  // 点到「没来」的人沉到后面，中间画一条线说清那是另一拨人。
+  // 正在点名时不画：那时格子按名册冻着，这条线指的「后面那一拨」并不成立，
+  // 而且逐个人点只走定点更新，线的位置与人数会一直停在开门那一刻
   const order = displayOrder(klass, state.session);
-  const marked = new Set(state.session?.markedIds ?? []);
-  const absentStart = order.findIndex((student) => !marked.has(student.id));
+  const absent = new Set(state.session?.absentIds ?? []);
+  const absentStart = state.rollCallOpen !== null ? -1 : order.findIndex((student) => absent.has(student.id));
   for (const [index, student] of order.entries()) {
     if (index === absentStart && absentStart > 0) {
       grid.append(
         h('p', {
           class: 'grid__divider',
-          text: `没到 ${order.length - absentStart} 人`,
+          text: `没来 ${order.length - absentStart} 人`,
         }),
       );
     }
@@ -1149,82 +1155,6 @@ function renderSessionMask() {
   section.append(body);
 
   return section;
-}
-
-/**
- * 本场小结。
- *
- * 下课铃响，老师要交代的是「多少人到了、谁出去过、超时没有」。这一段只读：
- * 定格的颜色还在上面的格子里，要不要收起或再开一场由上面那颗钮决定。
- */
-function renderSummary(klass, session) {
-  const now = state.now;
-  const end = session.endedAt ?? now;
-  const summary = summarize(klass, session, end);
-  const paused = pausedMs(session, end);
-  const report = leaveReport(klass, session, end);
-  const overtimePeople = report.filter((row) => row.overtime);
-
-  const box = h('section', { class: 'summary' });
-
-  const head = h('div', { class: 'summary__head' });
-  head.append(h('h2', { class: 'summary__title', text: '本场自习' }));
-  const from = formatClock(session.startedAt);
-  const to = formatClock(end);
-  const span = h('span', { class: 'summary__when' });
-  // 几个人的小班会遇到起止落在同一分钟，那就只写一个时刻
-  span.append(h('span', { text: from === to ? from : `${from} – ${to}` }));
-  span.append(h('span', { class: 'summary__dot', text: '·' }));
-  span.append(h('span', { text: `自习 ${formatSpan(studyMs(session, end))}` }));
-  if (paused > 0) {
-    span.append(h('span', { class: 'summary__dot', text: '·' }));
-    span.append(h('span', { text: `暂停 ${formatSpan(paused)}` }));
-  }
-  head.append(span);
-  box.append(head);
-
-  const facts = h('div', { class: 'summary__facts' });
-  const fact = (label, value, tone) =>
-    h('div', { class: 'summary__fact' }, [
-      h('span', { class: 'summary__fact-label', text: label }),
-      h('span', { class: `summary__fact-value ${tone === undefined ? '' : `is-${tone}`}`, text: value }),
-    ]);
-  facts.append(fact('应到', String(summary.total)));
-  facts.append(fact('到了', String(summary.present), 'present'));
-  facts.append(fact('没到', String(summary.absent), 'absent'));
-  facts.append(
-    fact(
-      '离开',
-      report.length === 0 ? '没有' : `${summary.leaveCount} 人次 · ${formatSpan(summary.leaveDurationMs)}`,
-    ),
-  );
-  facts.append(
-    fact('超时', overtimePeople.length === 0 ? '没有' : `${overtimePeople.length} 人`, overtimePeople.length === 0 ? undefined : 'overtime'),
-  );
-  box.append(facts);
-
-  if (report.length > 0) {
-    const list = h('ul', { class: 'summary__list' });
-    for (const row of report.slice(0, 4)) {
-      const student = klass.students.find((item) => item.id === row.studentId);
-      const line = h('li', { class: row.overtime ? 'is-overtime' : '' });
-      line.append(h('span', { class: 'summary__name', text: student?.name ?? '（已不在名册）' }));
-      line.append(h('span', { class: 'summary__time', text: formatSpan(row.totalMs) }));
-      if (row.count > 1) {
-        line.append(h('span', { class: 'summary__count', text: `${row.count} 次` }));
-      }
-      if (row.remark !== '') {
-        line.append(h('span', { class: 'summary__remark', text: row.remark }));
-      }
-      list.append(line);
-    }
-    if (report.length > 4) {
-      list.append(h('li', { class: 'summary__more', text: `还有 ${report.length - 4} 人出去过，见「自习记录」` }));
-    }
-    box.append(list);
-  }
-
-  return box;
 }
 
 /**
@@ -1306,7 +1236,7 @@ function awayStudents(klass, session) {
     if (leave === undefined) {
       continue;
     }
-    const status = statusOf(session, student.id, now, klass.overtimeThresholdMs);
+    const status = statusOf(session, student.id, now, klass);
     items.push({
       student,
       status,
@@ -1331,62 +1261,44 @@ function renderControls() {
   bar.append(hint);
 
   // 主行动、普通行动、低频破坏性各占一档：原来全是 btn--tall，一排按钮一样重，
-  // 手快就会按到「结束并重开」上
+  // 手快就会按到「结束并重开」上。
+  // 走到这里 session 一定是在跑的那一场：结束一场就收起看板（见 `doEndSession`），
+  // 所以这里没有「已结束 / 还没有场」的分支。
   const buttons = h('div', { class: 'controls__buttons' });
   const session = state.session;
-  if (session === null || session.phase === PHASE.ENDED) {
-    // 蒙版上走到这里只有一种情形：上一场已结束，老师要接着开下一场
-    buttons.append(
-      h('button', {
-        class: 'btn btn--primary btn--tall',
-        text: '再开一场自习',
-        onClick: () => void enterSession(),
-      }),
-    );
-  } else if (session.phase === PHASE.PREPARING) {
-    buttons.append(
-      h('button', {
-        class: 'btn btn--primary btn--tall',
-        text: '开始点名',
-        onClick: () => void doBeginRollCall(),
-      }),
-    );
-    buttons.append(quietGroup([restartButton(), muteButton()]));
-  } else if (session.phase === PHASE.ROLL_CALL) {
-    // 蓝的那一颗放后面：一排钮里最边上的一颗最好按，而这一相里更常按的是「剩下都到」
-    buttons.append(attendRestButton());
-    buttons.append(
-      h('button', {
-        class: 'btn btn--primary btn--tall',
-        text: '结束点名，进入自习',
-        onClick: () => void doEndRollCall(),
-      }),
-    );
-  } else {
-    buttons.append(
-      isPaused(session)
-        ? h('button', {
-            class: 'btn btn--primary btn--tall',
-            text: '继续自习',
-            onClick: () => void doResume(),
-          })
-        : h('button', {
-            class: 'btn btn--tall',
-            text: '暂停自习',
-            title: '自习时间与外面的人都一起停表',
-            onClick: () => void doPause(),
-          }),
-    );
-    buttons.append(
-      h('button', {
-        class: 'btn btn--tall',
-        text: '结束自习',
-        title: '这一场定格，回到班级列表',
-        onClick: () => void doEndSession(),
-      }),
-    );
-    buttons.append(quietGroup([restartButton(), muteButton()]));
-  }
+  // 自习中：暂停 / 继续是这一相最常按的，点名是「想点才点」的那一颗。
+  // 按下去的频次差得远，所以点名压一档，不跟暂停同一排同一种重量。
+  buttons.append(
+    isPaused(session)
+      ? h('button', {
+          class: 'btn btn--primary btn--tall',
+          text: '继续自习',
+          onClick: () => void doResume(),
+        })
+      : h('button', {
+          class: 'btn btn--tall',
+          text: '暂停自习',
+          title: '自习时间与外面的人都一起停表',
+          onClick: () => void doPause(),
+        }),
+  );
+  buttons.append(
+    h('button', {
+      class: 'btn btn--tall',
+      text: '点名',
+      title: '逐个挑出没来的人；不点也一样自习',
+      onClick: () => openRollCall(),
+    }),
+  );
+  buttons.append(
+    h('button', {
+      class: 'btn btn--tall',
+      text: '结束自习',
+      title: '这一场定格，回到班级列表',
+      onClick: () => void doEndSession(),
+    }),
+  );
+  buttons.append(quietGroup([restartButton(), idleButton(), muteButton()]));
   bar.append(buttons);
   return bar;
 }
@@ -1399,30 +1311,6 @@ function renderControls() {
  * 先确认，再结束 + 开新场。旧的那一场留在记录里，不删。低频又不可回退，所以摆在小
  * 字那格里，不与「暂停 / 结束」同重。
  */
-/**
- * 点名阶段那一颗「剩下都到」。
- *
- * 一个班几十号人，绝大多数都在座位上，一个个点太慢。先把没点的都算成到了，
- * 再点回那几个没来的（点名阶段点一下灰的就退回蓝）—— 大多数人只用点一两下。
- *
- * 全班都点到之后这颗压暗：那时候它没事干。
- */
-function attendRestButton() {
-  const total = state.klass?.students.length ?? 0;
-  const marked = state.session?.markedIds.length ?? 0;
-  const rest = total - marked;
-  return h('button', {
-    class: 'btn btn--tall',
-    text: '剩下都到',
-    title:
-      rest === 0
-        ? '全班都已经点到了'
-        : `还没点的 ${rest} 人都算到了；没来的点一下退回蓝色`,
-    disabled: rest === 0 ? '' : undefined,
-    onClick: () => void doAttendRest(),
-  });
-}
-
 function restartButton() {
   return h('button', {
     class: 'btn',
@@ -1447,6 +1335,38 @@ function quietGroup(children) {
  * 教室里铃突然响起来，老师需要当场掐掉，而不是去设置里翻。这一下只影响这一场
  * （不改班级设置）；刷新页面会恢复 —— 宁可多响一次，也别一直静着没人知道。
  */
+/**
+ * 本场不切待机蒙版。
+ *
+ * 教室里老师正讲着一道题、或者那会儿就是要一直盯着花名册，屏幕上忽然换成一个大钟
+ * 很碍事 —— 与「本场静音」同理，这一颗当场就能按住，而不是去设置里翻。
+ *
+ * 班级设置里那个「多久不动就换成大时钟」管的是**多快切**，这一颗管的是**这一场切不切**：
+ * 设成「不切」的班这一颗压暗按不动（本来就永不切），说清原因而不是让它按下去没反应。
+ */
+function idleButton() {
+  const never = (state.klass?.idleMaskMs ?? 0) <= 0;
+  const off = state.idleOff;
+  return h('button', {
+    class: !never && off ? 'btn btn--icon is-on' : 'btn btn--icon',
+    text: off || never ? '☀️' : '🌙',
+    title: never
+      ? '这个班在设置里选了「不切」，这一场就不会自己换屏'
+      : off
+        ? '本场不自动换成大时钟，点一下开回来'
+        : '本场会在一段时间没人碰屏幕后换成大时钟，点一下本场就不切',
+    'aria-label': off ? '本场已关掉自动待机' : '本场自动待机',
+    disabled: never ? '' : undefined,
+    onClick: () => {
+      if (never) {
+        return;
+      }
+      state.idleOff = !state.idleOff;
+      showToast(state.idleOff ? '本场不再自己换成大时钟' : '本场恢复自动待机');
+    },
+  });
+}
+
 function muteButton() {
   const muted = state.muted;
   return h('button', {
@@ -1464,12 +1384,10 @@ function muteButton() {
 
 function renderStatusBar() {
   const bar = h('div', { class: 'status' });
-  // 准备阶段还没点名，说「没到」不合逻辑 —— 那几个人只是还没点到
-  const preparing = state.session === null || state.session.phase === PHASE.PREPARING;
   const items = [
     { key: 'total', label: '应到', tone: '' },
-    { key: 'present', label: '已到', tone: 'present' },
-    { key: 'absent', label: preparing ? '未点' : '没到', tone: 'absent' },
+    { key: 'present', label: '在座', tone: 'present' },
+    { key: 'absent', label: '没来', tone: 'absent' },
     { key: 'left', label: '离开中', tone: 'left' },
     { key: 'overtime', label: '超时', tone: 'overtime' },
     { key: 'leaves', label: '离开人次', tone: '' },
@@ -1525,13 +1443,22 @@ function renderTile(student) {
  * 蓝 / 灰 / 黄 / 红是这一屏的全部语言，但界面上原本一个字都没解释 —— 第一次用的老师
  * 看到一片蓝，分不清那是「还没点」还是「没来」。这一行就是那本小字典，平时压得很暗。
  */
+/**
+ * 四色图例。
+ *
+ * 蓝 / 灰 / 黄 / 红是这一屏的语言，但界面上原本一个字都没解释 —— 第一次用的老师
+ * 看到一片灰，分不清那是「还没点」还是「都在座」。这一行就是那本小字典，平时压得很暗。
+ *
+ * 「离开中」画黄 —— 那是默认色；老师给某条备注挑了别的颜色，格子跟着走，图例不追。
+ * 这里说的是颜色的**意思**，不是某一格的颜色。
+ */
 function renderLegend() {
   const legend = h('div', { class: 'legend' });
   for (const [status, label] of [
-    ['absent', '没到'],
-    ['present', '到了'],
-    ['left', '离开中'],
-    ['overtime', '超时'],
+    [STATUS.ABSENT, '没来'],
+    [STATUS.PRESENT, '在座'],
+    [DEFAULT_AWAY_COLOR, '离开中'],
+    [STATUS.OVERTIME, '超时'],
   ]) {
     const item = h('span', { class: 'legend__item' });
     item.append(h('i', { class: 'legend__dot', dataset: { status } }));
@@ -1596,7 +1523,6 @@ function updateDynamic() {
   if (state.klass === null) {
     return;
   }
-  const threshold = state.klass.overtimeThresholdMs;
   const session = state.session;
   const at = readAt(session, now);
   updateCardClocks(at);
@@ -1604,6 +1530,10 @@ function updateDynamic() {
   if (state.mask !== 'session') {
     return;
   }
+
+  // 点名层开着时，名字的灰蓝也走定点更新 —— 点一下只换一个格子的脸，
+  // 不重画整块（重画会把老师正点着的那个位置和键盘焦点一起丢掉）
+  updateRollCall(session);
 
   for (const student of state.klass.students) {
     const tile = tiles.get(student.id);
@@ -1613,7 +1543,7 @@ function updateDynamic() {
     const timer = timerText.get(student.id);
     const meta = metaText.get(student.id);
     if (session === null) {
-      tile.dataset.status = STATUS.ABSENT;
+      tile.dataset.status = STATUS.PRESENT;
       if (timer !== undefined) {
         timer.textContent = '';
       }
@@ -1622,12 +1552,12 @@ function updateDynamic() {
       }
       continue;
     }
-    const status = statusOf(session, student.id, at, threshold);
+    const status = statusOf(session, student.id, at, state.klass);
     tile.dataset.status = status;
     if (timer === undefined) {
       continue;
     }
-    if (status === STATUS.LEFT || status === STATUS.OVERTIME) {
+    if (isAwayStatus(status) || status === STATUS.OVERTIME) {
       timer.textContent = formatDuration(awayMs(session, student.id, at));
       // 离开时这一行换成原因：老师更要知道为什么，而不是他坐哪
       if (meta !== undefined) {
@@ -1649,15 +1579,14 @@ function updateDynamic() {
   // 提示语随点名进度变，但它不换结构，所以在这里定点改
   const hint = root.querySelector('[data-hint]');
   if (hint !== null) {
-    hint.textContent = phaseHint(state.klass, session ?? { phase: PHASE.PREPARING, markedIds: [], leaves: [], startedAt: now });
+    hint.textContent = phaseHint(state.klass, session ?? { phase: PHASE.STUDYING, absentIds: [], leaves: [], startedAt: now });
   }
 
-  // 自习时间：点名结束前是 0 且暗淡；自习中一路走；暂停时停住并标注；结束后定住
+  // 自习时间：开始自习就在走；暂停时停住并标注；结束后定住
   const clock = root.querySelector('[data-clock="study"]');
   if (clock !== null) {
-    const started = session !== null && session.rollCallEndedAt !== undefined;
-    clock.textContent = formatStudyTime(started ? studyMs(session, now) : 0);
-    clock.classList.toggle('is-idle', !started);
+    clock.textContent = formatStudyTime(session === null ? 0 : studyMs(session, now));
+    clock.classList.toggle('is-idle', session === null);
     clock.classList.toggle('is-paused', session !== null && isPaused(session));
   }
   const pauseTag = root.querySelector('[data-pause="tag"]');
@@ -1687,9 +1616,7 @@ function updateCardClocks(now) {
   for (const node of root.querySelectorAll('[data-clock^="card:"]')) {
     const session = state.running.get(node.dataset.clock.slice('card:'.length)) ?? null;
     node.textContent =
-      session !== null && session.rollCallEndedAt !== undefined
-        ? formatStudyTime(studyMs(session, readAt(session, now)))
-        : '00:00:00';
+      session !== null ? formatStudyTime(studyMs(session, readAt(session, now))) : '00:00:00';
   }
 }
 
@@ -1711,7 +1638,7 @@ function updateIdle() {
     const summary = summarize(state.klass, session, at);
     const counts = root.querySelector('[data-idle="counts"]');
     if (counts !== null) {
-      counts.textContent = `应到 ${summary.total} · 已到 ${summary.present} · 没到 ${summary.absent} · 离开中 ${summary.left}`;
+      counts.textContent = `应到 ${summary.total} · 在座 ${summary.present} · 没来 ${summary.absent} · 离开中 ${summary.left}`;
     }
     for (const node of root.querySelectorAll('[data-away]')) {
       const studentId = node.dataset.away;
@@ -1721,6 +1648,25 @@ function updateIdle() {
 }
 
 /** 走的计时与「离开中」的亮灭。模式与格子上那一套一致。 */
+/**
+ * 点名层里那些名字的灰蓝，以及脚上那颗「完成」的人数。
+ *
+ * 与看板上的格子同理：点一下只换那一个格子的脸，不重画整块 —— 几十号人一次点不完，
+ * 每次重画都会把老师刚点着的那个位置重新排一遍，键盘的焦点也会掉出去。
+ */
+function updateRollCall(session) {
+  if (state.overlay !== 'rollCall' || session === null) {
+    return;
+  }
+  const absent = new Set(session.absentIds);
+  for (const [studentId, tile] of rollTiles) {
+    tile.classList.toggle('is-absent', absent.has(studentId));
+  }
+  if (rollFoot !== null) {
+    rollFoot.textContent = rollDoneText(absent.size);
+  }
+}
+
 function applyMetricValues(values) {
   for (const node of root.querySelectorAll('[data-metric]')) {
     const next = values[node.dataset.metric];
@@ -1747,8 +1693,9 @@ function openOverlay(name) {
  * 再按 Tab 会从班级列表开头走一圈。所以浮层刚出现时把焦点送进去，顺序是：
  * `data-autofocus`（备注要打字、设置要改名字）→ 第一个输入类控件 → 浮层本身。
  *
- * 一轮按钮排在最后是有意的：浮层头上的第一颗钮是「✕」，焦点若落在它上面，
- * 老师顺手一个回车就把刚打开的窗又关了。
+ * 一轮按钮排在最后是有意的：浮层头上的第一颗钮是「✕」，焦点若落在它上面，老师顺手
+ * 一个回车就把刚打开的窗又关了。点名层的 ✕ 也是这个道理 —— 那里一次点空就是撤销一整趟，
+ * 更不该让一个回车碰上。
  *
  * 只做「进来」不做「出去」：关闭时那颗触发它的钮已经是新节点了，硬要还原得给每颗钮
  * 编个号，不值当 —— Esc 与 Tab 能走通就够用了。
@@ -1764,7 +1711,17 @@ function focusIntoOverlay() {
   (target ?? modal).focus?.();
 }
 
+/**
+ * 关掉当前浮层。
+ *
+ * 点名层是唯一的例外：它的 ✕ / Esc / 点窗外都是**撤销这一趟**，交给 `cancelRollCall`
+ * 去做（它把名单退回开门那一刻，再收窗）。
+ */
 function closeOverlay() {
+  if (state.overlay === 'rollCall') {
+    void cancelRollCall();
+    return;
+  }
   state.overlay = null;
   state.remarkStudentId = null;
   state.pendingNewClass = undefined;
@@ -1772,18 +1729,32 @@ function closeOverlay() {
   render();
 }
 
-function modalFrame(title, bodyNodes, footNodes, extraClass = '') {
+/**
+ * 一块浮层的壳：标题栏 + 内容 + 底下一排钮。
+ *
+ * `options.closeLabel` / `closeTitle` 改那颗 ✕ 的说法 —— 点名层把 ✕ 当「撤销这一趟」，
+ * 光写「关闭」会让人以为跟脚上的「完成」是一回事。
+ */
+function modalFrame(title, bodyNodes, footNodes, options = {}) {
   // tabindex：浮层里一个输入控件都没有时（比如自习记录），焦点落在浮层本身，
   // 既算「进来了」，回车也不会误触里面任何一颗钮
   const modal = h('div', {
-    class: `modal ${extraClass}`.trim(),
+    class: `modal ${options.class ?? ''}`.trim(),
     role: 'dialog',
     'aria-modal': 'true',
     tabindex: '-1',
   });
   const head = h('div', { class: 'modal__head' });
   head.append(h('h2', { class: 'modal__title', text: title }));
-  head.append(h('button', { class: 'btn btn--icon', text: '✕', 'aria-label': '关闭', onClick: closeOverlay }));
+  head.append(
+    h('button', {
+      class: 'btn btn--icon',
+      text: '✕',
+      'aria-label': options.closeLabel ?? '关闭',
+      title: options.closeTitle,
+      onClick: state.overlay === 'rollCall' ? () => void cancelRollCall() : closeOverlay,
+    }),
+  );
   modal.append(head);
   const body = h('div', { class: 'modal__body' });
   for (const node of bodyNodes) {
@@ -1797,7 +1768,10 @@ function modalFrame(title, bodyNodes, footNodes, extraClass = '') {
     }
     modal.append(foot);
   }
-  const scrim = h('div', { class: 'scrim', onClick: closeOverlay });
+  const scrim = h('div', {
+    class: 'scrim',
+    onClick: state.overlay === 'rollCall' ? () => void cancelRollCall() : closeOverlay,
+  });
   return h('div', { class: 'overlay' }, [scrim, modal]);
 }
 
@@ -1813,9 +1787,190 @@ function renderOverlay() {
       return renderHistory();
     case 'conflict':
       return renderConflict();
+    case 'rollCall':
+      return renderRollCall();
     default:
       return h('span');
   }
+}
+
+/**
+ * 点名层：一块盖在自习上的窗。
+ *
+ * 它是**可选的**，不是必经的一步 —— 关掉自习一点不受影响，没点完也一样。点过的人当场
+ * 变蓝并沉到看板后面，所以中途随时能收。
+ *
+ * 栏上有两个出口，说的是两件事：
+ *
+ * - **✕**（右上）当作**撤销**：名单退回开门那一刻，这一趟点的全不算。课上常常是点着
+ *   点着发现点错了人、或者班长说名单不对，整趟作废比逐个撤回快。
+ * - **完成**（脚上，带「N 人没来」）：点过的留下，收窗回自习。
+ *
+ * 两条路都得有：只给「完成」的话，点错整趟就得一个个退回去；只给「撤销」的话，
+ * 点完想收工就没路。Esc 与点窗外跟 ✕ 同义（没保存就退出去，退的是这一趟）。
+ */
+function renderRollCall() {
+  const klass = state.klass;
+  const session = state.session;
+  const body = [];
+
+  body.push(
+    h('p', {
+      class: 'modal__hint',
+      text: '点一下名字就是「他没来」——他变蓝并沉到后面去；点错了再点一下退回灰色。不点名也能自习，随时关掉。',
+    }),
+  );
+
+  const absent = new Set(session?.absentIds ?? []);
+  const list = h('div', { class: 'rollcall__list' });
+  // 按名册顺序排：老师是照着名单点人，格子一挪就会点错
+  for (const student of klass.students) {
+    const isAbsent = absent.has(student.id);
+    const tile = h('button', {
+      class: `rollcall__tile${isAbsent ? ' is-absent' : ''}`,
+      title: tileTitle(student),
+      dataset: { rollcallId: student.id },
+      onClick: () => void doMarkPresentOrAbsent(student.id),
+    });
+    tile.append(h('span', { class: 'rollcall__name', text: student.name }));
+    const seat = seatLine(student);
+    if (seat !== '') {
+      tile.append(h('span', { class: 'rollcall__seat', text: seat }));
+    }
+    list.append(tile);
+    rollTiles.set(student.id, tile);
+  }
+  if (klass.students.length === 0) {
+    list.append(h('p', { class: 'empty__hint', text: '这个班还没有学生。' }));
+  }
+  body.push(list);
+
+  const foot = [];
+  // 反选收拾的是「一整轮点错了」：一班几十号人，偶尔只有少数没来，先把全班都算作
+  // 没来再点回那几个更省事。它翻的是整张表，所以压一档、摆在最左，不与「关闭」同重
+  foot.push(
+    h('button', {
+      class: 'btn btn--quiet',
+      text: '反选',
+      title: '把全班翻过来：没来的都算在座，在座的都算没来',
+      disabled: klass.students.length === 0 ? '' : undefined,
+      onClick: () => void doInvert(),
+    }),
+  );
+  const absentCount = absent.size;
+  // 主行动压在最右：点完按它就是收工。字随「记下几个人」变，由 `updateRollCall`
+  // 定点改，不为它重画整块。一层里只留这一条出口 —— 曾经脚上还有一颗「关闭」、
+  // 标题栏还有一颗 ✕，三颗说同一件事，老师还得猜哪个算数。
+  //
+  // 提示语里的数现读 `state.session`，不用上面那个 `absentCount`：这一层画出来之后
+  // 老师又点了几下，闭包里的数早就旧了。
+  const done = h('button', {
+    class: 'btn btn--primary',
+    dataset: { rollDone: '1' },
+    text: rollDoneText(absentCount),
+    title: '点过的留下，收起这层回自习',
+    onClick: finishRollCall,
+  });
+  rollFoot = done;
+  foot.push(done);
+  return modalFrame('点名', body, foot, {
+    class: 'modal--rollcall',
+    closeLabel: '撤销这一趟点名',
+    closeTitle: '撤销这一趟：把刚才点出来的没来退回开门那一刻',
+  });
+}
+
+/** 点名层那颗「完成」上的字。 */
+function rollDoneText(absentCount) {
+  return absentCount === 0 ? '完成' : `完成（${absentCount} 人没来）`;
+}
+/**
+ * 点名层的「反选」：全班翻过来 —— 没来的都算在座，在座的都算没来。
+ *
+ * 与逐个人点一样，这一下也走定点更新：几十个格子各自换脸，浮层不重画，老师刚点到的
+ * 位置与焦点都留着。
+ */
+async function doInvert() {
+  const ids = state.klass.students.map((item) => item.id);
+  const next = invertAbsent(state.session, ids, state.now);
+  await commitSession(next);
+  const absent = next.absentIds.length;
+  const total = ids.length;
+  showToast(
+    absent === total
+      ? '全班都算作没来了；在座的点一下他，变回灰色'
+      : absent === 0
+        ? '全班都算作在座了'
+        : `翻过来了：${total - absent} 人在座，${absent} 人没来`,
+  );
+}
+
+/**
+ * 点名层里点一个人：蓝的退回灰，灰的记成没来。
+ *
+ * 只换那一个格子，不重画整块 —— 几十号人一次点不完，重画会把老师刚点着的位置重新
+ * 排一遍，键盘的焦点也会掉出去。所以这里不传 `forceRender`，由 `updateDynamic`
+ * 里的 `updateRollCall` 定点改。
+ */
+async function doMarkPresentOrAbsent(studentId) {
+  const status = statusOf(state.session, studentId, state.now, state.klass);
+  const at = state.now;
+  await commitSession(
+    status === STATUS.ABSENT
+      ? markPresent(state.session, studentId)
+      : markAbsent(state.session, studentId, at),
+  );
+}
+
+/**
+ * 点名层的开关。两种收工，各说各的意思：
+ *
+ * - **完成**（脚上的主钮）：点过的照旧留着，收窗回自习 —— 这一趟点出来的没来就是这一场的账。
+ * - **✕ / Esc / 点窗外**：撤销这一趟 —— 回到**开门那一刻**的名单，中间点过的一概不留。
+ *
+ * 课上常常是点着点着发现点错了人、或者班长说名单不对，整趟作废比逐个撤回快；
+ * 当然也可能相反（点了一大半不想走回头路），那就按「完成」。所以出口是两个，不是一个。
+ */
+function openRollCall() {
+  if (state.session === null) {
+    return;
+  }
+  noteActivity();
+  // 记下开门那一刻的名单：✕ 撤销时回到这里。撤销不落盘之外的痕迹 —— 只写一次会话
+  state.rollCallOpen = { absentIds: [...state.session.absentIds] };
+  state.overlay = 'rollCall';
+  render();
+}
+
+/** 「完成」：这一趟点出来的没来留下，收窗回自习。 */
+function finishRollCall() {
+  const count = state.session?.absentIds.length ?? 0;
+  closeRollCall();
+  showToast(count === 0 ? '全班都在座' : `已记下 ${count} 人没来`);
+}
+
+/** ✕：这一趟作废，名单退回开门那一刻，收窗回自习。 */
+async function cancelRollCall() {
+  const opened = state.rollCallOpen;
+  // 先收窗（层与看板都整块重画，见下），再往回退
+  state.rollCallOpen = null;
+  state.overlay = null;
+  state.remarkStudentId = null;
+  if (opened === null || state.session === null) {
+    render();
+    return;
+  }
+  await commitSession({ ...state.session, absentIds: [...opened.absentIds] }, true);
+  showToast('已撤销这一趟点名');
+}
+
+/** 收窗。名单已经改好了（或已撤销），这里只把层拿掉、把格子归位。 */
+function closeRollCall() {
+  state.rollCallOpen = null;
+  state.overlay = null;
+  state.remarkStudentId = null;
+  // 关掉之后「没来的人」才归位到最后那一块，所以这一下要整块重画
+  render();
 }
 
 function renderNewClass() {
@@ -1912,7 +2067,7 @@ function renderRemark() {
   body.push(
     h('p', {
       class: 'modal__hint',
-      text: `给「${student?.name ?? ''}」记一次临时离开。备注可以留空 —— 不填就是纯计时。`,
+      text: `给「${student?.name ?? ''}」记一次临时离开。挑一条常用备注，他的格子就按那条的颜色走；那条填了时长的话，过了就转红并出声。不挑也行，就是默认的黄、不限时。`,
     }),
   );
 
@@ -1920,8 +2075,8 @@ function renderRemark() {
   const chips = h('div', { class: 'chips' });
   for (const template of klass.remarkTemplates) {
     const chip = h('button', {
-      class: 'chip chip--pick',
-      text: template.text,
+      class: `chip chip--pick chip--away-${template.color}`,
+      dataset: { templateId: template.id },
       onClick: () => {
         templateId = templateId === template.id ? undefined : template.id;
         for (const node of chips.children) {
@@ -1929,7 +2084,12 @@ function renderRemark() {
         }
       },
     });
-    chip.dataset.templateId = template.id;
+    chip.append(h('i', { class: 'chip__dot' }));
+    chip.append(h('span', { text: template.text }));
+    // 时长写在条上：老师挑的时候就得看见「这条几分钟算超时」，不然得回设置里翻
+    if (template.timeoutMs > 0) {
+      chip.append(h('span', { class: 'chip__minutes', text: `${Math.round(template.timeoutMs / 60000)} 分钟` }));
+    }
     chips.append(chip);
   }
   if (klass.remarkTemplates.length === 0) {
@@ -2002,9 +2162,9 @@ function renderRemark() {
   foot.push(
     h('button', {
       class: 'btn',
-      text: '他没到',
-      title: '改成没到（蓝色）',
-      onClick: () => void confirmNotHere(),
+      text: '他没来',
+      title: '改成没来（蓝色）',
+      onClick: () => void doNotHere(state.remarkStudentId),
     }),
   );
   foot.push(
@@ -2015,6 +2175,78 @@ function renderRemark() {
     }),
   );
   return modalFrame('临时离开', body, foot);
+}
+
+/**
+ * 设置里的一行备注模板：文本 + 颜色 + 时长。
+ *
+ * 行的当前颜色挂在 `data-tpl-color` 上，保存时从那里读 —— 色块只是把它改掉，
+ * 不必再往每个色块上辨认哪个是选中的。
+ */
+function templateRow(template) {
+  const row = h('div', { class: 'tpl', dataset: { tpl: '1', tplColor: template.color } });
+  row.append(
+    h('input', {
+      class: 'input tpl__text',
+      placeholder: '写着什么（比如「上厕所」）',
+      value: template.text,
+      dataset: { tplText: '1' },
+    }),
+  );
+  row.append(colorSwatches(template.color, (color) => {
+    row.dataset.tplColor = color;
+  }));
+  row.append(
+    h('label', { class: 'tpl__time' }, [
+      h('input', {
+        class: 'input tpl__minutes',
+        type: 'number',
+        min: '0',
+        max: '180',
+        placeholder: '不限',
+        value: template.timeoutMs > 0 ? String(Math.round(template.timeoutMs / 60000)) : '',
+        dataset: { tplMinutes: '1' },
+      }),
+      h('span', { class: 'tpl__unit', text: '分钟' }),
+    ]),
+  );
+  row.append(
+    h('button', {
+      class: 'btn btn--icon tpl__remove',
+      text: '✕',
+      'aria-label': '删掉这条',
+      title: '删掉这条',
+      onClick: () => row.remove(),
+    }),
+  );
+  return row;
+}
+
+/** 一排颜色小圆点。选了哪颗由 `is-on` 标出来，颜色名同时写进 title 与 data。 */
+function colorSwatches(selected, onPick) {
+  const box = h('div', { class: 'swatches' });
+  for (const color of AWAY_COLORS) {
+    const dot = h('button', {
+      type: 'button',
+      class: `swatch swatch--${color}${color === selected ? ' is-on' : ''}`,
+      dataset: { color },
+      title: awayColorLabel(color),
+      'aria-label': awayColorLabel(color),
+      onClick: () => {
+        for (const node of box.children) {
+          node.classList.toggle('is-on', node.dataset.color === color);
+        }
+        onPick(color);
+      },
+    });
+    box.append(dot);
+  }
+  return box;
+}
+
+/** 颜色名写成中文，悬停能认出来。 */
+function awayColorLabel(color) {
+  return { yellow: '黄', orange: '橙', green: '绿', violet: '紫', pink: '粉', teal: '青' }[color] ?? color;
 }
 
 function renderSettings() {
@@ -2029,21 +2261,6 @@ function renderSettings() {
     themeSelect.append(h('option', { value, text: label, ...(klass.theme === value ? { selected: true } : {}) }));
   }
   body.push(h('label', { class: 'field' }, [h('span', { class: 'field__label', text: '主题' }), themeSelect]));
-
-  const thresholdInput = h('input', {
-    class: 'input',
-    type: 'number',
-    min: '1',
-    max: '180',
-    value: String(Math.round(klass.overtimeThresholdMs / 60000)),
-  });
-  body.push(
-    h('label', { class: 'field' }, [
-      h('span', { class: 'field__label', text: '离开多久算超时（分钟）' }),
-      thresholdInput,
-      h('span', { class: 'field__note', text: '离开超过这个时长，格子转红并出声提醒。' }),
-    ]),
-  );
 
   const soundToggle = h('input', { type: 'checkbox', ...(klass.alertSound ? { checked: true } : {}) });
   body.push(
@@ -2096,15 +2313,27 @@ function renderSettings() {
     ]),
   );
 
-  const templatesArea = h('textarea', {
-    class: 'input input--area',
-    rows: 5,
-    value: klass.remarkTemplates.map((item) => item.text).join('\n'),
-  });
+  // 每条备注自带颜色与时长。原来这里是「一行一条」的输入框 —— 现在一条有三个字段，
+  // 就得一行一行摆：文本、颜色、分钟数，右边一个删。
+  const templateList = h('div', { class: 'tpls' });
+  for (const template of klass.remarkTemplates) {
+    templateList.append(templateRow(template));
+  }
   body.push(
-    h('label', { class: 'field' }, [
-      h('span', { class: 'field__label', text: '常用备注（一行一条）' }),
-      templatesArea,
+    h('div', { class: 'field' }, [
+      h('span', { class: 'field__label', text: '常用备注' }),
+      h('span', {
+        class: 'field__note',
+        text: '点一个人记离开时可以挑一条。颜色是他的格子在他离开期间的颜色；填了分钟数就按这条算超时，过了转红并出声，空着就是不限时。',
+      }),
+      templateList,
+      h('button', {
+        class: 'btn',
+        text: '加一条',
+        onClick: () => {
+          templateList.append(templateRow({ text: '', color: DEFAULT_AWAY_COLOR, timeoutMs: 0 }));
+        },
+      }),
     ]),
   );
 
@@ -2171,17 +2400,20 @@ function renderSettings() {
       class: 'btn btn--primary',
       text: '保存',
       onClick: async () => {
-        const templates = templatesArea.value
-          .split('\n')
-          .map((line) => line.trim())
-          .filter((line) => line !== '')
-          .map((text, index) => ({ id: `tpl-${index + 1}`, text }));
+        const templates = [...templateList.querySelectorAll('[data-tpl]')]
+          .map((row) => ({
+            text: row.querySelector('[data-tpl-text]').value.trim(),
+            color: row.dataset.tplColor,
+            timeoutMs: Math.max(0, Number(row.querySelector('[data-tpl-minutes]').value) || 0) * 60000,
+          }))
+          // 文本空着的那一行不算一条：老师加了一条又没写，不该在挑的时候冒出来
+          .filter((item) => item.text !== '')
+          .map((item, index) => ({ id: `tpl-${index + 1}`, ...item }));
         state.overlay = null;
         await commitClass({
           ...state.klass,
           name: nameInput.value.trim() === '' ? state.klass.name : nameInput.value.trim(),
           theme: themeSelect.value,
-          overtimeThresholdMs: Math.max(1, Number(thresholdInput.value) || 10) * 60000,
           alertSound: soundToggle.checked,
           alertRepeatMs: Math.max(15, Number(repeatInput.value) || 60) * 1000,
           idleMaskMs: Math.max(0, Number(idleSelect.value) || 0) * 1000,
@@ -2213,7 +2445,7 @@ function renderHistory() {
 
     const table = h('table', { class: 'table' });
     const head = h('tr');
-    for (const label of ['开始', '结束', '自习时长', '已到', '离开人次', '超时']) {
+    for (const label of ['开始', '结束', '自习时长', '在座', '离开人次', '超时']) {
       head.append(h('th', { text: label }));
     }
     table.append(h('thead', {}, [head]));
@@ -2343,9 +2575,18 @@ function maybeGoIdle() {
   if (state.mask !== 'session' || state.klass === null || state.session === null) {
     return false;
   }
+  // 老师在自习页上按了「本场不切」：这一场就只看板，不再自己换屏
+  if (state.idleOff) {
+    return false;
+  }
+  // 浮层开着就不切：老师正开着点名层或备注窗，那是他当下在做的事。切了的话看板会从
+  // 底下换成大钟，那扇窗还浮在大钟上面 —— 两层各说各的，看着像坏了
+  if (state.overlay !== null) {
+    return false;
+  }
   // 只在正式自习时间里切：点名时屏幕上正等着老师点人，不该自己走掉。
   // 暂停时也不切：那时什么都没在计时，屏幕上留着「已暂停」比换成大钟有用。
-  if (state.session.phase !== PHASE.SELF_STUDY || isPaused(state.session)) {
+  if (state.session.phase !== PHASE.STUDYING || isPaused(state.session)) {
     return false;
   }
   const threshold = state.klass.idleMaskMs;
@@ -2404,12 +2645,23 @@ async function boot() {
  * Esc 先关浮层 —— 键盘老师最需要的就是「退出去」。多选态下退多选。
  * 其余场合不碰 Esc：自习蒙版下那一下是浏览器自己的「退出全屏」。
  */
+/**
+ * 键盘的退路。
+ *
+ * Esc 先关浮层 —— 键盘老师最需要的就是「退出去」。浮层是点名层时这一下是**撤销这一趟**
+ * （与那颗 ✕ 同义：没保存就退出去，退的就是这一趟）。多选态下退多选。
+ * 其余场合不碰 Esc：自习蒙版下那一下是浏览器自己的「退出全屏」。
+ */
 document.addEventListener('keydown', (event) => {
   if (event.key !== 'Escape') {
     return;
   }
   if (state.overlay !== null) {
     event.preventDefault();
+    if (state.overlay === 'rollCall') {
+      void cancelRollCall();
+      return;
+    }
     closeOverlay();
     return;
   }

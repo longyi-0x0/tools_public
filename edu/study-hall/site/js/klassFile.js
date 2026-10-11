@@ -1,14 +1,24 @@
 /**
  * 一个班 → 一份 xlsx，一份 xlsx → 一个班。
  *
- * 一个班就是一个文件，导出的是**这个班的全部**：班级设置（含超时阈值与补响间隔，
- * 它们按班为单位）、备注模板、名册、每一场记录、每一场的点名明细与离开明细。
+ * 一个班就是一个文件，导出的是**这个班的全部**：班级设置（含出声开关与补响间隔，
+ * 它们按班为单位）、备注模板（含各自的颜色与时长）、名册、每一场记录、每一场的
+ * 点名明细与离开明细。
  * 读回来时按同样的表重建，所以「导出再导入」得到的是同一份数据。
  *
  * 表里时间写成 Excel 日期（不是文本），老师拿到文件能直接排序与筛。
  */
 
-import { DEFAULT_IDLE_MASK_MS, PHASE, awayMsOf, pausedMs, remarkTextOf, summarize } from './domain.js';
+import {
+  DEFAULT_IDLE_MASK_MS,
+  PHASE,
+  awayMsOf,
+  isLeaveOvertime,
+  normaliseKlass,
+  pausedMs,
+  remarkOf,
+  summarize,
+} from './domain.js';
 import { buildWorkbook, date, number, parseWorkbook, text } from './xlsx.js';
 
 export const SHEET = {
@@ -38,16 +48,21 @@ export async function exportClassWorkbook(klass, sessions, now = Date.now()) {
   const klassRows = [
     [text('班级名称'), text(klass.name)],
     [text('主题'), text(klass.theme)],
-    [text('超时阈值（分钟）'), number(klass.overtimeThresholdMs / 60000)],
     [text('超时出声提醒'), text(klass.alertSound ? '是' : '否')],
     [text('补响间隔（秒）'), number(klass.alertRepeatMs / 1000)],
     [text('待机蒙版（秒）'), number(klass.idleMaskMs / 1000)],
     [text('导出于'), date(now)],
   ];
 
-  const templateRows = [[text('序号'), text('文本')]];
+  // 「时长（分钟）」空着就是不限时 —— 超时是每条备注自己的事，不是全班一个数
+  const templateRows = [[text('序号'), text('文本'), text('颜色'), text('时长（分钟）')]];
   klass.remarkTemplates.forEach((template, index) => {
-    templateRows.push([number(index + 1), text(template.text)]);
+    templateRows.push([
+      number(index + 1),
+      text(template.text),
+      text(template.color),
+      template.timeoutMs > 0 ? number(template.timeoutMs / 60000) : text(''),
+    ]);
   });
 
   const rosterRows = [[text('学号'), text('姓名'), text('座位')]];
@@ -57,12 +72,10 @@ export async function exportClassWorkbook(klass, sessions, now = Date.now()) {
 
   const sessionRows = [[
     text('开始时间'),
-    text('点名开始'),
-    text('点名结束'),
     text('结束时间'),
     text('应到'),
-    text('已到'),
-    text('没到'),
+    text('在座'),
+    text('没来'),
     text('离开人次'),
     text('累计离开（分钟）'),
     text('暂停次数'),
@@ -78,7 +91,8 @@ export async function exportClassWorkbook(klass, sessions, now = Date.now()) {
     text('归来时间'),
     text('时长（分钟）'),
     text('是否超时'),
-    text('备注'),
+    text('备注模板'),
+    text('补充说明'),
   ]];
 
   for (const session of sessions) {
@@ -86,8 +100,6 @@ export async function exportClassWorkbook(klass, sessions, now = Date.now()) {
     const summary = summarize(klass, session, end);
     sessionRows.push([
       date(session.startedAt),
-      session.rollCallStartedAt === undefined ? text('') : date(session.rollCallStartedAt),
-      session.rollCallEndedAt === undefined ? text('') : date(session.rollCallEndedAt),
       session.endedAt === undefined ? text('进行中') : date(session.endedAt),
       number(summary.total),
       number(summary.present),
@@ -103,7 +115,8 @@ export async function exportClassWorkbook(klass, sessions, now = Date.now()) {
         date(session.startedAt),
         text(student.code),
         text(student.name),
-        text(session.markedIds.includes(student.id) ? '是' : '否'),
+        // 「是否点到」问的是「他算到了吗」—— 没被点成没来的就是在座
+        text(session.absentIds.includes(student.id) ? '否' : '是'),
       ]);
     }
 
@@ -117,8 +130,10 @@ export async function exportClassWorkbook(klass, sessions, now = Date.now()) {
         date(leave.leftAt),
         leave.returnedAt === undefined ? text('未归') : date(leave.returnedAt),
         number(Math.round(effectiveMs / 60000)),
-        text(effectiveMs > klass.overtimeThresholdMs ? '是' : '否'),
-        text(remarkLine(klass, leave)),
+        text(isLeaveOvertime(klass, leave, effectiveMs) ? '是' : '否'),
+        // 备注拆两列：模板那一列是老师认得出的那种说法，回来时靠它把颜色与时长接上
+        text(remarkOf(klass, leave)?.text ?? ''),
+        text(leave.remark ?? ''),
       ]);
     }
 
@@ -141,11 +156,6 @@ export async function exportClassWorkbook(klass, sessions, now = Date.now()) {
     { name: SHEET.LEAVES, rows: leaveRows },
     { name: SHEET.PAUSES, rows: pauseRows },
   ]);
-}
-
-/** 模板加上补充，拼成一行。 */
-function remarkLine(klass, leave) {
-  return remarkTextOf(klass, leave);
 }
 
 function cellsToText(row) {
@@ -192,7 +202,8 @@ export async function parseClassWorkbook(bytes) {
     for (const row of templateSheet.rows.slice(1)) {
       const value = String(row?.[1] ?? '').trim();
       if (value !== '') {
-        templates.push(value);
+        // 颜色与时长交给 `normaliseKlass` 收口：老文件只有前两列，读出来就是默认黄、不限时
+        templates.push({ text: value, color: String(row?.[2] ?? '').trim(), timeoutMs: Number(row?.[3]) * 60000 });
       }
     }
   }
@@ -218,25 +229,24 @@ export async function parseClassWorkbook(bytes) {
     byKey.set(studentKey(student.code, student.name), student.id);
   }
 
-  const thresholdMs = Number(settings.get('超时阈值（分钟）') ?? 10) * 60000;
   const alertSound = (settings.get('超时出声提醒') ?? '是') !== '否';
   const alertRepeatMs = Number(settings.get('补响间隔（秒）') ?? 60) * 1000;
   // 待机蒙版可以是 0（不切），所以这里不能像补响间隔那样把 0 当成缺省
   const idleRaw = settings.get('待机蒙版（秒）');
   const idleMaskMs = idleRaw === undefined ? DEFAULT_IDLE_MASK_MS : Number(idleRaw) * 1000;
 
-  const klass = {
+  // 备注模板过一遍 `normaliseKlass`：颜色与时长在两处都有默认，这里不重复那套判断
+  const klass = normaliseKlass({
     id: newId('k'),
     name,
     createdAt: Date.now(),
     theme: settings.get('主题') ?? 'middle',
-    overtimeThresholdMs: Number.isFinite(thresholdMs) && thresholdMs > 0 ? thresholdMs : 600000,
     alertSound,
     alertRepeatMs: Number.isFinite(alertRepeatMs) && alertRepeatMs > 0 ? alertRepeatMs : 60000,
     idleMaskMs: Number.isFinite(idleMaskMs) && idleMaskMs >= 0 ? idleMaskMs : DEFAULT_IDLE_MASK_MS,
-    remarkTemplates: templates.map((value, index) => ({ id: `tpl-${index + 1}`, text: value })),
+    remarkTemplates: templates,
     students,
-  };
+  });
 
   const sessionSheet = findSheet(sheets, SHEET.SESSIONS);
   const sessions = [];
@@ -247,25 +257,17 @@ export async function parseClassWorkbook(bytes) {
       if (!Number.isFinite(startedAt)) {
         continue;
       }
-      const rollCallStartedAt = Number(row?.[1]);
-      const rollCallEndedAt = Number(row?.[2]);
-      const endedRaw = row?.[3];
+      const endedRaw = row?.[1];
       const endedAt = Number(endedRaw);
       const session = {
         id: newId('s'),
         classId: klass.id,
-        phase: Number.isFinite(endedAt) ? PHASE.ENDED : PHASE.SELF_STUDY,
+        phase: Number.isFinite(endedAt) ? PHASE.ENDED : PHASE.STUDYING,
         startedAt,
-        markedIds: [],
+        absentIds: [],
         leaves: [],
         pauses: [],
       };
-      if (Number.isFinite(rollCallStartedAt)) {
-        session.rollCallStartedAt = rollCallStartedAt;
-      }
-      if (Number.isFinite(rollCallEndedAt)) {
-        session.rollCallEndedAt = rollCallEndedAt;
-      }
       if (Number.isFinite(endedAt)) {
         session.endedAt = endedAt;
       }
@@ -284,10 +286,11 @@ export async function parseClassWorkbook(bytes) {
       }
       const [, code, studentName, marked] = cellsToText(row);
       const studentId = byKey.get(studentKey(code ?? '', studentName ?? ''));
-      if (studentId === undefined || marked !== '是') {
+      // 表里的「是」是「他到了」，存的是它的反面
+      if (studentId === undefined || marked === '是') {
         continue;
       }
-      session.markedIds.push(studentId);
+      session.absentIds.push(studentId);
     }
   }
 
@@ -299,7 +302,7 @@ export async function parseClassWorkbook(bytes) {
       if (session === undefined) {
         continue;
       }
-      const [, code, studentName, leftAt, returnedAt, , , remark] = row ?? [];
+      const [, code, studentName, leftAt, returnedAt, , , templateText, note] = row ?? [];
       const studentId = byKey.get(studentKey(String(code ?? '').trim(), String(studentName ?? '').trim()));
       if (studentId === undefined || !Number.isFinite(Number(leftAt))) {
         continue;
@@ -313,9 +316,16 @@ export async function parseClassWorkbook(bytes) {
       if (Number.isFinite(returned)) {
         leave.returnedAt = returned;
       }
-      const note = String(remark ?? '').trim();
-      if (note !== '') {
-        leave.remark = note;
+      // 按文本把模板接回来：颜色与时长都挂在它身上。老师改过模板名或删过模板的话
+      // 接不上，这条离开就按默认算（黄、不限时）—— 比丢整条记录强
+      const wanted = String(templateText ?? '').trim();
+      const template = klass.remarkTemplates.find((item) => item.text === wanted);
+      if (template !== undefined) {
+        leave.templateId = template.id;
+      }
+      const text = String(note ?? '').trim();
+      if (text !== '') {
+        leave.remark = text;
       }
       session.leaves.push(leave);
     }

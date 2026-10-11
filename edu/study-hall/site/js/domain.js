@@ -8,12 +8,8 @@
 
 /** 一次记录（一场自习）走到哪一相。 */
 export const PHASE = {
-  /** 准备：记录已开始，还没点名。全班都是「没到」。 */
-  PREPARING: 'preparing',
-  /** 点名中：老师逐个点，点过的变「到了」。 */
-  ROLL_CALL: 'roll_call',
-  /** 自习中：点名已结束，正式进入自习时间。 */
-  SELF_STUDY: 'self_study',
+  /** 自习中：按「开始自习」之后的常态。全班默认在座，计时已经在走。 */
+  STUDYING: 'studying',
   /** 已结束：这一场定格，只读。 */
   ENDED: 'ended',
 };
@@ -21,23 +17,37 @@ export const PHASE = {
 /**
  * 一个学生的当前状态。
  *
- * 颜色语义一句话说完：**蓝 = 没到，灰 = 到了**。黄与红是「到了又离开」的两个档：
- * 黄是还没超阈值，红是超过了阈值。语义不随阶段变化 —— 点名阶段剩下的蓝就是缺席，
- * 不需要第五种颜色。
+ * 颜色语义一句话说完：**蓝 = 没来，灰 = 在座**；离开中的颜色由**那条备注**决定
+ * （默认黄），超过那条备注设的时长转红。
+ *
+ * 开始自习时全班都是灰的 —— 坐在座位上是默认事实，老师不必为此点几十下。蓝色的
+ * 那几个只可能来自两处：点名时被点出来的没来，或自习中把点错的人退回没来。
+ *
+ * 离开中没有单独的状态常量：它的状态值**就是颜色名**（见 [`AWAY_COLORS`]），
+ * 界面照着 `data-status` 上色，两处不会对不上。
  */
 export const STATUS = {
-  /** 蓝：没到 */
+  /** 蓝：没来 */
   ABSENT: 'absent',
-  /** 灰：到了 */
+  /** 灰：在座 */
   PRESENT: 'present',
-  /** 黄：临时离开，计时中，未超阈值 */
-  LEFT: 'left',
-  /** 红：临时离开，已超阈值 */
+  /** 红：临时离开，已过那条备注设的时长 */
   OVERTIME: 'overtime',
 };
 
-/** 默认超时阈值：10 分钟。 */
-export const DEFAULT_OVERTIME_THRESHOLD_MS = 10 * 60 * 1000;
+/**
+ * 离开中能挑的颜色。黄是默认；蓝 / 灰 / 红是语义色，不在其中也不给挑 ——
+ * 它们分别说「没来」「在座」「超时」，被备注借去用就说不清了。
+ */
+export const AWAY_COLORS = ['yellow', 'orange', 'green', 'violet', 'pink', 'teal'];
+/** 没挑颜色时用的那一个。 */
+export const DEFAULT_AWAY_COLOR = 'yellow';
+
+/** 这个状态是不是「离开中」（不管哪种颜色）。 */
+export function isAwayStatus(status) {
+  return status !== STATUS.ABSENT && status !== STATUS.PRESENT && status !== STATUS.OVERTIME;
+}
+
 /** 默认补响间隔：60 秒。 */
 export const DEFAULT_ALERT_REPEAT_MS = 60 * 1000;
 
@@ -50,8 +60,26 @@ export const DEFAULT_ALERT_REPEAT_MS = 60 * 1000;
  */
 export const DEFAULT_IDLE_MASK_MS = 30 * 1000;
 
-/** 新班的默认备注模板。 */
+/** 新班的默认备注模板。颜色与时长都交给老师自己设（默认黄、不限时）。 */
 export const DEFAULT_REMARK_TEMPLATES = ['上厕所', '打水', '去办公室', '身体不适', '被老师叫走'];
+
+/**
+ * 把一条备注模板补齐成当前形状：`{ id, text, color, timeoutMs }`。
+ *
+ * 模板是**后来才有颜色与时长**的（早先只有一句文本），库里的老班可能存的是字符串或
+ * 少了字段的对象，所以读的时候都从字符串认起。颜色只认 [`AWAY_COLORS`] 里的，
+ * `timeoutMs` 不是正数就是**不限时**。
+ */
+function normaliseTemplate(raw, index) {
+  const item = typeof raw === 'string' ? { text: raw } : (raw ?? {});
+  const timeout = Number(item.timeoutMs);
+  return {
+    id: typeof item.id === 'string' && item.id !== '' ? item.id : `tpl-${index + 1}`,
+    text: String(item.text ?? '').trim(),
+    color: AWAY_COLORS.includes(item.color) ? item.color : DEFAULT_AWAY_COLOR,
+    timeoutMs: Number.isFinite(timeout) && timeout > 0 ? timeout : 0,
+  };
+}
 
 /** 造一个新班。`id` 与 `createdAt` 由调用方给：这一层不认识随机数与时钟。 */
 export function createKlass(input) {
@@ -61,23 +89,27 @@ export function createKlass(input) {
     name: input.name,
     createdAt: input.createdAt,
     theme: input.theme ?? 'middle',
-    overtimeThresholdMs: input.overtimeThresholdMs ?? DEFAULT_OVERTIME_THRESHOLD_MS,
     alertSound: input.alertSound ?? true,
     alertRepeatMs: input.alertRepeatMs ?? DEFAULT_ALERT_REPEAT_MS,
     idleMaskMs: input.idleMaskMs ?? DEFAULT_IDLE_MASK_MS,
-    remarkTemplates: templates.map((text, index) => ({ id: `tpl-${index + 1}`, text })),
+    remarkTemplates: templates.map(normaliseTemplate),
     students: input.students ?? [],
   };
 }
 
-/** 开一场新记录。 */
+/**
+ * 开一场新记录。
+ *
+ * 一开就是自习中：计时从这一刻起走，全班默认在座。点名是可选的加餐 —— 想点就走
+ * 「点名」那一层，点出来的没来记在 `absentIds` 里，不点也不影响这一场跑下去。
+ */
 export function startSession(input) {
   return {
     id: input.id,
     classId: input.classId,
-    phase: PHASE.PREPARING,
+    phase: PHASE.STUDYING,
     startedAt: input.startedAt,
-    markedIds: [],
+    absentIds: [],
     leaves: [],
     pauses: [],
   };
@@ -86,12 +118,8 @@ export function startSession(input) {
 /** 这一相能不能迁到下一相。 */
 export function canTransition(session, to) {
   switch (to) {
-    case PHASE.ROLL_CALL:
-      return session.phase === PHASE.PREPARING;
-    case PHASE.SELF_STUDY:
-      return session.phase === PHASE.ROLL_CALL;
     case PHASE.ENDED:
-      return session.phase === PHASE.ROLL_CALL || session.phase === PHASE.SELF_STUDY;
+      return session.phase === PHASE.STUDYING;
     default:
       return false;
   }
@@ -103,52 +131,49 @@ export function canTransition(session, to) {
  * 数据只存在老师自己的浏览器里，没有服务端可以跑迁移，所以后来加的字段只能在读的时候
  * 补默认值 —— 不然老班上的 `idleMaskMs` 是 `undefined`，切换到待机那道判断会当场成立。
  * 对一个已经是完整形状的班是幂等的。
+ *
+ * 学生也一并补齐：学号与座位缺了就是空串。少了这一步，界面上会写出「undefined 号」——
+ * 那两处判的是「是不是空串」。
+ *
+ * 早先的班还有一个「超时阈值（分钟）」总设置，现在**超时是每条备注自己的事**，那项不再读。
  */
 export function normaliseKlass(raw) {
   const templates = Array.isArray(raw.remarkTemplates) ? raw.remarkTemplates : [];
+  const students = Array.isArray(raw.students) ? raw.students : [];
   return {
     id: raw.id,
     name: raw.name,
     createdAt: raw.createdAt,
     theme: raw.theme ?? 'middle',
-    overtimeThresholdMs: raw.overtimeThresholdMs ?? DEFAULT_OVERTIME_THRESHOLD_MS,
     alertSound: raw.alertSound ?? true,
     alertRepeatMs: raw.alertRepeatMs ?? DEFAULT_ALERT_REPEAT_MS,
     idleMaskMs: raw.idleMaskMs ?? DEFAULT_IDLE_MASK_MS,
-    remarkTemplates: templates,
-    students: Array.isArray(raw.students) ? raw.students : [],
+    remarkTemplates: templates.map(normaliseTemplate),
+    students: students.map((student) => ({
+      id: student.id,
+      name: String(student.name ?? ''),
+      code: String(student.code ?? ''),
+      seat: String(student.seat ?? ''),
+    })),
   };
 }
 
 /**
  * 把库里读出来的一场记录补齐成当前形状。
  *
- * 与 [`normaliseKlass`] 同理：后来才加的 `pauses` 在老数据上是 `undefined`，
- * 而算时长要读它。补齐之后是幂等的。
+ * 与 [`normaliseKlass`] 同理。这里还收一件事：早先的版本把「准备 → 点名 → 自习」写成
+ * 三个相，没走完点名的旧记录停在 `preparing` / `roll_call` —— 那两个相已经没有了，
+ * 一律读成「自习中」。旧记录里点过的名字不往回翻：翻一次要点掉一个个名字，而这里
+ * 拿不到名册，翻不出正确的反面，宁可让那一场的人全按在座读，也不猜。
  */
 export function normaliseSession(raw) {
   return {
     ...raw,
-    markedIds: Array.isArray(raw.markedIds) ? raw.markedIds : [],
+    phase: raw.phase === PHASE.ENDED ? PHASE.ENDED : PHASE.STUDYING,
+    absentIds: Array.isArray(raw.absentIds) ? raw.absentIds : [],
     leaves: Array.isArray(raw.leaves) ? raw.leaves : [],
     pauses: Array.isArray(raw.pauses) ? raw.pauses : [],
   };
-}
-
-/** 开始点名。 */
-export function beginRollCall(session, at) {
-  if (!canTransition(session, PHASE.ROLL_CALL)) {
-    throw new Error(`当前阶段（${session.phase}）不能开始点名`);
-  }
-  return { ...session, phase: PHASE.ROLL_CALL, rollCallStartedAt: at };
-}
-
-/** 结束点名，正式进入自习时间。 */
-export function endRollCall(session, at) {
-  if (!canTransition(session, PHASE.SELF_STUDY)) {
-    throw new Error(`当前阶段（${session.phase}）不能结束点名`);
-  }
-  return { ...session, phase: PHASE.SELF_STUDY, rollCallEndedAt: at };
 }
 
 /**
@@ -185,7 +210,7 @@ export function pausedOverlapMs(pauses, from, to) {
 
 /** 暂停自习。 */
 export function pauseSession(session, at) {
-  if (session.phase !== PHASE.SELF_STUDY) {
+  if (session.phase !== PHASE.STUDYING) {
     throw new Error(`当前阶段（${session.phase}）不能暂停`);
   }
   if (isPaused(session)) {
@@ -196,7 +221,7 @@ export function pauseSession(session, at) {
 
 /** 继续自习。 */
 export function resumeSession(session, at) {
-  if (session.phase !== PHASE.SELF_STUDY) {
+  if (session.phase !== PHASE.STUDYING) {
     throw new Error(`当前阶段（${session.phase}）不能继续`);
   }
   const pauses = session.pauses ?? [];
@@ -217,45 +242,68 @@ export function endSession(session, at) {
   return { ...closed, phase: PHASE.ENDED, endedAt: at };
 }
 
-/** 点到一个人：蓝 → 灰。点名阶段与自习阶段都成立（后者是迟到到场）。 */
+/**
+ * 记一个「没来」：灰 → 蓝。
+ *
+ * 开始自习时全班都是灰的（在座），所以点名做的不是「标记到了的」，而是反过来
+ * 挑出没来的那几个 —— 一个班几十号人，多数都在座位上，挑少数才省力气。
+ *
+ * 不要求处于某一相：点名是可选的一层，自习里随时能把一个人退回没来（他走了、
+ * 一开始就点错了）。
+ *
+ * 他还开着一段离开的话，那一段**当场合上** —— 没来过的人谈不上离开。不合的话那个
+ * 定时器会一直跑：格子按离开的颜色画，到了时长还会响，而人明明标着没来。
+ */
+export function markAbsent(session, studentId, at) {
+  const marked = session.absentIds.includes(studentId)
+    ? session
+    : { ...session, absentIds: [...session.absentIds, studentId] };
+  return closeOpenLeave(marked, studentId, at);
+}
+
+/** 取消「没来」：蓝 → 灰。点错了可以退回去。 */
 export function markPresent(session, studentId) {
-  if (session.phase !== PHASE.ROLL_CALL && session.phase !== PHASE.SELF_STUDY) {
-    throw new Error(`当前阶段（${session.phase}）不能点名`);
-  }
-  if (session.markedIds.includes(studentId)) {
-    return session;
-  }
-  return { ...session, markedIds: [...session.markedIds, studentId] };
+  return { ...session, absentIds: session.absentIds.filter((id) => id !== studentId) };
 }
 
 /**
- * 剩下没点的都算到了。点名阶段那一颗「剩下都到」用这个。
+ * 反选：在座的都算没来，没来的都算在座。点名层那一颗「反选」用这个。
  *
- * 只补不覆盖：已经点过的保持原样（顺序也不动，导出按这个顺序出），
- * 因此先点了几个人再按它，前面那几个人的结果不会被抹掉。
- * 一个都没补到时返回原对象，调用方可以据此跳过落盘。
+ * 结果按 `studentIds` 给的顺序（名册顺序）排，不保留原先点选的先后 ——
+ * 翻一次之后顺序统一了，反复翻也不会让 `absentIds` 越翻越乱。
+ *
+ * 导出不受影响：点名明细是按名册逐人查「在不在 absentIds 里」，与这个数组的顺序无关。
  */
-export function markAllPresent(session, studentIds) {
-  if (session.phase !== PHASE.ROLL_CALL) {
-    throw new Error(`当前阶段（${session.phase}）不能点名`);
-  }
-  const marked = new Set(session.markedIds);
-  const added = studentIds.filter((id) => !marked.has(id));
-  if (added.length === 0) {
+export function invertAbsent(session, studentIds, at) {
+  const absent = new Set(session.absentIds);
+  const flipped = { ...session, absentIds: studentIds.filter((id) => !absent.has(id)) };
+  // 翻成「没来」的那几个，跟着把开着的离开合上（同 `markAbsent`）
+  const newlyAbsent = new Set(flipped.absentIds.filter((id) => !absent.has(id)));
+  return {
+    ...flipped,
+    leaves: flipped.leaves.map((leave) =>
+      newlyAbsent.has(leave.studentId) && leave.returnedAt === undefined && at !== undefined
+        ? { ...leave, returnedAt: at }
+        : leave,
+    ),
+  };
+}
+
+/** 合上这个人开着的离开（`at` 没给就原样返回 —— 这一层不读时钟，得调用方给）。 */
+function closeOpenLeave(session, studentId, at) {
+  if (at === undefined || !isAway(session, studentId)) {
     return session;
   }
-  return { ...session, markedIds: [...session.markedIds, ...added] };
+  return {
+    ...session,
+    leaves: session.leaves.map((leave) =>
+      leave.studentId === studentId && leave.returnedAt === undefined ? { ...leave, returnedAt: at } : leave,
+    ),
+  };
 }
 
-/** 取消点到：灰 → 蓝。点错了可以退回去。 */
-export function unmarkPresent(session, studentId) {
-  if (session.phase !== PHASE.ROLL_CALL && session.phase !== PHASE.SELF_STUDY) {
-    throw new Error(`当前阶段（${session.phase}）不能改点名结果`);
-  }
-  return { ...session, markedIds: session.markedIds.filter((id) => id !== studentId) };
-}
-
-/** 这个人当前是不是在外面（有没归来的离开记录）。 */
+/**
+ * 这个人当前是不是在外面（有没归来的离开记录）。 */
 export function isAway(session, studentId) {
   return session.leaves.some((leave) => leave.studentId === studentId && leave.returnedAt === undefined);
 }
@@ -265,9 +313,9 @@ export function activeLeave(session, studentId) {
   return session.leaves.find((leave) => leave.studentId === studentId && leave.returnedAt === undefined);
 }
 
-/** 记一次离开：灰 → 黄，开始计时。只在自习阶段成立。 */
+/** 记一次离开：灰 → 黄，开始计时。 */
 export function markLeft(session, input) {
-  if (session.phase !== PHASE.SELF_STUDY) {
+  if (session.phase !== PHASE.STUDYING) {
     throw new Error(`当前阶段（${session.phase}）不能记离开`);
   }
   if (isAway(session, input.studentId)) {
@@ -285,7 +333,7 @@ export function markLeft(session, input) {
 
 /** 记一次归来：黄 / 红 → 灰，停表。 */
 export function markReturned(session, studentId, at) {
-  if (session.phase !== PHASE.SELF_STUDY) {
+  if (session.phase !== PHASE.STUDYING) {
     throw new Error(`当前阶段（${session.phase}）不能记归来`);
   }
   return {
@@ -332,19 +380,49 @@ export function isActive(session) {
 /**
  * 推导一个学生的当前状态。
  *
- * 只看事实（`markedIds` 与 `leaves`）与「现在」，不落库 —— 所以刷新页面、
+ * 只看事实（`absentIds` 与 `leaves`）与「现在」，不落库 —— 所以刷新页面、
  * 合盖再打开，颜色与计时都能从时间戳重算回来。
+ *
+ * 灰度是默认：没被点成没来、也没在离开中的，就是在座。离开中的颜色跟着**那条备注**
+ * 走（默认黄）；备注设了时长且已经过了，就是红。
  */
-export function statusOf(session, studentId, now, thresholdMs) {
-  if (session.phase === PHASE.PREPARING) {
-    return STATUS.ABSENT;
-  }
+export function statusOf(session, studentId, now, klass) {
   const leave = activeLeave(session, studentId);
   if (leave !== undefined) {
+    const timeoutMs = awayTimeoutMsOf(klass, leave);
     // 用有效时长判，不是「现在 − 离开时刻」：暂停的那几段不算他的
-    return awayMsOf(session, leave, now) > thresholdMs ? STATUS.OVERTIME : STATUS.LEFT;
+    if (timeoutMs > 0 && awayMsOf(session, leave, now) > timeoutMs) {
+      return STATUS.OVERTIME;
+    }
+    return awayColorOf(klass, leave);
   }
-  return session.markedIds.includes(studentId) ? STATUS.PRESENT : STATUS.ABSENT;
+  return session.absentIds.includes(studentId) ? STATUS.ABSENT : STATUS.PRESENT;
+}
+
+/** 一条离开记录用的是哪条备注模板（没挑就是没有）。 */
+export function remarkOf(klass, leave) {
+  return klass.remarkTemplates.find((item) => item.id === leave?.templateId);
+}
+
+/** 这条离开该刷什么颜色：备注没挑颜色时是默认黄。 */
+export function awayColorOf(klass, leave) {
+  return remarkOf(klass, leave)?.color ?? DEFAULT_AWAY_COLOR;
+}
+
+/**
+ * 这条离开多久算超时。**0 表示不限时** —— 老师没给这条备注设时长，它就只是计个数。
+ *
+ * 超时不是全班一个数，而是每条备注自己的事：「去办公室」可能要 10 分钟，「上厕所」
+ * 3 分钟就够。同一个班里谁也别拿别人的尺子量。
+ */
+export function awayTimeoutMsOf(klass, leave) {
+  return remarkOf(klass, leave)?.timeoutMs ?? 0;
+}
+
+/** 一条离开记录是不是已经过了它自己的时长。 */
+export function isLeaveOvertime(klass, leave, awayMs) {
+  const timeoutMs = awayTimeoutMsOf(klass, leave);
+  return timeoutMs > 0 && awayMs > timeoutMs;
 }
 
 /** 当前这次离开已持续的毫秒数（扣掉暂停段）；不在离开中为 0。 */
@@ -366,27 +444,18 @@ export function awayMsOf(session, leave, now) {
 /**
  * 这一场已经自习了多久。
  *
- * 从**结束点名**那一刻算起 —— 点名一结束就是正式的自习时间；暂停的那几段不算。
- * 还在点名或准备时是 0；已经结束的那一场定格在结束那一刻，不再往前走。
+ * 从**开始自习**那一刻算起 —— 点不点名都一样，一按下去计时就在走；暂停的那几段
+ * 不算。已经结束的那一场定格在结束那一刻，不再往前走。
  */
 export function studyMs(session, now) {
-  if (session.rollCallEndedAt === undefined) {
-    return 0;
-  }
   const end = session.endedAt ?? now;
-  return Math.max(
-    0,
-    end - session.rollCallEndedAt - pausedOverlapMs(session.pauses, session.rollCallEndedAt, end),
-  );
+  return Math.max(0, end - session.startedAt - pausedOverlapMs(session.pauses, session.startedAt, end));
 }
 
 /** 这一场暂停了多少（毫秒）。 */
 export function pausedMs(session, now) {
-  if (session.rollCallEndedAt === undefined) {
-    return 0;
-  }
   const end = session.endedAt ?? now;
-  return pausedOverlapMs(session.pauses, session.rollCallEndedAt, end);
+  return pausedOverlapMs(session.pauses, session.startedAt, end);
 }
 
 /**
@@ -408,7 +477,7 @@ export function leaveReport(klass, session, now) {
     };
     row.count += 1;
     row.totalMs += ms;
-    if (ms > klass.overtimeThresholdMs) {
+    if (isLeaveOvertime(klass, leave, ms)) {
       row.overtime = true;
     }
     // 只留第一条有内容的备注：一行里放不下这个人出去过的每一次
@@ -431,7 +500,7 @@ export function remarkTextOf(klass, leave) {
   if (leave === undefined) {
     return '';
   }
-  const template = klass.remarkTemplates.find((item) => item.id === leave.templateId);
+  const template = remarkOf(klass, leave);
   const parts = [];
   if (template !== undefined) {
     parts.push(template.text);
@@ -450,24 +519,19 @@ export function remarkTextOf(klass, leave) {
  * `已到 + 没到 = 应到`，而离开的那几个人两边都出现。
  */
 export function summarize(klass, session, now) {
-  const threshold = klass.overtimeThresholdMs;
   let present = 0;
   let left = 0;
   let overtime = 0;
   for (const student of klass.students) {
-    if (activeLeave(session, student.id) === undefined && !session.markedIds.includes(student.id)) {
+    const status = statusOf(session, student.id, now, klass);
+    if (status === STATUS.ABSENT) {
       continue;
     }
     present += 1;
-    switch (statusOf(session, student.id, now, threshold)) {
-      case STATUS.LEFT:
-        left += 1;
-        break;
-      case STATUS.OVERTIME:
-        overtime += 1;
-        break;
-      default:
-        break;
+    if (status === STATUS.OVERTIME) {
+      overtime += 1;
+    } else if (isAwayStatus(status)) {
+      left += 1;
     }
   }
   let leaveDurationMs = 0;
@@ -489,18 +553,18 @@ export function summarize(klass, session, now) {
 /**
  * 这一拍该响哪几条。
  *
- * 越过阈值且从没响过 → 响；响过之后每隔 `alertRepeatMs` 补响一次，直到老师
- * 点「归来」。返回的是**该响的离开记录**，由调用方去发声并回写 `overtimeNotifiedAt`，
- * 这一层不碰声音。
+ * 过了**那条备注自己设的时长**且从没响过 → 响；响过之后每隔 `alertRepeatMs` 补响一次，
+ * 直到老师点「归来」。没设时长（`timeoutMs` 为 0）的备注不响 —— 那种只是计个数。
+ * 返回的是**该响的离开记录**，由调用方去发声并回写 `overtimeNotifiedAt`，这一层不碰声音。
  */
-export function dueAlerts(session, now, thresholdMs, repeatMs) {
+export function dueAlerts(klass, session, now, repeatMs) {
   const due = [];
   for (const leave of session.leaves) {
     if (leave.returnedAt !== undefined) {
       continue;
     }
     // 按有效时长判：暂停期间不算，暂停时也不该响（调用方会跳过）
-    if (awayMsOf(session, leave, now) <= thresholdMs) {
+    if (!isLeaveOvertime(klass, leave, awayMsOf(session, leave, now))) {
       continue;
     }
     if (leave.overtimeNotifiedAt === undefined || now - leave.overtimeNotifiedAt >= repeatMs) {

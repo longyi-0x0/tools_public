@@ -17,15 +17,27 @@
   --ink-dim: #5d6673;
   --rule: #dfe3e9;
 
-  /* 四色的语义角色：蓝是没到、灰是到了、黄是离开、红是超时 */
+  /* 三色的语义角色：蓝是没来、灰是在座、红是超时 —— 这三色不给备注挑 */
   --absent: #2f68d8;
   --absent-ink: #ffffff;
   --present: #cdd3dc;
   --present-ink: #2b323c;
-  --left: #f0a80b;
-  --left-ink: #33260a;
   --overtime: #e0454b;
   --overtime-ink: #ffffff;
+
+  /* 离开中的六色：老师按每条备注挑一个，黄是默认。每色配一个压在上面的字色 */
+  --away-yellow: #f0a80b;
+  --away-yellow-ink: #33260a;
+  --away-orange: #e0792a;
+  --away-orange-ink: #ffffff;
+  --away-green: #2f9e6b;
+  --away-green-ink: #ffffff;
+  --away-violet: #7d5ae0;
+  --away-violet-ink: #ffffff;
+  --away-pink: #d1548f;
+  --away-pink-ink: #ffffff;
+  --away-teal: #1f9a9a;
+  --away-teal-ink: #ffffff;
 
   --accent: #2f68d8;
   --danger: #c8362f;
@@ -55,7 +67,12 @@
   --gap: 12px;
   --absent: #2b6cf0;
   --present: #d5dae2;
-  --left: #ffb020;
+  --away-yellow: #ffb020;
+  --away-orange: #ff8a1f;
+  --away-green: #23b377;
+  --away-violet: #8a63ff;
+  --away-pink: #e75ba0;
+  --away-teal: #17a8a8;
   --overtime: #e8404a;
 }
 
@@ -70,7 +87,12 @@
   --gap: 7px;
   --absent: #3a63ad;
   --present: #d2d6dc;
-  --left: #d99a13;
+  --away-yellow: #d99a13;
+  --away-orange: #c76f24;
+  --away-green: #2b8a5f;
+  --away-violet: #6c4fc4;
+  --away-pink: #b64a7c;
+  --away-teal: #1b8585;
   --overtime: #c33f45;
 }
 
@@ -128,14 +150,6 @@ body {
   overflow: hidden;
 }
 
-.mask__foot {
-  flex: none;
-  margin: 0;
-  padding: 8px 16px 14px;
-  color: var(--ink-dim);
-  font-size: 13px;
-}
-
 /* ---------- 顶栏 ---------- */
 
 .tab {
@@ -167,7 +181,7 @@ body {
     to right,
     var(--absent) 0 25%,
     var(--present) 25% 50%,
-    var(--left) 50% 75%,
+    var(--away-yellow) 50% 75%,
     var(--overtime) 75% 100%
   );
 }
@@ -202,13 +216,13 @@ body {
   font-size: 12px;
 }
 
-.chip--roll_call {
+.chip--calling {
   background: color-mix(in srgb, var(--absent) 12%, var(--surface));
   border-color: color-mix(in srgb, var(--absent) 30%, var(--rule));
   color: color-mix(in srgb, var(--absent) 78%, var(--ink));
 }
 
-.chip--self_study {
+.chip--studying {
   background: color-mix(in srgb, var(--present) 45%, var(--surface));
   border-color: color-mix(in srgb, var(--present) 80%, var(--rule));
   color: var(--present-ink);
@@ -384,10 +398,41 @@ body {
   border: 0;
   border-radius: var(--tile-radius);
   font: inherit;
-  color: var(--left-ink);
-  background: var(--left);
+  /* 与看板上的格子同一套色：卡片刷的是那条备注的颜色 */
+  color: var(--away-yellow-ink);
+  background: var(--away-yellow);
   cursor: pointer;
   text-align: left;
+}
+
+.idle__card--yellow {
+  color: var(--away-yellow-ink);
+  background: var(--away-yellow);
+}
+
+.idle__card--orange {
+  color: var(--away-orange-ink);
+  background: var(--away-orange);
+}
+
+.idle__card--green {
+  color: var(--away-green-ink);
+  background: var(--away-green);
+}
+
+.idle__card--violet {
+  color: var(--away-violet-ink);
+  background: var(--away-violet);
+}
+
+.idle__card--pink {
+  color: var(--away-pink-ink);
+  background: var(--away-pink);
+}
+
+.idle__card--teal {
+  color: var(--away-teal-ink);
+  background: var(--away-teal);
 }
 
 .idle__card--overtime {
@@ -714,7 +759,7 @@ body {
 }
 
 .status__value.is-left {
-  color: color-mix(in srgb, var(--left) 72%, #4a3402);
+  color: color-mix(in srgb, var(--away-yellow) 72%, #4a3402);
 }
 
 .status__value.is-overtime {
@@ -768,25 +813,55 @@ body {
   transition: background-color 120ms ease, color 120ms ease;
 }
 
-/* 蓝：没到 */
+/* 蓝：没来 */
 .tile[data-status="absent"] {
   background: var(--absent);
   color: var(--absent-ink);
 }
 
-/* 灰：到了 */
+/* 灰：在座 */
 .tile[data-status="present"] {
   background: var(--present);
   color: var(--present-ink);
 }
 
-/* 黄：临时离开，计时中 */
-.tile[data-status="left"] {
-  background: var(--left);
-  color: var(--left-ink);
+/*
+ * 离开中：颜色跟着那条备注走（黄是默认）。
+ *
+ * 这几条是同一件事的六个色 —— 状态下都算「离开中」，只是老师给不同的由头配了不同的
+ * 色（打水黄、去办公室紫……），一眼就能从一片格子里认出谁去干什么了。
+ */
+.tile[data-status="yellow"] {
+  background: var(--away-yellow);
+  color: var(--away-yellow-ink);
 }
 
-/* 红：超时未归。呼吸一次，让第二排也看得见 */
+.tile[data-status="orange"] {
+  background: var(--away-orange);
+  color: var(--away-orange-ink);
+}
+
+.tile[data-status="green"] {
+  background: var(--away-green);
+  color: var(--away-green-ink);
+}
+
+.tile[data-status="violet"] {
+  background: var(--away-violet);
+  color: var(--away-violet-ink);
+}
+
+.tile[data-status="pink"] {
+  background: var(--away-pink);
+  color: var(--away-pink-ink);
+}
+
+.tile[data-status="teal"] {
+  background: var(--away-teal);
+  color: var(--away-teal-ink);
+}
+
+/* 红：过了那条备注设的时长。呼吸一次，让第二排也看得见 */
 .tile[data-status="overtime"] {
   background: var(--overtime);
   color: var(--overtime-ink);
@@ -1048,6 +1123,9 @@ body {
 }
 
 .chip--pick {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
   padding: 5px 12px;
   border: 1px solid var(--rule);
   border-radius: 999px;
@@ -1062,11 +1140,164 @@ body {
   border-color: color-mix(in srgb, var(--ink) 24%, var(--rule));
 }
 
+.chip--pick .chip__dot {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: var(--chip-dot, var(--away-yellow));
+}
+
+.chip--pick .chip__minutes {
+  color: var(--ink-dim);
+  font-size: 12.5px;
+}
+
+.chip--pick.is-on .chip__minutes {
+  color: inherit;
+  opacity: 0.8;
+}
+
+/* 每条备注的颜色：点上那颗小圆点，整颗 chip 跟着变色 */
+.chip--away-yellow {
+  --chip-dot: var(--away-yellow);
+  --chip-bg: var(--away-yellow);
+  --chip-ink: var(--away-yellow-ink);
+}
+
+.chip--away-orange {
+  --chip-dot: var(--away-orange);
+  --chip-bg: var(--away-orange);
+  --chip-ink: var(--away-orange-ink);
+}
+
+.chip--away-green {
+  --chip-dot: var(--away-green);
+  --chip-bg: var(--away-green);
+  --chip-ink: var(--away-green-ink);
+}
+
+.chip--away-violet {
+  --chip-dot: var(--away-violet);
+  --chip-bg: var(--away-violet);
+  --chip-ink: var(--away-violet-ink);
+}
+
+.chip--away-pink {
+  --chip-dot: var(--away-pink);
+  --chip-bg: var(--away-pink);
+  --chip-ink: var(--away-pink-ink);
+}
+
+.chip--away-teal {
+  --chip-dot: var(--away-teal);
+  --chip-bg: var(--away-teal);
+  --chip-ink: var(--away-teal-ink);
+}
+
 .chip--pick.is-on {
-  background: var(--left);
-  border-color: var(--left);
-  color: var(--left-ink);
-  font-weight: 600;
+  background: var(--chip-bg);
+  border-color: var(--chip-bg);
+  color: var(--chip-ink);
+}
+
+.chip--pick.is-on .chip__dot {
+  background: color-mix(in srgb, var(--chip-ink) 55%, transparent);
+}
+
+/* ---------- 常用备注的编辑行 ---------- */
+
+/**
+ * 设置里的「常用备注」：一条一行，三个字段（文本、颜色、分钟数）加一个删。
+ *
+ * 原来是一格文本框、一行一条 —— 现在一条带颜色和时长，挤在一行文本里说不清。
+ */
+.tpls {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.tpl {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tpl__text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.swatches {
+  display: flex;
+  gap: 4px;
+  flex: none;
+}
+
+.swatch {
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 2px solid transparent;
+  border-radius: 999px;
+  cursor: pointer;
+  /* 环用 inset 画：小球本身的颜色才是主体 */
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--ink) 8%, transparent);
+}
+
+.swatch:hover {
+  border-color: color-mix(in srgb, var(--ink) 26%, transparent);
+}
+
+.swatch.is-on {
+  border-color: var(--ink);
+}
+
+.swatch--yellow {
+  background: var(--away-yellow);
+}
+
+.swatch--orange {
+  background: var(--away-orange);
+}
+
+.swatch--green {
+  background: var(--away-green);
+}
+
+.swatch--violet {
+  background: var(--away-violet);
+}
+
+.swatch--pink {
+  background: var(--away-pink);
+}
+
+.swatch--teal {
+  background: var(--away-teal);
+}
+
+.tpl__time {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex: none;
+}
+
+.tpl__minutes {
+  width: 72px;
+  text-align: right;
+}
+
+.tpl__unit {
+  color: var(--ink-dim);
+  font-size: 12.5px;
+}
+
+.tpl__remove {
+  flex: none;
+  color: var(--ink-dim);
 }
 
 .pick {
@@ -1160,6 +1391,70 @@ body {
   display: none;
 }
 
+/* ---------- 点名层 ---------- */
+
+/**
+ * 点名是一块比寻常浮层宽得多的窗：一个班几十号人得在一屏里尽量摆下，
+ * 老师顺着名单点，眼睛不该来回滚。
+ *
+ * 里头每个名字都跟看板上的格子同宽同高、同一套四色 —— 点的是同一件事，
+ * 不该因为换了层就换一种长相。
+ */
+.modal--rollcall {
+  width: min(1180px, 100%);
+  max-height: min(90vh, 900px);
+}
+
+.rollcall__list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+  gap: 8px;
+  align-content: start;
+}
+
+.rollcall__tile {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 2px;
+  min-height: 62px;
+  padding: 10px 8px;
+  border: 1px solid transparent;
+  border-radius: var(--tile-radius);
+  font: inherit;
+  color: var(--present-ink);
+  background: var(--present);
+  cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.rollcall__tile:hover {
+  border-color: color-mix(in srgb, var(--ink) 24%, transparent);
+}
+
+.rollcall__tile.is-absent {
+  background: var(--absent);
+  color: var(--absent-ink);
+}
+
+.rollcall__name {
+  font-size: var(--name-size);
+  font-weight: 650;
+  line-height: 1.2;
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+.rollcall__seat {
+  font-size: var(--meta-size);
+  line-height: 1.4;
+  opacity: 0.72;
+}
+
 /* 窄屏：格子降到 4 列以内也能看，但这一屏的主场是教室大屏 */
 @media (max-width: 720px) {
   .grid {
@@ -1214,8 +1509,8 @@ body {
   background: var(--present);
 }
 
-.legend__dot[data-status="left"] {
-  background: var(--left);
+.legend__dot[data-status="yellow"] {
+  background: var(--away-yellow);
 }
 
 .legend__dot[data-status="overtime"] {
@@ -1242,130 +1537,6 @@ body {
 .btn--icon.is-on {
   background: color-mix(in srgb, var(--overtime) 10%, var(--surface));
   border-color: color-mix(in srgb, var(--overtime) 45%, var(--rule));
-}
-
-/* ---------- 本场小结 ---------- */
-
-.summary {
-  flex: none;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  margin: 0 16px 14px;
-  padding: 13px 16px 14px;
-  background: var(--surface);
-  border: 1px solid var(--rule);
-  border-radius: var(--radius);
-}
-
-.summary__head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-
-.summary__title {
-  margin: 0;
-  font-size: 15px;
-  font-weight: 650;
-}
-
-.summary__when {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 7px;
-  color: var(--ink-dim);
-  font-size: 13px;
-  font-variant-numeric: tabular-nums;
-}
-
-.summary__dot {
-  opacity: 0.5;
-}
-
-.summary__facts {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px 22px;
-}
-
-.summary__fact {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 7px;
-}
-
-.summary__fact-label {
-  color: var(--ink-dim);
-  font-size: 12.5px;
-}
-
-.summary__fact-value {
-  font: 600 15px/1.2 var(--font);
-  font-variant-numeric: tabular-nums;
-}
-
-.summary__fact-value.is-present {
-  color: color-mix(in srgb, var(--present-ink) 70%, var(--ink-dim));
-}
-
-.summary__fact-value.is-absent {
-  color: var(--absent);
-}
-
-.summary__fact-value.is-overtime {
-  color: var(--overtime);
-}
-
-.summary__list {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  margin: 0;
-  padding: 8px 0 0;
-  border-top: 1px solid var(--rule);
-  list-style: none;
-  font-size: 13px;
-}
-
-.summary__list li {
-  display: flex;
-  align-items: baseline;
-  gap: 9px;
-}
-
-.summary__list li.is-overtime .summary__name,
-.summary__list li.is-overtime .summary__time {
-  color: var(--overtime);
-}
-
-.summary__name {
-  min-width: 4.5em;
-  font-weight: 600;
-}
-
-.summary__time {
-  font-variant-numeric: tabular-nums;
-  font-weight: 600;
-}
-
-.summary__count {
-  color: var(--ink-dim);
-  font-size: 12px;
-}
-
-.summary__remark {
-  color: var(--ink-dim);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.summary__more {
-  color: var(--ink-dim);
-  font-size: 12px;
 }
 
 /* ---------- 空态里的三步 ---------- */
