@@ -1,29 +1,49 @@
 /**
  * 自习点名的样式。
  *
- * 这一屏通常打在教室前面的屏上，所以第一件事是「从后排也分得清颜色」：
- * 四色是大面积填色，字压在色块上取对比够的黑或白。第二件事是「格子不多占地方」：
- * 名字是主角，学号与座位退到小字，计时只在真的离开时才出现。
+ * 两块面，两种距离：
  *
- * 三套主题只改密度的那几档（圆角、字号、留白），四色的语义不动 —— 小学生与
- * 高中生看的是同一套颜色关系，只是格子大小的差别。
+ * - **板**（自习看板、待机屏）是教室前面那块屏，八米外看。深底、大字、默认态安静 ——
+ *   全班在座时不该是一片高饱和的蓝，老师的眼睛要直接落在需要处理的那几个人身上。
+ * - **纸**（班级列表、浮层）是老师坐下来备课、整理资料时看的，近距离、浅底、密一些。
+ *
+ * 两套面共用同一个墨色 `#1B2028`：它是板的底，也是纸上主行动钮的填充。这样按钮永远
+ * 不会被误读成某个学生状态 —— 主行动不占用任何语义色。
+ *
+ * 三套主题只改密度的那几档（圆角、字号、留白），四色的语义不动 —— 小学生与高中生看
+ * 的是同一套颜色关系，只是格子大小的差别。
  */
 
 :root {
-  /* 中性面：纸底、卡片、发丝线 */
-  --paper: #f4f5f7;
+  /* 纸：班级列表与浮层 */
+  --paper: #f5f6f8;
   --surface: #ffffff;
-  --ink: #14181f;
+  --ink: #1b2028;
   --ink-dim: #5d6673;
   --rule: #dfe3e9;
 
-  /* 三色的语义角色：灰是没来、蓝是在座、红是超时 —— 这三色不给备注挑 */
+  /* 板：自习看板与待机屏 */
+  --board: #1b2028;
+  --board-2: #232a34;
+  --board-line: #333c49;
+  --chalk: #e8ecf2;
+  --chalk-dim: #9aa5b4;
+
+  /* 语义四色（纸上） */
   --absent: #cdd3dc;
   --absent-ink: #2b323c;
   --present: #2f68d8;
   --present-ink: #ffffff;
   --overtime: #e0454b;
   --overtime-ink: #ffffff;
+
+  /* 语义四色（板上）：在座是安静的描边块，只有例外才上色 */
+  --board-absent: #262c36;
+  --board-absent-ink: #6b7684;
+  --board-present-line: #3a4453;
+  --board-present-ink: #e8ecf2;
+  --board-overtime: #ff5a52;
+  --board-overtime-ink: #1b2028;
 
   /* 离开中的六色：老师按每条备注挑一个，黄是默认。每色配一个压在上面的字色 */
   --away-yellow: #f0a80b;
@@ -39,23 +59,30 @@
   --away-teal: #1f9a9a;
   --away-teal-ink: #ffffff;
 
+  /* 板上的离开六色：提亮一档，压在深底上才跳得出来 */
+  --board-away-yellow: #f2b23e;
+  --board-away-orange: #e8823a;
+  --board-away-green: #3fae7e;
+  --board-away-violet: #8f6be8;
+  --board-away-pink: #de6ba0;
+  --board-away-teal: #2fafaf;
+
   --accent: #2f68d8;
   --danger: #c8362f;
+  --board-danger: #ff6b63;
 
   /*
-   * 教室的响度：静 → 临界 → 吵。
+   * 教室的响度：静 → 临界 → 吵。板上五档，越吵越暖。
    *
-   * 这是一套**环境**的色，与人物的四色（灰没来 / 蓝在座 / 红超时）说的不是一件事 ——
-   * 待机页上两者同时在场（底色偏暖，卡片上写着谁超时了），所以这套只染整屏的底，
-   * 淡淡的五档，不去碰名字、卡片与字色。越吵越暖，越静越绿。
+   * 这是一套**环境**的色，与人物的四色说的不是一件事 —— 待机屏上两者同时在场
+   * （底色偏暖，卡片上写着谁超时了），所以这套只染整屏的底，不去碰名字、卡片与字色。
    */
-  --volume-calm: #dcebe0;
-  --volume-quiet: #e8f0e6;
-  --volume-edge: #f6ecd6;
-  --volume-warm: #f8e3cc;
-  --volume-over: #f7d9c8;
-  /* 写在浅底上的那一行读数，越过阈值时用这个色点一下 */
-  --volume-over-ink: #c2410c;
+  --board-volume-calm: #1e2a24;
+  --board-volume-quiet: #1f2a26;
+  --board-volume-edge: #2a2a24;
+  --board-volume-warm: #2f2822;
+  --board-volume-over: #332622;
+  --board-volume-over-ink: #ff9a6b;
 
   --radius: 10px;
   --tile-radius: 12px;
@@ -65,8 +92,9 @@
   --timer-size: 15px;
   --gap: 10px;
 
-  --font: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei UI", sans-serif;
-  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  --font: "PingFang SC", "HarmonyOS Sans SC", "Source Han Sans SC", system-ui, -apple-system,
+    "Segoe UI", "Microsoft YaHei UI", sans-serif;
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
 
   color-scheme: light;
 }
@@ -123,20 +151,14 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* 全屏时也留着这条底，Esc 退出由浏览器管 */
-:fullscreen {
-  background: var(--paper);
-}
-
 .shell {
   display: flex;
   flex-direction: column;
-  /* 用 dvh：移动端与全屏下不会因为地址栏算错高度 */
   min-height: 100vh;
   min-height: 100dvh;
 }
 
-/* 班级页 / 班级列表页：顶栏 + 内容 */
+/* 班级列表页：顶栏 + 内容 */
 .page {
   display: flex;
   flex-direction: column;
@@ -157,7 +179,8 @@ body {
   inset: 0;
   display: flex;
   flex-direction: column;
-  background: var(--paper);
+  background: var(--board);
+  color: var(--chalk);
   z-index: 40;
 }
 
@@ -176,6 +199,13 @@ body {
   background: var(--surface);
   border-bottom: 1px solid var(--rule);
   flex: none;
+}
+
+/* 板上的顶栏：不铺白面，只留一条线把名字与下面隔开 */
+.mask .tab {
+  background: transparent;
+  border-bottom: 1px solid var(--board-line);
+  padding: 12px 20px;
 }
 
 .tab__left,
@@ -213,12 +243,22 @@ body {
   color: var(--rule);
 }
 
+.mask .tab__sep {
+  color: var(--board-line);
+}
+
 .tab__sub {
   color: var(--ink-dim);
   font-size: 14px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.mask .tab__sub {
+  color: var(--chalk);
+  font-size: 17px;
+  font-weight: 600;
 }
 
 .chip {
@@ -231,16 +271,36 @@ body {
   font-size: 12px;
 }
 
+.mask .chip {
+  background: transparent;
+  border-color: var(--board-line);
+  color: var(--chalk-dim);
+  font-size: 13px;
+  padding: 3px 11px;
+}
+
 .chip--calling {
   background: color-mix(in srgb, var(--absent) 30%, var(--surface));
   border-color: color-mix(in srgb, var(--absent) 70%, var(--rule));
   color: color-mix(in srgb, var(--absent) 45%, var(--ink));
 }
 
+.mask .chip--calling {
+  background: transparent;
+  border-color: var(--board-line);
+  color: var(--chalk);
+}
+
 .chip--studying {
   background: color-mix(in srgb, var(--present) 14%, var(--surface));
   border-color: color-mix(in srgb, var(--present) 32%, var(--rule));
   color: color-mix(in srgb, var(--present) 78%, var(--ink));
+}
+
+.mask .chip--studying {
+  background: transparent;
+  border-color: var(--board-line);
+  color: var(--chalk-dim);
 }
 
 .chip--ended {
@@ -250,6 +310,9 @@ body {
 /* ---------- 按钮 ---------- */
 
 .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   padding: 7px 13px;
   border: 1px solid var(--rule);
   border-radius: var(--radius);
@@ -271,14 +334,14 @@ body {
 }
 
 .btn--primary {
-  background: var(--accent);
-  border-color: var(--accent);
+  background: var(--ink);
+  border-color: var(--ink);
   color: #fff;
 }
 
 .btn--primary:hover {
-  background: color-mix(in srgb, var(--accent) 86%, #000);
-  border-color: color-mix(in srgb, var(--accent) 86%, #000);
+  background: color-mix(in srgb, var(--ink) 86%, #000);
+  border-color: color-mix(in srgb, var(--ink) 86%, #000);
 }
 
 .btn--danger {
@@ -332,6 +395,90 @@ body {
   color: var(--overtime);
 }
 
+/* ---------- 板上的按钮 ---------- */
+
+/*
+ * 板上三档，靠填充与描边分，不靠颜色分 —— 投影偏色时颜色最不可靠。
+ *
+ * - 主行动：实心粉笔白。板上最亮的一块，八米外也是它。
+ * - 普通：描边透明底，与板同呼吸。
+ * - 危险：红色描边 + 红字，摆在底栏最右，前面一道竖线隔开。
+ */
+.mask .btn {
+  border-color: var(--board-line);
+  background: transparent;
+  color: var(--chalk);
+}
+
+.mask .btn:hover {
+  border-color: var(--chalk-dim);
+  background: color-mix(in srgb, var(--chalk) 8%, transparent);
+}
+
+.mask .btn:focus-visible {
+  outline: 2px solid var(--chalk);
+  outline-offset: 2px;
+}
+
+.mask .btn--primary {
+  background: var(--chalk);
+  border-color: var(--chalk);
+  color: var(--board);
+  font-weight: 650;
+}
+
+.mask .btn--primary:hover {
+  background: #fff;
+  border-color: #fff;
+}
+
+.mask .btn--danger {
+  color: var(--board-danger);
+  border-color: color-mix(in srgb, var(--board-danger) 45%, var(--board-line));
+}
+
+.mask .btn--danger:hover {
+  background: color-mix(in srgb, var(--board-danger) 14%, transparent);
+  border-color: var(--board-danger);
+}
+
+.mask .btn--quiet {
+  border-color: transparent;
+  color: var(--chalk-dim);
+}
+
+.mask .btn--quiet:hover {
+  background: color-mix(in srgb, var(--chalk) 10%, transparent);
+  border-color: transparent;
+  color: var(--chalk);
+}
+
+.mask .btn:disabled {
+  opacity: 0.4;
+}
+
+.mask .btn:disabled:hover {
+  background: transparent;
+  border-color: var(--board-line);
+}
+
+/* 板上的小钮（顶栏那一排）：压一档，不与底栏的主行动抢 */
+.mask .btn--small {
+  padding: 6px 11px;
+  font-size: 13.5px;
+  color: var(--chalk-dim);
+}
+
+.mask .btn--small:hover {
+  color: var(--chalk);
+}
+
+.mask .btn--small.is-on {
+  color: var(--chalk);
+  border-color: var(--chalk-dim);
+  background: color-mix(in srgb, var(--chalk) 10%, transparent);
+}
+
 /* ---------- 待机蒙版 ---------- */
 
 /**
@@ -354,36 +501,36 @@ body {
  * 染色要回答的是「现在离那条线多近」，那个带迟滞的「吵着」判定回答的是「算不算吵起来了」，
  * 两个问法不一样，所以这里不用 `is-over`。
  *
- * 没在听（`off`）时一条规则都不给，底色回到 `.mask` 的纸底 —— 屏幕上偏绿偏暖，总该有来由。
+ * 没在听（`off`）时一条规则都不给，底色回到 `.mask` 的板色 —— 屏幕上偏绿偏暖，总该有来由。
  */
 .mask--idle[data-volume="calm"] {
-  background: var(--volume-calm);
+  background: var(--board-volume-calm);
 }
 
 .mask--idle[data-volume="quiet"] {
-  background: var(--volume-quiet);
+  background: var(--board-volume-quiet);
 }
 
 .mask--idle[data-volume="edge"] {
-  background: var(--volume-edge);
+  background: var(--board-volume-edge);
 }
 
 .mask--idle[data-volume="warm"] {
-  background: var(--volume-warm);
+  background: var(--board-volume-warm);
 }
 
 .mask--idle[data-volume="over"] {
-  background: var(--volume-over);
+  background: var(--board-volume-over);
 }
 
 /* 写着读数的那个数。没在听时是空的，占不到地方 */
 .idle__volume {
-  color: var(--ink-dim);
-  font-size: clamp(13px, 1.3vw, 18px);
+  color: var(--chalk-dim);
+  font-size: clamp(14px, 1.4vw, 20px);
 }
 
 .idle__volume.is-over {
-  color: var(--volume-over-ink);
+  color: var(--board-volume-over-ink);
   font-weight: 650;
 }
 
@@ -397,25 +544,32 @@ body {
   min-height: 0;
 }
 
+.idle__class {
+  color: var(--chalk-dim);
+  font-size: clamp(15px, 1.6vw, 22px);
+  font-weight: 600;
+}
+
 .idle__wall {
   font: 700 clamp(72px, 17vw, 240px) / 1 var(--mono);
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.02em;
+  color: var(--chalk);
 }
 
 .idle__elapsed {
-  color: var(--ink-dim);
+  color: var(--chalk-dim);
   font-size: clamp(14px, 1.5vw, 20px);
 }
 
 .idle__elapsed b {
-  color: var(--ink);
+  color: var(--chalk);
   font-family: var(--mono);
   font-variant-numeric: tabular-nums;
 }
 
 .idle__counts {
-  color: var(--ink-dim);
+  color: var(--chalk-dim);
   font-size: clamp(13px, 1.3vw, 18px);
 }
 
@@ -425,12 +579,12 @@ body {
   flex-direction: column;
   gap: 10px;
   padding: 16px 0 8px;
-  border-top: 1px solid var(--rule);
+  border-top: 1px solid var(--board-line);
 }
 
 .idle__away-title {
-  color: var(--ink-dim);
-  font-size: 13.5px;
+  color: var(--chalk-dim);
+  font-size: 14px;
 }
 
 .idle__cards {
@@ -452,44 +606,44 @@ body {
   font: inherit;
   /* 与看板上的格子同一套色：卡片刷的是那条备注的颜色 */
   color: var(--away-yellow-ink);
-  background: var(--away-yellow);
+  background: var(--board-away-yellow);
   cursor: pointer;
   text-align: left;
 }
 
 .idle__card--yellow {
   color: var(--away-yellow-ink);
-  background: var(--away-yellow);
+  background: var(--board-away-yellow);
 }
 
 .idle__card--orange {
   color: var(--away-orange-ink);
-  background: var(--away-orange);
+  background: var(--board-away-orange);
 }
 
 .idle__card--green {
   color: var(--away-green-ink);
-  background: var(--away-green);
+  background: var(--board-away-green);
 }
 
 .idle__card--violet {
   color: var(--away-violet-ink);
-  background: var(--away-violet);
+  background: var(--board-away-violet);
 }
 
 .idle__card--pink {
   color: var(--away-pink-ink);
-  background: var(--away-pink);
+  background: var(--board-away-pink);
 }
 
 .idle__card--teal {
   color: var(--away-teal-ink);
-  background: var(--away-teal);
+  background: var(--board-away-teal);
 }
 
 .idle__card--overtime {
-  color: var(--overtime-ink);
-  background: var(--overtime);
+  color: var(--board-overtime-ink);
+  background: var(--board-overtime);
 }
 
 .idle__card-name {
@@ -511,8 +665,8 @@ body {
   flex: none;
   margin: 0;
   padding: 6px 0 20px;
-  color: var(--ink-dim);
-  font-size: 12.5px;
+  color: var(--chalk-dim);
+  font-size: 13px;
   text-align: center;
 }
 
@@ -526,8 +680,8 @@ body {
 
 .home {
   flex: 1;
-  padding: 20px 20px 32px;
-  max-width: 1100px;
+  padding: 24px 24px 40px;
+  max-width: 1180px;
   width: 100%;
   margin: 0 auto;
 }
@@ -538,13 +692,14 @@ body {
   justify-content: space-between;
   gap: 12px;
   flex-wrap: wrap;
-  margin-bottom: 16px;
+  margin-bottom: 20px;
 }
 
 .home__title {
   margin: 0;
-  font-size: 19px;
+  font-size: 22px;
   font-weight: 650;
+  letter-spacing: 0.01em;
 }
 
 .home__actions {
@@ -561,11 +716,12 @@ body {
 
 .cards {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 14px;
 }
 
 .card {
+  position: relative;
   display: flex;
   flex-direction: column;
   background: var(--surface);
@@ -574,13 +730,18 @@ body {
   overflow: hidden;
 }
 
-/* 卡头：左边是班级名与说明，右上角是导出 / 设置 / 删除 */
+/* 有自习在跑：左边一条竖杠。比一颗 chip 更早被看见，也不占卡内的排布 */
+.card--running {
+  border-left: 4px solid var(--present);
+}
+
+/* 卡头：左边是班级名与人数，右上角是记录 / 设置 */
 .card__head {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
-  padding: 14px 16px 12px;
+  padding: 16px 18px 12px;
 }
 
 .card__title {
@@ -604,7 +765,7 @@ body {
 
 .card__name {
   margin: 0;
-  font-size: 16px;
+  font-size: 18px;
   font-weight: 650;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -614,7 +775,23 @@ body {
 .card__meta {
   margin: 0;
   color: var(--ink-dim);
-  font-size: 12.5px;
+  font-size: 13px;
+}
+
+/* 正在跑的那一场：跟着走的时钟，写在人数那一行上 */
+.card__clock {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--present);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.card__clock b {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-weight: 650;
 }
 
 /* 卡底：一整行都是「开始自习」—— 一张卡上要按的就是它 */
@@ -622,15 +799,15 @@ body {
   display: flex;
   /* 同一行里的卡片等高，底行要贴着底 —— 不然没有牌子那几张底下会空一块 */
   margin-top: auto;
-  padding: 4px 14px 14px;
+  padding: 4px 16px 16px;
 }
 
 /* 不画分隔线、不铺底色：卡上那块是「这个班是什么」，这一颗是「开始干活」，
    一条线横在那儿像把它切成了另一块，反倒让人以为下面是页脚 */
 .card__foot .btn {
   flex: 1;
-  padding: 9px 13px;
-  font-size: 14px;
+  padding: 10px 14px;
+  font-size: 14.5px;
 }
 
 /* ---------- 多选态下的班级卡 ---------- */
@@ -683,155 +860,189 @@ body {
 
 /* ---------- 自习看板 ---------- */
 
+/*
+ * 三段：顶栏（名字与本场设置）· 时钟带（时间 + 四个计数）· 格子 · 底栏（动作）。
+ *
+ * 动作挪到底栏是因为这块屏多半是投影或触屏：屏幕下沿是手最容易到的地方，
+ * 也是眼睛顺着格子往下走的自然落点。原来夹在中间，格子被挤得要滚。
+ */
 .board {
   flex: 1;
   display: flex;
   flex-direction: column;
   min-height: 0;
-  padding: 12px 16px 16px;
-  gap: 12px;
 }
 
-/* 时钟与统计同排：宽屏上时钟在左、统计推到右边，窄屏上折行 */
+/* 时钟与计数同排：宽屏上时钟在左、计数推到右边，窄屏上折行 */
 .board__head {
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   justify-content: space-between;
-  gap: 14px;
+  gap: 20px;
   flex-wrap: wrap;
   flex: none;
+  padding: 14px 20px 10px;
 }
 
 /* 自习时间：这一屏最大的字。大屏上老师抬头第一眼要看的就是它。 */
 .clock {
   display: flex;
-  align-items: baseline;
-  gap: 12px;
-  padding: 6px 16px 8px;
-  background: var(--surface);
-  border: 1px solid var(--rule);
-  border-radius: var(--radius);
+  flex-direction: column;
+  gap: 2px;
 }
 
 .clock__label {
-  color: var(--ink-dim);
-  font-size: 13px;
-  white-space: nowrap;
+  color: var(--chalk-dim);
+  font-size: 13.5px;
 }
 
 .clock__value {
-  font: 700 40px/1.1 var(--mono);
+  font: 700 clamp(44px, min(9vw, 11vh), 132px) / 1 var(--mono);
   font-variant-numeric: tabular-nums;
-  letter-spacing: 0.01em;
+  letter-spacing: -0.01em;
+  color: var(--chalk);
   /* 等宽数字下宽度是稳的，但小时位从 0 变 1 时字面宽会变，留一点余量防抖 */
   min-width: 4.9ch;
 }
 
 /* 还没进自习：数字沉下去，不抢眼 */
 .clock__value.is-idle {
-  color: color-mix(in srgb, var(--ink-dim) 55%, var(--surface));
+  color: color-mix(in srgb, var(--chalk-dim) 55%, var(--board));
 }
 
 /* 暂停中：数字压暗一点，后面跟一颗「已暂停」 */
 .clock__value.is-paused {
-  color: color-mix(in srgb, var(--ink) 45%, var(--surface));
+  color: color-mix(in srgb, var(--chalk) 45%, var(--board));
 }
 
 .clock__paused {
-  color: var(--ink-dim);
+  color: var(--chalk-dim);
   font-size: 13px;
 }
 
 .clock__paused:not(:empty) {
   padding: 2px 8px;
-  border: 1px solid color-mix(in srgb, var(--ink-dim) 35%, var(--rule));
+  border: 1px solid var(--board-line);
   border-radius: 999px;
-  background: color-mix(in srgb, var(--ink) 5%, var(--surface));
+  background: color-mix(in srgb, var(--chalk) 8%, transparent);
 }
 
 @media (max-width: 720px) {
   .clock__value {
-    font-size: 30px;
+    font-size: 40px;
   }
 }
 
-.controls {
+/*
+ * 四个计数，同时就是四色的字典。
+ *
+ * 每个数前面带自己的色点 —— 图例不必另起一行：老师看数字的时候顺带就把颜色认了，
+ * 而单独一行小灰字在投影上根本读不出来。
+ */
+.board__stats {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
   flex-wrap: wrap;
-  flex: none;
+  gap: 8px 18px;
+  align-items: baseline;
 }
 
-.controls__hint {
-  margin: 0;
-  color: var(--ink-dim);
+.stat {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 7px;
+}
+
+.stat__dot {
+  flex: none;
+  width: 11px;
+  height: 11px;
+  border-radius: 3px;
+  background: var(--board-present-line);
+  /* 自己对齐到字的腰上，不然跟着 baseline 走会浮到数字半腰 */
+  align-self: center;
+}
+
+.stat__dot[data-status="absent"] {
+  background: var(--board-absent);
+  box-shadow: inset 0 0 0 1px var(--board-absent-ink);
+}
+
+.stat__dot[data-status="present"] {
+  background: var(--board-present-line);
+  box-shadow: inset 0 0 0 1px var(--chalk-dim);
+}
+
+.stat__dot[data-status="yellow"] {
+  background: var(--board-away-yellow);
+}
+
+.stat__dot[data-status="overtime"] {
+  background: var(--board-overtime);
+}
+
+.stat__label {
+  color: var(--chalk-dim);
   font-size: 13.5px;
 }
 
-.controls__buttons {
-  display: flex;
-  gap: 8px;
+.stat__value {
+  font: 650 22px/1 var(--mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--chalk);
 }
 
-/* 多选态里那颗「已选 N 人」：与钮同排，占个长度固定的位子，数一变钮不跟着挪 */
+/* 离开中 / 超时的数字只在有人的时候点亮，0 的时候是灰的 */
+.stat__value.is-left {
+  color: var(--board-away-yellow);
+}
+
+.stat__value.is-on {
+  color: var(--board-overtime);
+}
+
+/* ---------- 底栏 ---------- */
+
+/*
+ * 动作条。三档靠位置与填充分：
+ *
+ * - 左边一组是往下走的那几步（暂停 / 点名 / 多人离开）。
+ * - 右边是收尾的（重开一场、结束自习），前面一道竖线隔开 —— 它们不是「接着上课」，
+ *   是「这一场到这儿为止」，混在左边一排里手快就会按错。
+ */
+.board__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  flex: none;
+  padding: 12px 20px;
+  border-top: 1px solid var(--board-line);
+  background: var(--board-2);
+}
+
+.board__foot-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* 收尾那一组：一道竖线把它与「接着上课」分开 */
+.board__foot-group--end {
+  padding-left: 14px;
+  border-left: 1px solid var(--board-line);
+}
+
+/* 多选态那条：选了几个、记离开、退出 */
 .controls__picked {
   display: inline-flex;
   align-items: center;
   min-width: 7.5ch;
   padding: 0 12px;
-  color: var(--ink-dim);
+  color: var(--chalk-dim);
   font-size: 14px;
   font-variant-numeric: tabular-nums;
-}
-
-.status {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  flex: none;
-}
-
-.status__cell {
-  display: flex;
-  align-items: baseline;
-  gap: 7px;
-  padding: 7px 12px;
-  background: var(--surface);
-  border: 1px solid var(--rule);
-  border-radius: var(--radius);
-}
-
-.status__label {
-  color: var(--ink-dim);
-  font-size: 12.5px;
-}
-
-.status__value {
-  font: 600 19px/1 var(--mono);
-  font-variant-numeric: tabular-nums;
-}
-
-.status__value.is-absent {
-  color: color-mix(in srgb, var(--absent) 45%, var(--ink));
-}
-
-.status__value.is-present {
-  color: var(--present);
-}
-
-.status__value.is-left {
-  color: color-mix(in srgb, var(--away-yellow) 72%, #4a3402);
-}
-
-.status__value.is-overtime {
-  color: var(--overtime);
-}
-
-/* 离开中 / 超时的数字只在有人的时候点亮，0 的时候是灰的 */
-.status__value.is-on {
-  font-weight: 750;
 }
 
 /* ---------- 花名册格子 ---------- */
@@ -843,49 +1054,52 @@ body {
   gap: var(--gap);
   align-content: start;
   overflow-y: auto;
-  padding-bottom: 8px;
+  padding: 0 20px 12px;
 }
 
+/*
+ * 一格的高度按最坏情况算：名字 + 原因 + 计时三行。
+ *
+ * 写死一个值不行 —— 三套主题的字号差得不小（17px 到 24px），所以按变量算。按「三行都
+ * 放得下」定高还有个好处：谁离开、谁回来都不会让格子变高变矮，一整屏的排布不跟着跳。
+ */
 .tile {
   display: flex;
   flex-direction: column;
   justify-content: center;
   align-items: center;
   gap: 2px;
-  /*
-   * 高度按最坏情况算：名字 + 原因 + 计时三行。
-   *
-   * 原来写死 74px（只够两行），有人离开时多出来的第三行会溢出到格子外面 ——
-   * 上下都被相邻那两行的格子盖住，名字和计时看着就像被裁了。写死一个值不行：
-   * 三套主题的字号差得不小（17px 到 24px），所以按变量算。
-   *
-   * 按「三行都放得下」定高还有个好处：谁离开、谁回来都不会让格子变高变矮，
-   * 一整屏的排布不跟着跳。
-   */
   min-height: calc(
     var(--name-size) * 1.2 + var(--meta-size) * 1.45 + var(--timer-size) * 1.2 + 4px +
       var(--tile-pad) * 2
   );
   padding: var(--tile-pad);
-  border: 1px solid transparent;
+  border: 1px solid var(--board-present-line);
   border-radius: var(--tile-radius);
   font: inherit;
-  color: var(--present-ink);
-  background: var(--present);
+  /* 在座是默认事实，所以它是**安静**的那一态：透明底 + 一道描边 */
+  color: var(--board-present-ink);
+  background: transparent;
   cursor: pointer;
-  transition: background-color 120ms ease, color 120ms ease;
+  transition: background-color 120ms ease, color 120ms ease, border-color 120ms ease;
 }
 
-/* 灰：没来 */
+.tile:hover {
+  border-color: var(--chalk-dim);
+}
+
+/* 灰：没来。板上写成「擦掉的粉笔」—— 比板稍亮一点，字是灰的 */
 .tile[data-status="absent"] {
-  background: var(--absent);
-  color: var(--absent-ink);
+  background: var(--board-absent);
+  border-color: transparent;
+  color: var(--board-absent-ink);
 }
 
-/* 蓝：在座 */
+/* 蓝：在座。默认态，见 `.tile` */
 .tile[data-status="present"] {
-  background: var(--present);
-  color: var(--present-ink);
+  background: transparent;
+  border-color: var(--board-present-line);
+  color: var(--board-present-ink);
 }
 
 /*
@@ -895,54 +1109,61 @@ body {
  * 色（打水黄、去办公室紫……），一眼就能从一片格子里认出谁去干什么了。
  */
 .tile[data-status="yellow"] {
-  background: var(--away-yellow);
+  background: var(--board-away-yellow);
+  border-color: transparent;
   color: var(--away-yellow-ink);
 }
 
 .tile[data-status="orange"] {
-  background: var(--away-orange);
+  background: var(--board-away-orange);
+  border-color: transparent;
   color: var(--away-orange-ink);
 }
 
 .tile[data-status="green"] {
-  background: var(--away-green);
+  background: var(--board-away-green);
+  border-color: transparent;
   color: var(--away-green-ink);
 }
 
 .tile[data-status="violet"] {
-  background: var(--away-violet);
+  background: var(--board-away-violet);
+  border-color: transparent;
   color: var(--away-violet-ink);
 }
 
 .tile[data-status="pink"] {
-  background: var(--away-pink);
+  background: var(--board-away-pink);
+  border-color: transparent;
   color: var(--away-pink-ink);
 }
 
 .tile[data-status="teal"] {
-  background: var(--away-teal);
+  background: var(--board-away-teal);
+  border-color: transparent;
   color: var(--away-teal-ink);
 }
 
 /* 红：过了那条备注设的时长。呼吸一次，让第二排也看得见 */
 .tile[data-status="overtime"] {
-  background: var(--overtime);
-  color: var(--overtime-ink);
+  background: var(--board-overtime);
+  border-color: transparent;
+  color: var(--board-overtime-ink);
 }
 
 @media (prefers-reduced-motion: no-preference) {
   .tile[data-status="overtime"] {
-    animation: 呼吸 1.6s ease-in-out infinite;
+    animation: overtime-pulse 1.6s ease-in-out infinite;
   }
 }
 
-@keyframes 呼吸 {
+@keyframes overtime-pulse {
   0%,
   100% {
-    box-shadow: 0 0 0 0 color-mix(in srgb, var(--overtime) 55%, transparent);
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--board-overtime) 55%, transparent);
   }
   50% {
-    box-shadow: 0 0 0 6px color-mix(in srgb, var(--overtime) 0%, transparent);
+    box-shadow: 0 0 0 6px color-mix(in srgb, var(--board-overtime) 0%, transparent);
   }
 }
 
@@ -983,7 +1204,7 @@ body {
  * 多选态下整格就是勾选框：只有**在座**的人右上角长出那颗勾（没来的、已经在外面的人
  * 勾不动，就不该长出一颗按不了的勾）。
  *
- * 还没勾的那颗跟着 `currentColor` 走 —— 那是压在这一格色块上的字色，跟着主题与状态自己
+ * 还没勾的那颗跟着 `currentColor` 走 —— 那是压在这一格上的字色，跟着主题与状态自己
  * 走，不必为三套主题各写一遍。勾上**不**再给格子描边：一格一个色块，外面套一圈线只会把
  * 上面的名字挤花，谁被选中看那颗勾就够了。
  */
@@ -1007,13 +1228,13 @@ body {
 }
 
 /* 勾上的那一颗：白底 + 深色的勾。
-   这里**不能**跟着 `currentColor` 走 —— 那一格的字色（蓝底上是白）与底下的色块是两回事，
-   一旦给这颗钮自己写上 `color`，`currentColor` 就跟着变成新写的那个色，勾与底一起埋进
-   格子的底色里，看着像没勾上。白底深勾压在哪一种格子上都认得出。 */
+   这里**不能**跟着 `currentColor` 走 —— 一旦给这颗钮自己写上 `color`，`currentColor`
+   就跟着变成新写的那个色，勾与底一起埋进格子里，看着像没勾上。白底深勾压在哪一种
+   格子（包括透明底的在座格）上都认得出。 */
 .tile.is-picked .tile__pick {
-  border-color: var(--surface);
-  background: var(--surface);
-  color: var(--ink);
+  border-color: var(--chalk);
+  background: var(--chalk);
+  color: var(--board);
 }
 
 /* ---------- 空态与提示 ---------- */
@@ -1028,14 +1249,14 @@ body {
 
 .empty__title {
   margin: 0 0 6px;
-  font-size: 16px;
-  font-weight: 600;
+  font-size: 17px;
+  font-weight: 650;
 }
 
 .empty__hint {
-  margin: 0;
+  margin: 0 0 18px;
   color: var(--ink-dim);
-  font-size: 13.5px;
+  font-size: 14px;
 }
 
 .toast {
@@ -1049,8 +1270,13 @@ body {
   color: #fff;
   border-radius: 999px;
   font-size: 13.5px;
-  box-shadow: 0 8px 24px rgb(0 0 0 / 22%);
   z-index: 60;
+}
+
+/* 板上的提示：反过来 —— 粉笔白底、墨色字，压在深板上才看得见 */
+.mask ~ .toast {
+  background: var(--chalk);
+  color: var(--board);
 }
 
 .fatal {
@@ -1108,39 +1334,61 @@ body {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 13px 16px;
+  padding: 14px 18px;
   border-bottom: 1px solid var(--rule);
   flex: none;
 }
 
 .modal__title {
   margin: 0;
-  font-size: 16px;
+  font-size: 17px;
   font-weight: 650;
 }
 
 .modal__body {
-  padding: 16px;
+  padding: 18px;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 16px;
 }
 
 .modal__hint {
   margin: 0;
   color: var(--ink-dim);
   font-size: 13.5px;
+  line-height: 1.6;
 }
 
 .modal__foot {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
-  padding: 12px 16px;
+  padding: 12px 18px;
   border-top: 1px solid var(--rule);
   background: color-mix(in srgb, var(--ink) 2%, var(--surface));
   flex: none;
+}
+
+/* 浮层里的分节：标题 + 一条细线，把七项设置分成三块读得下去的东西 */
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.section + .section {
+  margin-top: 4px;
+  padding-top: 16px;
+  border-top: 1px solid var(--rule);
+}
+
+.section__title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--ink-dim);
+  letter-spacing: 0.04em;
 }
 
 .field {
@@ -1163,6 +1411,7 @@ body {
 .field__note {
   color: var(--ink-dim);
   font-size: 12.5px;
+  line-height: 1.6;
 }
 
 /* ---------- 听教室那一层 ---------- */
@@ -1191,7 +1440,7 @@ body {
 
 /* 越过阈值：填起来的那一段换成暖色，扫一眼就知道现在落在线的哪一边 */
 .listen__fill.is-over {
-  background: var(--volume-over-ink);
+  background: var(--danger);
 }
 
 /* 阈值那一道压在填色上面，所以描一圈纸色 —— 底下是填色还是空槽都看得见 */
@@ -1216,7 +1465,7 @@ body {
 }
 
 .listen__level.is-over {
-  color: var(--volume-over-ink);
+  color: var(--danger);
 }
 
 .listen__threshold {
@@ -1231,7 +1480,7 @@ body {
 }
 
 .listen__status.is-over {
-  color: var(--volume-over-ink);
+  color: var(--danger);
   font-weight: 650;
 }
 
@@ -1241,7 +1490,7 @@ body {
   padding: 0;
   border: 0;
   background: transparent;
-  accent-color: var(--accent);
+  accent-color: var(--ink);
 }
 
 /* 说明旁边那颗小钮：压一档，不与这一层的主行动同重 */
@@ -1398,7 +1647,7 @@ body {
 /**
  * 设置里的「常用备注」：一条一行，三个字段（文本、颜色、分钟数）加一个删。
  *
- * 原来是一格文本框、一行一条 —— 现在一条带颜色和时长，挤在一行文本里说不清。
+ * 一条带颜色和时长，挤在一行文本里说不清，所以一行一条地摆。
  */
 .tpls {
   display: flex;
@@ -1547,7 +1796,7 @@ body {
 
 /* 那一场有人超时：这一格点出来，扫一眼就知道哪几场乱 */
 .table td.is-overtime {
-  color: var(--overtime);
+  color: var(--danger);
   font-weight: 600;
 }
 
@@ -1563,7 +1812,7 @@ body {
   align-items: center;
   gap: 10px;
   margin: 4px 0 0;
-  color: color-mix(in srgb, var(--absent) 45%, var(--ink));
+  color: var(--chalk-dim);
   font-size: 13px;
   font-weight: 600;
 }
@@ -1572,7 +1821,7 @@ body {
   content: '';
   flex: 1;
   height: 1px;
-  background: color-mix(in srgb, var(--absent) 55%, var(--rule));
+  background: var(--board-line);
 }
 
 .hidden {
@@ -1585,8 +1834,8 @@ body {
  * 点名是一块比寻常浮层宽得多的窗：一个班几十号人得在一屏里尽量摆下，
  * 老师顺着名单点，眼睛不该来回滚。
  *
- * 里头每个名字都跟看板上的格子同宽同高、同一套四色 —— 点的是同一件事，
- * 不该因为换了层就换一种长相。
+ * 里头每个名字跟看板上的格子同一套颜色 —— 点的是同一件事，不该因为换了层就换一种长相。
+ * 但这一层画在**纸**上（老师坐着点），所以用纸上的那一套语义色，不用板上的。
  */
 .modal--rollcall {
   width: min(1180px, 100%);
@@ -1653,11 +1902,14 @@ body {
  *
  * 状态挂在**壳**上：名字钮与喇叭都从壳上取色，两处不会各说各的。名字钮是 `<button>`，
  * 喇叭也是，所以不能把喇叭嵌在名字钮里（交互元素套交互元素不合法）—— 壳就是为了这个。
+ *
+ * 与看板上同一套语言：**到了是安静的**（浅底 + 一道描边），**没到才上色**（灰块）。
+ * 这一层里最要紧的是「还有哪几位没点到」，让他们跳出来比让全班都亮着有用。
  */
 .rollcall__cell {
   position: relative;
   display: flex;
-  color: var(--present-ink);
+  color: var(--ink);
 }
 
 .rollcall__cell.is-absent {
@@ -1674,39 +1926,42 @@ body {
   min-width: 0;
   min-height: 62px;
   padding: 10px 8px;
-  border: 1px solid transparent;
+  border: 1px solid var(--rule);
   border-radius: var(--tile-radius);
   font: inherit;
   color: inherit;
-  background: var(--present);
+  background: var(--surface);
   cursor: pointer;
-  transition: background-color 120ms ease, color 120ms ease, box-shadow 120ms ease;
+  transition: background-color 120ms ease, color 120ms ease, border-color 120ms ease,
+    box-shadow 120ms ease;
 }
 
 .rollcall__tile:hover {
-  border-color: color-mix(in srgb, var(--ink) 24%, transparent);
+  border-color: color-mix(in srgb, var(--ink) 28%, var(--rule));
 }
 
 /*
  * 自动点名正在念的那一格，外面描一圈。
  *
- * 两圈（贴身一圈纸色 + 外面一圈墨色）而不是一圈单色：这一格底下是蓝是灰都可能有，
+ * 两圈（贴身一圈纸色 + 外面一圈墨色）而不是一圈单色：这一格底下是浅底是灰都可能有，
  * 单色压在格子上总有一头看不清；垫一圈纸色像把它从排好的格子里抠出来，两种底色上都认得出。
  */
 .rollcall__cell.is-saying .rollcall__tile {
   border-color: transparent;
-  box-shadow: 0 0 0 2px var(--paper), 0 0 0 4px var(--ink);
+  box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--ink);
 }
 
+/* 灰：这一趟还没点到他。与看板上的「没来」同一个色 */
 .rollcall__cell.is-absent .rollcall__tile {
   background: var(--absent);
+  border-color: transparent;
 }
 
 /*
  * 念名字那颗喇叭。
  *
- * 字形取格子上的字色，压在右上角：蓝色（到了）上是白、灰色（没到）上是深灰，两边都看得见，
- * 也不必按状态各配一套样式。平时压到半透明，指上去才实起来。
+ * 字形取格子上的字色，压在右上角：浅底（到了）上是墨色、灰底（没到）上是深灰，
+ * 两边都看得见，也不必按状态各配一套样式。平时压到半透明，指上去才实起来。
  */
 .rollcall__say {
   position: absolute;
@@ -1714,16 +1969,16 @@ body {
   right: 2px;
   display: grid;
   place-items: center;
-  width: 24px;
-  height: 24px;
+  width: 26px;
+  height: 26px;
   padding: 0;
   border: 0;
   border-radius: 8px;
   background: transparent;
   color: inherit;
-  font-size: 13px;
+  font-size: 15px;
   line-height: 1;
-  opacity: 0.55;
+  opacity: 0.45;
   cursor: pointer;
 }
 
@@ -1760,97 +2015,31 @@ body {
     flex-wrap: wrap;
   }
 
-  .status__value {
-    font-size: 17px;
+  .board__foot {
+    padding: 10px 14px;
+  }
+
+  .board__foot-group--end {
+    padding-left: 0;
+    border-left: 0;
   }
 }
 
-/* ---------- 四色图例 ---------- */
+/* ---------- 图标 ---------- */
 
-/**
- * 这一行是四色的字典。
- *
- * 平时压得很暗（不跟统计抢），指针靠近整块蒙版时也不变 —— 老师要看得见时才看它，
- * 不需要它一直喊。色块与格子用同一套语义变量，换主题跟着走。
- */
-.legend {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 16px;
+/* 图标跟着字色走，尺寸跟着字号走 —— 不必为每处各配一套 */
+.icon {
   flex: none;
-  padding: 0 2px;
-  color: var(--ink-dim);
-  font-size: 12.5px;
+  width: 1em;
+  height: 1em;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
-.legend__item {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.legend__dot {
-  width: 11px;
-  height: 11px;
-  border-radius: 3px;
-  background: var(--present);
-}
-
-/* 「没来」是浅灰，画在纸底上几乎看不出边界，单独描一道边 */
-.legend__dot[data-status="absent"] {
-  background: var(--absent);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--absent) 62%, var(--ink-dim));
-}
-
-.legend__dot[data-status="present"] {
-  background: var(--present);
-}
-
-.legend__dot[data-status="yellow"] {
-  background: var(--away-yellow);
-}
-
-.legend__dot[data-status="overtime"] {
-  background: var(--overtime);
-}
-
-/* ---------- 低频动作 ---------- */
-
-/* 与主行动拉开：一条细线 + 小一号的字 */
-.controls__quiet {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-left: 6px;
-  padding-left: 10px;
-  border-left: 1px solid var(--rule);
-}
-
-.controls__quiet .btn {
-  padding: 6px 10px;
-  font-size: 13px;
-}
-
-.btn--icon.is-on {
-  background: color-mix(in srgb, var(--overtime) 10%, var(--surface));
-  border-color: color-mix(in srgb, var(--overtime) 45%, var(--rule));
-}
-
-/* ---------- 空态里的三步 ---------- */
-
-.empty__steps {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-  max-width: 46em;
-  margin: 0 auto 14px;
-  padding-left: 1.4em;
-  color: var(--ink-dim);
-  font-size: 13.5px;
-  line-height: 1.65;
-  text-align: left;
-}
-
-.empty .legend {
-  justify-content: center;
+.btn--icon .icon {
+  width: 1.15em;
+  height: 1.15em;
 }

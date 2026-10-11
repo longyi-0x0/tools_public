@@ -5,8 +5,7 @@
  * 好几个班就走多选（卡变勾选项，页头换成批量那一排）。
  */
 
-import { h, toggleFullscreen } from './dom.js';
-import { themeLabel } from './domain.js';
+import { h, icon, toggleFullscreen } from './dom.js';
 import * as store from './store.js';
 import { exportClassWorkbook } from './klassFile.js';
 import { buildZip } from './xlsx.js';
@@ -22,7 +21,6 @@ import {
   showToast,
   state,
 } from './state.js';
-import { renderLegend } from './legend.js';
 import { openOverlay } from './overlays/index.js';
 
 /** 多选态下已经被勾上的班，按列表顺序。 */
@@ -109,8 +107,8 @@ export async function removePicked() {
   const rest = picked.length > 3 ? ` 等 ${picked.length} 个班` : '';
   const runningCount = picked.filter((klass) => state.running.has(klass.id)).length;
   const warning =
-    runningCount > 0 ? `\n其中 ${runningCount} 个班有正在进行的自习，那一场也一起删掉。` : '';
-  if (!window.confirm(`删除「${names}」${rest}及其全部记录？${warning}\n这一步不能撤回。`)) {
+    runningCount > 0 ? `\n其中 ${runningCount} 个班正在上自习，那一场也会被删掉。` : '';
+  if (!window.confirm(`删除「${names}」${rest}？${warning}\n全部记录会一起删掉，不能撤回。`)) {
     return;
   }
   for (const klass of picked) {
@@ -129,7 +127,7 @@ export async function removePicked() {
 
 /** 删掉一个班（连同它的全部记录）。问一句，确认了才动手。 */
 export async function removeClass(klass) {
-  if (!window.confirm(`删除「${klass.name}」及其全部记录？这一步不能撤回。`)) {
+  if (!window.confirm(`删除「${klass.name}」？全部记录会一起删掉，不能撤回。`)) {
     return false;
   }
   await store.deleteClass(klass.id);
@@ -166,11 +164,9 @@ export function tabBar(options) {
     right.append(
       h('button', {
         class: 'btn btn--icon',
-        title: '全屏',
         'aria-label': '全屏',
-        text: '⛶',
         onClick: toggleFullscreen,
-      }),
+      }, [icon('fullscreen')]),
     );
   }
   header.append(right);
@@ -180,7 +176,7 @@ export function tabBar(options) {
 /**
  * 班级列表的页头动作。
  *
- * 平时是「新建 / 恢复」；进了多选态就换成批量的那几颗 —— 一个班一个班地导出、
+ * 平时是「多选 / 导入 / 新建」；进了多选态就换成批量的那几颗 —— 一个班一个班地导出、
  * 删除仍然在「设置」里，这里只管一次收拾好几个班。
  */
 function renderHomeActions() {
@@ -192,14 +188,13 @@ function renderHomeActions() {
       h('button', { class: 'btn', text: all ? '取消全选' : '全选', onClick: togglePickAll }),
       h('button', {
         class: 'btn',
-        text: '导出选中',
-        title: '每个班一份 xlsx，打成一个 zip 下载',
+        text: '导出所选',
         disabled: picked.length === 0 ? '' : undefined,
         onClick: () => void exportPicked(),
       }),
       h('button', {
         class: 'btn btn--danger',
-        text: '删除选中',
+        text: '删除所选',
         disabled: picked.length === 0 ? '' : undefined,
         onClick: () => void removePicked(),
       }),
@@ -212,17 +207,19 @@ function renderHomeActions() {
     h('button', {
       class: 'btn',
       text: '多选',
-      title: '一次导出或删除好几个班',
       // 一个班都没有时没什么可多选的
       disabled: state.classes.length === 0 ? '' : undefined,
       onClick: startPicking,
     }),
-    h('button', { class: 'btn', text: '从文件恢复一个班', title: '导入之前导出的整班 xlsx（含记录）', onClick: () => pickFile('.xlsx', importClassFile) }),
+    h('button', {
+      class: 'btn',
+      text: '导入班级文件',
+      onClick: () => pickFile('.xlsx', importClassFile),
+    }),
     h('button', {
       class: 'btn btn--primary',
-      text: '新建班级',
       onClick: () => openOverlay('newClass'),
-    }),
+    }, [icon('plus'), h('span', { text: '新建班级' })]),
   ]);
 }
 
@@ -238,24 +235,17 @@ export function renderClassesPage() {
   body.append(bar);
 
   if (state.classes.length === 0) {
-    // 第一次打开没人教，所以把「怎么用」直接写在这里
-    const steps = h('ol', { class: 'empty__steps' });
-    steps.append(
-      h('li', {
-        text: '导入一份花名册建班（.xlsx 或 .xls，网页表格改名的 .xls 也认；表里有一列写着「姓名」即可）',
-      }),
-    );
-    steps.append(h('li', { text: '开始自习 —— 一按下去就在计时，全班默认在座（蓝）' }));
-    steps.append(h('li', { text: '有人临时离开，点一下他，会开始计时；超过设定时长转红并提醒' }));
-    steps.append(
-      h('li', { text: '想点名就按「点名」—— 这一场没点过名就全班都算「没到」，点到的人才算到了' }),
-    );
-    steps.append(h('li', { text: '换机器或留档：按「多选」勾上几个班，导出成一个 zip；一个班一份 xlsx' }));
+    // 第一次打开没人教：只给一句 + 一颗钮。怎么用等建了班在看板上自然就懂了 ——
+    // 在这儿铺五条步骤，第一次来的人先读到的是说明书，而不是动手的那一下
     body.append(
       h('div', { class: 'empty' }, [
         h('p', { class: 'empty__title', text: '还没有班级' }),
-        steps,
-        renderLegend(),
+        h('p', { class: 'empty__hint', text: '导入一份花名册就能开始上课' }),
+        h('button', {
+          class: 'btn btn--primary btn--tall',
+          text: '新建班级',
+          onClick: () => openOverlay('newClass'),
+        }),
       ]),
     );
     main.append(body);
@@ -285,7 +275,9 @@ function renderClassCard(klass) {
   const running = state.running.get(klass.id) ?? null;
   const picking = state.picking !== null;
   const picked = picking && state.picking.has(klass.id);
-  const card = h('article', { class: `card${picking ? ' card--pick' : ''}${picked ? ' is-picked' : ''}` });
+  const card = h('article', {
+    class: `card${running !== null ? ' card--running' : ''}${picking ? ' card--pick' : ''}${picked ? ' is-picked' : ''}`,
+  });
   if (picking) {
     card.setAttribute('role', 'checkbox');
     card.setAttribute('aria-checked', picked ? 'true' : 'false');
@@ -306,20 +298,19 @@ function renderClassCard(klass) {
   }
   const title = h('div', { class: 'card__title' });
   title.append(h('h3', { class: 'card__name', text: klass.name }));
-  const bits = [`${klass.students.length} 人`, themeLabel(klass.theme)];
-  title.append(h('p', { class: 'card__meta', text: bits.join(' · ') }));
+  const meta = h('p', { class: 'card__meta' });
+  meta.append(h('span', { text: `${klass.students.length} 人` }));
   if (running !== null) {
-    title.append(
-      h('span', { class: 'chip chip--studying' }, [
-        h('span', { text: '自习中 ' }),
-        h('span', {
-          class: 'chip__clock',
-          dataset: { clock: `card:${klass.id}` },
-          text: '00:00:00',
-        }),
+    // 正在跑的那一场写在人数这一行上：这张卡与别的班不一样的，就是它还在上着
+    meta.append(h('span', { text: ' · ' }));
+    meta.append(
+      h('span', { class: 'card__clock' }, [
+        h('span', { text: '自习中' }),
+        h('b', { dataset: { clock: `card:${klass.id}` }, text: '00:00:00' }),
       ]),
     );
   }
+  title.append(meta);
   head.append(title);
 
   if (!picking) {
@@ -328,8 +319,7 @@ function renderClassCard(klass) {
     tools.append(
       h('button', {
         class: 'btn',
-        text: '自习记录',
-        title: '以前每一场自习的账',
+        text: '记录',
         onClick: () => void openFromCard(klass, 'history'),
       }),
     );

@@ -13,7 +13,7 @@
  * 格子的脸，老师刚点着的位置与键盘焦点都留着。
  */
 
-import { h, modalFrame } from '../dom.js';
+import { h, icon, modalFrame } from '../dom.js';
 import * as speech from '../speech.js';
 import { setAbsent } from '../domain.js';
 import { commitSession, noteActivity, render, showToast, state } from '../state.js';
@@ -114,13 +114,13 @@ function toggleAuto() {
     return;
   }
   if (!(state.klass?.students ?? []).length || !speech.canSpeak()) {
-    showToast('这台机器的语音念不出来，自动点名用不了');
+    showToast('这台电脑不能朗读名字');
     return;
   }
   // 接着上一次停下的地方往下走；已经念到最后一位了就从头再来
   if (!announce(auto.index + 1)) {
     announce(0);
-    showToast('名册念完了，从头再来');
+    showToast('名册念完了，从头开始念');
   }
   auto.running = true;
   scheduleAuto();
@@ -143,7 +143,7 @@ function restartAuto() {
     auto.running = true;
     scheduleAuto();
   } else {
-    showToast('退回去了，下一个从第一个名字开始');
+    showToast('回到名册开头了');
   }
   paintAuto();
 }
@@ -180,15 +180,10 @@ function paintAuto() {
   const students = state.klass?.students ?? [];
   const { toggle, restart, prev, next, position } = autoNodes;
   const canAuto = students.length > 0 && speech.canSpeak();
-  toggle.textContent = auto.running ? '暂停' : '开始';
+  toggle.textContent = auto.running ? '暂停念' : '开始念';
   toggle.classList.toggle('is-on', auto.running);
   toggle.disabled = !canAuto;
-  toggle.title = canAuto
-    ? auto.running
-      ? '停下来（名单一动不动，随时能接着走）'
-      : `按 ${Math.round(auto.ms / 1000)} 秒一个把名册逐个念下去`
-    : '这台机器的语音念不出来';
-  // 还没念过、或者名册空：退无可退，「重新来」也没必要
+  // 还没念过、或者名册空：退无可退，「从头念」也没必要
   restart.disabled = auto.index < 0 && !auto.running;
   prev.disabled = auto.index < 0;
   next.disabled = auto.index >= students.length - 1;
@@ -231,17 +226,16 @@ function renderAutoBar() {
   // 已经说清它在干什么了
   const toggle = h('button', {
     class: 'btn btn--auto',
-    text: '开始',
+    text: '开始念',
     onClick: toggleAuto,
   });
   const restart = h('button', {
     class: 'btn',
-    text: '重新来',
-    title: '退回名册开头：再走就从第一个名字起（名单一个字不动）',
+    text: '从头念',
     onClick: restartAuto,
   });
-  const prev = h('button', { class: 'btn btn--icon', text: '⏮', 'aria-label': '上一个', title: '上一个', onClick: () => stepAuto(-1) });
-  const next = h('button', { class: 'btn btn--icon', text: '⏭', 'aria-label': '下一个', title: '下一个', onClick: () => stepAuto(1) });
+  const prev = h('button', { class: 'btn', title: '上一个', onClick: () => stepAuto(-1) }, [icon('chevron-left'), h('span', { text: '上一个' })]);
+  const next = h('button', { class: 'btn', title: '下一个', onClick: () => stepAuto(1) }, [icon('chevron-right'), h('span', { text: '下一个' })]);
   const interval = h('select', {
     class: 'input input--interval',
     'aria-label': '间隔',
@@ -292,10 +286,9 @@ export function renderRollCall() {
   body.push(
     h('p', {
       class: 'modal__hint',
-      text:
-        state.session?.rollCallAt === null
-          ? '点一下名字就是「他到了」，他当场变蓝；点错了再点一下退回灰色。这一场还没点过名，所以打开时全班都算「没到」，点到的才算。这一层里点的要按「完成」才落到自习上。'
-          : '点一下名字就是「他到了」，他当场变蓝；点错了再点一下退回灰色。这一场点过了，格子按现在的名单摆着，接着点或改点错的都行。这一层里点的要按「完成」才落到自习上。',
+      text: state.session?.rollCallAt === null
+        ? '点到谁，谁算到。这个班还没点过名，所以打开时全班都是灰的。'
+        : '点到谁，谁算到。点错了再点一下退回灰色。',
     }),
   );
 
@@ -332,47 +325,46 @@ export function renderRollCall() {
       cell.append(
         h('button', {
           class: 'rollcall__say',
-          text: '📣',
           tabindex: '-1',
           'aria-label': `念「${student.name}」`,
           title: `念「${student.name}」`,
           onClick: () => sayName(student.name),
-        }),
+        }, [icon('volume')]),
       );
     }
     list.append(cell);
     rollCells.set(student.id, cell);
   }
   if (klass.students.length === 0) {
-    list.append(h('p', { class: 'empty__hint', text: '这个班还没有学生。' }));
+    list.append(h('p', { class: 'empty__hint', text: '这个班还没有学生。到「设置」里导入名册。' }));
   }
   body.push(list);
 
   const foot = [];
-  // 反选收拾的是「一整轮点错了」：一班几十号人，偶尔只有少数没来，先把全班都算作
-  // 没来再点回那几个更省事。它翻的是整张表，所以压一档、摆在最左，不与「关闭」同重
-  foot.push(
-    h('button', {
-      class: 'btn btn--quiet',
-      text: '反选',
-      title: '把全班翻过来：没来的都算在座，在座的都算没来',
-      disabled: klass.students.length === 0 ? '' : undefined,
-      onClick: doInvert,
-    }),
-  );
+  // 「全部算到」/「全部算没到」收拾的是两种常见的整轮情况：班上只有少数没来（先把全班
+  // 都标成没来，再点回那几位），或者一整轮点错了（反过来）。
+  // 都不叫「反选」—— 老师想的是这两件事，不是「取反」。
+  const invertAll = h('button', {
+    class: 'btn btn--quiet',
+    text: '全部算到',
+    disabled: klass.students.length === 0 ? '' : undefined,
+    onClick: () => doInvert(true),
+  });
+  const invertNone = h('button', {
+    class: 'btn btn--quiet',
+    text: '全部算没到',
+    disabled: klass.students.length === 0 ? '' : undefined,
+    onClick: () => doInvert(false),
+  });
+  foot.push(invertAll, invertNone);
   const absentCount = absent.size;
   // 主行动压在最右：点完按它就是收工。字上那个数是「按下去会记成没来的几位」——
   // 打开时就是全班人数（一个都还没点），点一个少一个，由 `updateRollCall` 定点改，
-  // 不为它重画整块。一层里只留这一条出口 —— 曾经脚上还有一颗「关闭」、标题栏还有
-  // 一颗 ✕，三颗说同一件事，老师还得猜哪个算数。
-  //
-  // 提示语里的人数现读那一份攒着的名单，不用上面那个 `absentCount`：这一层画出来之后
-  // 老师又点了几下，闭包里的数早就旧了。
+  // 不为它重画整块。
   const done = h('button', {
     class: 'btn btn--primary',
     dataset: { rollDone: '1' },
     text: rollDoneText(absentCount),
-    title: '这一趟没点到的记成没来，落到这一场上，收起这层回自习',
     onClick: () => void finishRollCall(),
   });
   rollFoot = done;
@@ -382,27 +374,25 @@ export function renderRollCall() {
   return modalFrame('点名', body, foot, {
     class: 'modal--rollcall',
     closeLabel: '收窗，这一趟不算数',
-    closeTitle: '这一趟不算数：收窗回自习，自习上什么都没变',
     onClose: closeOverlay,
   });
 }
 
 /** 点名层那颗「完成」上的字。 */
 function rollDoneText(absentCount) {
-  return absentCount === 0 ? '完成' : `完成（${absentCount} 人没来）`;
+  return absentCount === 0 ? '全班到齐' : `记下 ${absentCount} 人没来`;
 }
 
 /**
  * 念一下这个名字。
  *
  * 只出声，不动名单 —— 「他到了」是点名字那一下的事，喇叭是另一件事（叫一声让教室里
- * 听见）。念不出来（浏览器没有中文嗓音之类）就顶一句提示，不默不作声。
+ * 听见）。念不出来（这台机器没有中文嗓音之类）就顶一句提示，不默不作声。
  */
 function sayName(name) {
-  // 掐掉上一句也会走到引擎的 error（interrupted），那一类由 speech 层咽掉，不落到这里
-  const status = speech.speak(name, (reason) => showToast(`念不出来：${reason}`));
+  const status = speech.speak(name, () => showToast('这台电脑念不出中文名字'));
   if (!status.ok) {
-    showToast(`念不出来：${status.reason}`);
+    showToast('这台电脑念不出中文名字');
   }
 }
 
@@ -425,29 +415,22 @@ function toggleRoll(studentId) {
 }
 
 /**
- * 点名层的「反选」：这一趟的名单翻过来 —— 没来的都算在座，在座的都算没来。
+ * 点名层里那两颗「全部算到 / 全部算没到」：把这一趟的名单整份置成一种。
  *
- * 翻的是这一层攒着的那份，自习同样不动；翻完按名册顺序定下来，反复翻不会越翻越乱。
- * 与逐个人点一样走定点更新：几十个格子各自换脸，浮层不重画，老师刚点到的位置与焦点
- * 都留着。
+ * 两种常见的整轮情况：班上只有少数没来（先把全班都标成没来，再点回那几位），
+ * 或者一整轮点错了（反过来）。翻的是这一层攒着的那份，自习同样不动；翻完按名册顺序
+ * 定下来，反复翻不会越翻越乱。与逐个人点一样走定点更新：几十个格子各自换脸，浮层
+ * 不重画，老师刚点到的位置与焦点都留着。
  */
-function doInvert() {
+function doInvert(allPresent) {
   const draft = state.rollCallOpen;
   if (draft === null) {
     return;
   }
   const students = state.klass.students;
-  const absent = new Set(draft.absentIds);
-  const flipped = students.filter((student) => !absent.has(student.id));
-  draft.absentIds = flipped.map((student) => student.id);
+  draft.absentIds = allPresent ? [] : students.map((student) => student.id);
   updateRollCall();
-  showToast(
-    flipped.length === students.length
-      ? '全班都算作没来了；在座的点一下他，变回蓝色'
-      : flipped.length === 0
-        ? '全班都算作在座了'
-        : `翻过来了：${students.length - flipped.length} 人在座，${flipped.length} 人没来`,
-  );
+  showToast(allPresent ? '全班都算在座了' : '全班都算没来了；点一下谁到了，他变回蓝色');
 }
 
 /**
@@ -500,7 +483,7 @@ async function finishRollCall() {
   await commitSession(setAbsent(session, absentIds, Date.now()), true);
   stopAutoRollCall();
   closeOverlay();
-  showToast(absentIds.length === 0 ? '全班都在座' : `已记下 ${absentIds.length} 人没来`);
+  showToast(absentIds.length === 0 ? '已记下：全班到齐' : `已记下 ${absentIds.length} 人没来`);
 }
 
 /**

@@ -12,17 +12,17 @@ export function renderConflict() {
   body.push(
     h('p', {
       class: 'modal__hint',
-      text: `库里已经有一个叫「${pending.parsed.klass.name}」的班。要覆盖它，还是另建一个副本？`,
+      text: `已经有一个叫「${pending.parsed.klass.name}」的班。`,
     }),
   );
   body.push(
     h('ul', { class: 'diff' }, [
-      h('li', { text: `文件里：${pending.parsed.klass.students.length} 人 · ${pending.parsed.sessions.length} 场记录` }),
-      h('li', { text: `库里：${pending.existing.students.length} 人` }),
+      h('li', { text: `文件里 ${pending.parsed.klass.students.length} 人 · ${pending.parsed.sessions.length} 场记录` }),
+      h('li', { text: `现在这个班 ${pending.existing.students.length} 人` }),
     ]),
   );
   const foot = [];
-  foot.push(h('button', { class: 'btn', text: '取消导入', onClick: () => {
+  foot.push(h('button', { class: 'btn', text: '不导入', onClick: () => {
     state.pendingImport = null;
     state.overlay = null;
     render();
@@ -30,7 +30,7 @@ export function renderConflict() {
   foot.push(
     h('button', {
       class: 'btn',
-      text: '另建副本',
+      text: '另存为新班',
       onClick: async () => {
         const parsed = pending.parsed;
         const copy = { ...parsed.klass, id: uid('k'), name: `${parsed.klass.name} 副本`, createdAt: Date.now() };
@@ -48,7 +48,7 @@ export function renderConflict() {
   foot.push(
     h('button', {
       class: 'btn btn--danger',
-      text: '覆盖',
+      text: '替换原来的班',
       onClick: () => void importClassFile(pending.file, true),
     }),
   );

@@ -15,12 +15,12 @@ export function renderNewClass() {
   body.push(
     h('p', {
       class: 'modal__hint',
-      text: '选一份花名册（.xlsx 或 .xls）。表里有一列写着「姓名」就会被认出来，学号与座位列可选。',
+      text: '选一份花名册，表里有一列写着「姓名」就行。',
     }),
   );
   const nameInput = h('input', {
     class: 'input',
-    placeholder: '班级名称',
+    placeholder: '比如「高二（3）班」',
     value: state.newClassName ?? state.pendingNewClass?.defaultName ?? '',
   });
   // 选表会重画这一块，名字要留在状态里，不然刚打的字就没了
@@ -35,7 +35,7 @@ export function renderNewClass() {
     try {
       const students = rosterFromSheets(await readSheetFile(file));
       if (students.length === 0) {
-        showToast('这张表里没读到学生，请确认有一列写着姓名');
+        showToast('表里没找到「姓名」列');
         return;
       }
       state.pendingNewClass = {
@@ -44,24 +44,24 @@ export function renderNewClass() {
       };
       render();
     } catch (error) {
-      showToast(`读表失败：${error.message}`);
+      showToast('读不了这个文件。换一份 .xlsx 或 .xls 试试');
     }
   });
 
   if (state.pendingNewClass === null) {
     body.push(
       h('div', { class: 'pick' }, [
-        h('p', { class: 'pick__title', text: '还没选表' }),
-        h('button', { class: 'btn btn--primary', text: '选一份花名册', onClick: () => fileInput.click() }),
+        h('p', { class: 'pick__title', text: '还没选文件' }),
+        h('button', { class: 'btn btn--primary', text: '选文件', onClick: () => fileInput.click() }),
       ]),
     );
   } else {
     const students = state.pendingNewClass.students;
     body.push(
       h('div', { class: 'pick' }, [
-        h('p', { class: 'pick__title', text: `认到 ${students.length} 位同学` }),
+        h('p', { class: 'pick__title', text: `读到 ${students.length} 位同学` }),
         h('p', { class: 'pick__list', text: students.slice(0, 12).map((item) => item.name).join('、') + (students.length > 12 ? ' …' : '') }),
-        h('button', { class: 'btn', text: '换一份表', onClick: () => fileInput.click() }),
+        h('button', { class: 'btn', text: '换一个文件', onClick: () => fileInput.click() }),
       ]),
     );
   }
@@ -72,10 +72,10 @@ export function renderNewClass() {
   foot.push(
     h('button', {
       class: 'btn btn--primary',
-      text: '建班',
+      text: '创建班级',
       onClick: async () => {
         if (state.pendingNewClass === null) {
-          showToast('先选一份花名册');
+          showToast('先选一份花名册文件');
           return;
         }
         const name = nameInput.value.trim() !== '' ? nameInput.value.trim() : state.pendingNewClass.defaultName;

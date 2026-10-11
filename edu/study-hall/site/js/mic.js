@@ -51,10 +51,10 @@ let sliceIndex = 0;
  */
 export function availability() {
   if (typeof navigator.mediaDevices?.getUserMedia !== 'function') {
-    return { ok: false, reason: '这个浏览器没有麦克风接口' };
+    return { ok: false, reason: '这个浏览器不支持麦克风' };
   }
   if (window.isSecureContext === false) {
-    return { ok: false, reason: '读教室要页面走 HTTPS（本机打开也可以）' };
+    return { ok: false, reason: '要用 https 打开（本机 localhost 也行）' };
   }
   return { ok: true, reason: '' };
 }
@@ -82,9 +82,9 @@ function troubleOf(error) {
 export function explainTrouble(trouble) {
   switch (trouble) {
     case MIC_TROUBLE.NO_DEVICE:
-      return '这台机器上没有麦克风，插一个就能听';
+      return '没找到麦克风，插一个就能听';
     case MIC_TROUBLE.DENIED:
-      return '浏览器没给麦克风权限，去地址栏左边那个锁里放行';
+      return '没给麦克风权限。去地址栏左边的锁里放行';
     default:
       return '麦克风打不开，可能被别的程序占着';
   }
@@ -133,7 +133,7 @@ export async function start(input) {
     for (const track of media.getTracks()) {
       track.stop();
     }
-    return { ok: false, trouble: MIC_TROUBLE.UNAVAILABLE, reason: '这个浏览器没有音频接口' };
+    return { ok: false, trouble: MIC_TROUBLE.UNAVAILABLE, reason: '这个浏览器不支持音频' };
   }
 
   try {

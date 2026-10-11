@@ -48,19 +48,14 @@ export const DEFAULT_AWAY_COLOR = 'yellow';
 /**
  * 三套主题：值、在界面上叫什么、一屏摆几列。
  *
- * 选项与班级卡上那句「多少人 · 什么主题」读的是同一张表 —— 两处各写一份的话，早晚
- * 一处改了另一处没跟上。`columns` 是看板的列数：人多列多、字小。
+ * 设置里那个下拉的选项与看板的列数读的是同一张表 —— 两处各写一份的话，早晚一处改了
+ * 另一处没跟上。`columns` 是看板的列数：人多列多、字小。
  */
 export const THEMES = [
   { value: 'junior', label: '童趣（小学）', columns: 5 },
   { value: 'middle', label: '标准', columns: 6 },
   { value: 'senior', label: '简洁（高中）', columns: 8 },
 ];
-
-/** 主题在界面上叫什么。认不出的值原样写出来，不猜一个替身。 */
-export function themeLabel(theme) {
-  return THEMES.find((item) => item.value === theme)?.label ?? theme;
-}
 
 /** 这套主题一屏摆几列。 */
 export function themeColumns(theme) {

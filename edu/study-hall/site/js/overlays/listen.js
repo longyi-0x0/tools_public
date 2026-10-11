@@ -39,10 +39,9 @@ export function renderListen() {
   body.push(
     h('p', {
       class: 'modal__hint',
-      text:
-        '读的是教室有多响，不录音、不上传 —— 每一截波形都当场变成 0 到 100 的一个数就丢掉。' +
-        '开着的时候一直在读（不只在待机页上）：待机页按这个数染色，吵得停不下来就出一声提醒。' +
-        '这一手不替老师记谁到了，也不往任何文件里写。',
+      text: available.ok
+        ? '只读教室有多响，不录音、不保存。'
+        : `这台电脑听不了：${available.reason}`,
     }),
   );
 
@@ -75,8 +74,7 @@ export function renderListen() {
   noteNode = h('span', { class: 'field__note' });
   resetNode = h('button', {
     class: 'btn btn--note',
-    text: '跟班级一样',
-    title: '本场拧的那一下作废，回去用班级设置里的那个值',
+    text: '用班级默认值',
     onClick: () => resetVolumeThreshold(),
   });
   body.push(
@@ -90,24 +88,17 @@ export function renderListen() {
   body.push(
     h('p', {
       class: 'modal__hint',
-      text:
-        '这条线不是分贝，是这台机器读出来的相对刻度 —— 换个麦克风，同一个教室就是另一个数。' +
-        '所以调它的时候要听着当下的教室：安静时读数落在线的下面一点、正常说话时贴着线，就差不多。',
+      text: '安静时读数落在线下、正常说话时贴着线，就差不多。',
     }),
   );
 
   const foot = [];
-  foot.push(h('button', { class: 'btn', text: '收起', onClick: closeOverlay }));
+  foot.push(h('button', { class: 'btn', text: '关闭', onClick: closeOverlay }));
   foot.push(
     h('button', {
       // 听着的时候永远能按（哪怕是这台机器后来不让听了），不然老师就关不掉了
       class: on ? 'btn' : 'btn btn--primary',
-      text: on ? '不听教室了' : '开始听教室',
-      title: available.ok
-        ? on
-          ? '放开麦克风，这一场不再读教室'
-          : '问一次麦克风权限，之后就一直在读'
-        : available.reason,
+      text: on ? '停止听' : '开始听',
       disabled: on || available.ok ? undefined : '',
       onClick: () => void toggleListening(),
     }),
@@ -148,7 +139,7 @@ export function paintListenPanel() {
   levelNode.textContent = level === null ? '—' : String(level);
   levelNode.classList.toggle('is-over', over);
   thresholdNode.textContent = `阈值 ${threshold}`;
-  statusNode.textContent = state.listening ? (over ? '教室吵着' : '安静') : '没在听';
+  statusNode.textContent = state.listening ? (over ? '吵' : '安静') : '没在听';
   statusNode.classList.toggle('is-over', over);
 
   fillNode.style.width = `${level === null ? 0 : Math.min(100, Math.max(0, level))}%`;
@@ -157,13 +148,9 @@ export function paintListenPanel() {
 
   const fromClass = state.klass?.volumeThreshold ?? threshold;
   if (state.volumeThreshold === null) {
-    noteNode.textContent = `跟班级设置一样（${fromClass}）。`;
-  } else if (state.volumeThreshold === fromClass) {
-    // 拧过但正好拧回了班级那个数。说清「这一场拧过」—— 不然那颗「跟班级一样」亮着，
-    // 老师看不出为什么
-    noteNode.textContent = `本场拧过，正好也是 ${fromClass}。`;
+    noteNode.textContent = `班级默认 ${fromClass}`;
   } else {
-    noteNode.textContent = `本场临时用 ${threshold}，班级设置里是 ${fromClass}。`;
+    noteNode.textContent = `这一场用 ${threshold}（班级默认 ${fromClass}）`;
   }
   resetNode.disabled = state.volumeThreshold === null;
 

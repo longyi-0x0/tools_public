@@ -327,14 +327,14 @@ export async function doEndSession() {
     return;
   }
   const summary = summarize(klass, session, state.now);
-  const bits = [`应到 ${summary.total}`, `在座 ${summary.present}`, `没来 ${summary.absent}`];
+  const bits = [`在座 ${summary.present}`, `没来 ${summary.absent}`];
   if (summary.leaveCount > 0) {
     bits.push(`离开 ${summary.leaveCount} 人次`);
   }
   if (
     !window.confirm(
       `结束这一场自习？\n已走了 ${formatSpan(studyMs(session, state.now))}（${bits.join(' · ')}）。\n\n` +
-        '结束时这一场就定格了，不能接着走；要看这一场就按「自习记录」。',
+        '结束之后这一场不能接着走。账会留在「记录」里。',
     )
   ) {
     return;
@@ -348,15 +348,15 @@ export async function doEndSession() {
   render();
   showToast(
     klass === null
-      ? '这一场已结束，记录里能看'
-      : `「${klass.name}」这一场已结束，${formatSpan(studyMs(state.session, state.now))}，记录里能看`,
+      ? '这一场已结束'
+      : `「${klass.name}」这一场已结束，共 ${formatSpan(studyMs(state.session, state.now))}`,
   );
 }
 
 /** 暂停自习。 */
 export async function doPause() {
   await commitSession(pauseSession(state.session, Date.now()));
-  showToast('已暂停，谁在外面也一起停表');
+  showToast('已暂停');
 }
 
 /** 继续自习。 */
@@ -374,7 +374,7 @@ export async function doRestart() {
   const now = Date.now();
   await commitSession(endSession(state.session, now));
   await enterSession();
-  showToast('上一场已结束，新的一场从头开始');
+  showToast('已重开一场');
 }
 
 /** 这一场现在用的响度阈值：本场拧过就用拧过的，没拧过就跟着班级设置。 */
@@ -394,7 +394,7 @@ export async function startListening() {
   }
   const can = mic.availability();
   if (!can.ok) {
-    showToast(`听教室用不了：${can.reason}`);
+    showToast(`听不了教室：${can.reason}`);
     return;
   }
   const watch = new VolumeWatch(volumeThresholdInUse());
@@ -406,7 +406,7 @@ export async function startListening() {
       onLost: () => {
         dropListening();
         render();
-        showToast('麦克风断了，听教室停了');
+        showToast('麦克风断了，已停止听教室');
       },
     });
   } finally {
@@ -421,7 +421,7 @@ export async function startListening() {
   state.volumeLevel = watch.level;
   state.volumeOver = watch.isOver;
   render();
-  showToast('开始听教室了');
+  showToast('开始听教室');
 }
 
 /** 老师按了「不听」。 */
@@ -431,7 +431,7 @@ export function stopListening() {
   }
   dropListening();
   render();
-  showToast('不听教室了');
+  showToast('已停止听教室');
 }
 
 export async function toggleListening() {
@@ -547,7 +547,7 @@ export async function tapStudent(studentId) {
   // 已结束的一场点格子什么也不算 —— 不能默不作声：格子是按钮的样子，点下去没反应，
   // 老师会以为坏了。（结束就收起看板，所以这里多半只在别处点开过记录时走到）
   if (session.phase === PHASE.ENDED) {
-    showToast('这一场已经结束，记录里能看');
+    showToast('这一场已结束');
     return;
   }
 
@@ -560,7 +560,7 @@ export async function tapStudent(studentId) {
   const status = statusOf(session, studentId, state.now, state.klass);
   if (status === STATUS.ABSENT) {
     // 到没到只由「点名」定，看板上点他没这一手 —— 顶一句，别默不作声
-    showToast('他没到。到没到在「点名」里点，这里点不动');
+    showToast('他没到。要改就按「点名」');
     return;
   }
   if (status === STATUS.PRESENT) {
@@ -596,11 +596,11 @@ export function togglePickStudent(studentId) {
     return;
   }
   if (activeLeave(state.session, studentId) !== undefined) {
-    showToast('他已经在外面了，不用再记一次离开');
+    showToast('他已经记过离开了');
     return;
   }
   if (state.session.absentIds.includes(studentId)) {
-    showToast('他是没来的，记不了离开');
+    showToast('他没到，记不了离开');
     return;
   }
   if (state.pickingStudents.has(studentId)) {
@@ -728,7 +728,7 @@ function renderShell() {
 export async function markReturnedFromIdle(studentId) {
   const student = state.klass.students.find((item) => item.id === studentId);
   await commitSession(markReturned(state.session, studentId, Date.now()), true);
-  showToast(`${student?.name ?? ''} 已记归来`);
+  showToast(`${student?.name ?? ''} 已回来`);
 }
 
 /**
@@ -767,7 +767,8 @@ export function pickFile(accept, handler) {
     try {
       await handler(file);
     } catch (error) {
-      showToast(`导入失败：${error.message}`);
+      showToast('读不了这个文件。换一份再试');
+      console.error(error);
     }
   });
   document.body.append(input);

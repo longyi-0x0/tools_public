@@ -12,7 +12,7 @@ export function renderHistory() {
   const body = [];
   const sessions = [...state.sessions].sort((left, right) => right.startedAt - left.startedAt);
   if (sessions.length === 0) {
-    body.push(h('p', { class: 'modal__hint', text: '这个班还没有自习记录。' }));
+    body.push(h('p', { class: 'modal__hint', text: '这个班还没有上过自习。' }));
   } else {
     const end = Date.now();
     const total = sessions.reduce((sum, item) => sum + studyMs(item, item.endedAt ?? end), 0);
@@ -27,7 +27,7 @@ export function renderHistory() {
 
     const table = h('table', { class: 'table' });
     const head = h('tr');
-    for (const label of ['开始', '结束', '自习时长', '在座', '离开人次', '超时']) {
+    for (const label of ['开始', '结束', '时长', '在座', '离开人次', '超时']) {
       head.append(h('th', { text: label }));
     }
     table.append(h('thead', {}, [head]));
@@ -51,6 +51,6 @@ export function renderHistory() {
   }
   const foot = [];
   foot.push(h('button', { class: 'btn', text: '关闭', onClick: closeOverlay }));
-  foot.push(h('button', { class: 'btn btn--primary', text: '导出全班 xlsx', onClick: () => void exportClass(state.klass) }));
+  foot.push(h('button', { class: 'btn btn--primary', text: '导出 xlsx', onClick: () => void exportClass(state.klass) }));
   return modalFrame('自习记录', body, foot, { onClose: closeOverlay });
 }

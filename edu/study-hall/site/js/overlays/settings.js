@@ -4,8 +4,8 @@
  * 备注在这是「一条一行、三个字段」：文本、颜色、分钟数（留空就是不限时）。
  */
 
-import { h, modalFrame } from '../dom.js';
-import { AWAY_COLORS, DEFAULT_AWAY_COLOR } from '../domain.js';
+import { h, icon, modalFrame } from '../dom.js';
+import { AWAY_COLORS, DEFAULT_AWAY_COLOR, THEMES } from '../domain.js';
 import { THRESHOLD_DEFAULT, THRESHOLD_MAX, THRESHOLD_MIN, THRESHOLD_STEP, clampThreshold } from '../volume.js';
 import { ROSTER_ACCEPT, rosterFromSheets } from '../roster.js';
 import { readSheetFile } from '../readSheets.js';
@@ -24,7 +24,7 @@ function templateRow(template) {
   row.append(
     h('input', {
       class: 'input tpl__text',
-      placeholder: '写着什么（比如「上厕所」）',
+      placeholder: '比如「上厕所」',
       value: template.text,
       dataset: { tplText: '1' },
     }),
@@ -49,11 +49,9 @@ function templateRow(template) {
   row.append(
     h('button', {
       class: 'btn btn--icon tpl__remove',
-      text: '✕',
       'aria-label': '删掉这条',
-      title: '删掉这条',
       onClick: () => row.remove(),
-    }),
+    }, [icon('trash')]),
   );
   return row;
 }
@@ -89,20 +87,37 @@ export function renderSettings() {
   const klass = state.klass;
   const body = [];
 
+  /* ---------- 班级 ---------- */
+
+  const basic = h('div', { class: 'section' });
+  basic.append(h('p', { class: 'section__title', text: '班级' }));
+
   const nameInput = h('input', { class: 'input', value: klass.name });
-  body.push(h('label', { class: 'field' }, [h('span', { class: 'field__label', text: '班级名称' }), nameInput]));
+  basic.append(h('label', { class: 'field' }, [h('span', { class: 'field__label', text: '班级名称' }), nameInput]));
 
   const themeSelect = h('select', { class: 'input' });
-  for (const [value, label] of [['junior', '童趣（小学）'], ['middle', '标准'], ['senior', '简洁（高中）']]) {
-    themeSelect.append(h('option', { value, text: label, ...(klass.theme === value ? { selected: true } : {}) }));
+  for (const theme of THEMES) {
+    themeSelect.append(
+      h('option', {
+        value: theme.value,
+        text: theme.label,
+        ...(klass.theme === theme.value ? { selected: true } : {}),
+      }),
+    );
   }
-  body.push(h('label', { class: 'field' }, [h('span', { class: 'field__label', text: '主题' }), themeSelect]));
+  basic.append(h('label', { class: 'field' }, [h('span', { class: 'field__label', text: '格子大小' }), themeSelect]));
+  body.push(basic);
+
+  /* ---------- 提醒与待机 ---------- */
+
+  const alerts = h('div', { class: 'section' });
+  alerts.append(h('p', { class: 'section__title', text: '提醒' }));
 
   const soundToggle = h('input', { type: 'checkbox', ...(klass.alertSound ? { checked: true } : {}) });
-  body.push(
+  alerts.append(
     h('label', { class: 'field field--row' }, [
       soundToggle,
-      h('span', { class: 'field__label', text: '超时出声提醒' }),
+      h('span', { class: 'field__label', text: '有人超时出声提醒' }),
     ]),
   );
 
@@ -113,11 +128,10 @@ export function renderSettings() {
     max: '600',
     value: String(Math.round(klass.alertRepeatMs / 1000)),
   });
-  body.push(
+  alerts.append(
     h('label', { class: 'field' }, [
-      h('span', { class: 'field__label', text: '隔多久再提醒一次（秒）' }),
+      h('span', { class: 'field__label', text: '多久再提醒一次（秒）' }),
       repeatInput,
-      h('span', { class: 'field__note', text: '还没回来就每隔这么久再响一次。' }),
     ]),
   );
 
@@ -138,19 +152,15 @@ export function renderSettings() {
       }),
     );
   }
-  body.push(
+  alerts.append(
     h('label', { class: 'field' }, [
-      h('span', { class: 'field__label', text: '多久不动就换成大时钟' }),
+      h('span', { class: 'field__label', text: '多久不动换成大时钟' }),
       idleSelect,
-      h('span', {
-        class: 'field__note',
-        text: '自习中这么久没人碰屏幕，就换成一个大钟加「谁还在外面」。点一下、动一下鼠标、敲一下键都算，都会重新计时。',
-      }),
     ]),
   );
 
   // 「听教室」的默认线。与上面那几项不同的是：这一项**多半要当场调**才准，
-  // 所以看板上另有一颗钮能拧（本场有效）。这里管的是这个班的默认值
+  // 所以看板上另有一颗钮能拧（只管这一场）。这里管的是这个班的默认值
   const thresholdInput = h('input', {
     class: 'input',
     type: 'number',
@@ -159,43 +169,41 @@ export function renderSettings() {
     step: String(THRESHOLD_STEP),
     value: String(klass.volumeThreshold),
   });
-  body.push(
+  alerts.append(
     h('label', { class: 'field' }, [
-      h('span', { class: 'field__label', text: '教室多响算「吵」（听教室）' }),
+      h('span', { class: 'field__label', text: '教室多响算吵' }),
       thresholdInput,
-      h('span', {
-        class: 'field__note',
-        text:
-          `0 到 100 不是分贝，是这台机器读出来的相对刻度（默认 ${THRESHOLD_DEFAULT}）—— 换个麦克风，` +
-          '同一个教室就是另一个数。所以这一项多半要开着「听教室」当场调：安静时读数落在线的下面一点、' +
-          '正常说话时贴着线，就差不多。自习看板上那颗钮能当场拧（只管那一场，不改这里）。',
-      }),
+      h('span', { class: 'field__note', text: `开「听教室」当场调最准。默认 ${THRESHOLD_DEFAULT}。` }),
     ]),
   );
+  body.push(alerts);
 
-  // 每条备注自带颜色与时长。原来这里是「一行一条」的输入框 —— 现在一条有三个字段，
-  // 就得一行一行摆：文本、颜色、分钟数，右边一个删。
+  /* ---------- 常用备注 ---------- */
+
+  const remarks = h('div', { class: 'section' });
+  const remarkHead = h('div', { class: 'field__row' });
+  remarkHead.append(h('span', { class: 'field__label', text: '常用备注' }));
+  remarkHead.append(
+    h('button', {
+      class: 'btn btn--note',
+      style: 'margin-left:auto',
+      onClick: () => {
+        templateList.append(templateRow({ text: '', color: DEFAULT_AWAY_COLOR, timeoutMs: 0 }));
+      },
+    }, [icon('plus'), h('span', { text: '添加' })]),
+  );
+  remarks.append(remarkHead);
   const templateList = h('div', { class: 'tpls' });
   for (const template of klass.remarkTemplates) {
     templateList.append(templateRow(template));
   }
-  body.push(
-    h('div', { class: 'field' }, [
-      h('span', { class: 'field__label', text: '常用备注' }),
-      h('span', {
-        class: 'field__note',
-        text: '点一个人记离开时可以挑一条。颜色是他的格子在他离开期间的颜色；填了分钟数就按这条算超时，过了转红并出声，空着就是不限时。',
-      }),
-      templateList,
-      h('button', {
-        class: 'btn',
-        text: '加一条',
-        onClick: () => {
-          templateList.append(templateRow({ text: '', color: DEFAULT_AWAY_COLOR, timeoutMs: 0 }));
-        },
-      }),
-    ]),
-  );
+  remarks.append(templateList);
+  body.push(remarks);
+
+  /* ---------- 名册 ---------- */
+
+  const roster = h('div', { class: 'section' });
+  roster.append(h('p', { class: 'section__title', text: `名册 · ${klass.students.length} 人` }));
 
   const rosterInput = h('input', { type: 'file', accept: ROSTER_ACCEPT, class: 'hidden' });
   rosterInput.addEventListener('change', async () => {
@@ -206,32 +214,32 @@ export function renderSettings() {
     try {
       const students = rosterFromSheets(await readSheetFile(file));
       if (students.length === 0) {
-        showToast('这张表里没读到学生');
+        showToast('表里没找到「姓名」列');
         return;
       }
       await commitClass({ ...state.klass, students });
       showToast(`名册已换成 ${students.length} 人`);
-    } catch (error) {
-      showToast(`读表失败：${error.message}`);
+    } catch {
+      showToast('读不了这个文件。换一份 .xlsx 或 .xls 试试');
     }
   });
-  body.push(
-    h('div', { class: 'field' }, [
-      h('span', { class: 'field__label', text: `名册（现在 ${klass.students.length} 人）` }),
-      h('div', { class: 'field__row' }, [
-        h('button', { class: 'btn', text: '导回名册（换成表里的）', onClick: () => rosterInput.click() }),
-        h('button', { class: 'btn', text: '导出全班 xlsx', onClick: () => void exportClass(klass) }),
-      ]),
-      // 没有单独的花名册页了，名字就在这里看
-      h('p', {
-        class: 'field__note field__note--roster',
-        text: klass.students.length === 0 ? '还没有学生。' : klass.students.map((item) => item.name).join('、'),
-      }),
-      rosterInput,
+  roster.append(
+    h('div', { class: 'field__row' }, [
+      h('button', { class: 'btn', onClick: () => rosterInput.click() }, [icon('upload'), h('span', { text: '重新导入' })]),
+      h('button', { class: 'btn', onClick: () => void exportClass(klass) }, [icon('download'), h('span', { text: '导出 xlsx' })]),
     ]),
   );
+  roster.append(
+    h('p', {
+      class: 'field__note field__note--roster',
+      text: klass.students.length === 0 ? '还没有学生。' : klass.students.map((item) => item.name).join('、'),
+    }),
+  );
+  roster.append(rosterInput);
+  body.push(roster);
 
-  // 删班是「平时的资料动作」，放在设置的最后一行 —— 不跟保存挤在底栏里
+  /* ---------- 删除 ---------- */
+
   const danger = h('button', {
     class: 'btn btn--danger',
     text: '删除这个班',
@@ -247,8 +255,7 @@ export function renderSettings() {
   });
   body.push(
     h('div', { class: 'field field--danger' }, [
-      h('span', { class: 'field__label', text: '删除' }),
-      h('span', { class: 'field__note', text: '连同这个班的全部记录一起删掉，不能撤回。' }),
+      h('span', { class: 'field__note', text: '连同全部记录一起删，不能撤回。' }),
       danger,
     ]),
   );
@@ -258,7 +265,7 @@ export function renderSettings() {
   foot.push(
     h('button', {
       class: 'btn btn--primary',
-      text: '保存',
+      text: '保存设置',
       onClick: async () => {
         const templates = [...templateList.querySelectorAll('[data-tpl]')]
           .map((row) => ({
