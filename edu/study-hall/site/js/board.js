@@ -338,7 +338,7 @@ function renderControls() {
       onClick: () => void doEndSession(),
     }),
   );
-  buttons.append(quietGroup([restartButton(), listenButton(), idleButton(), muteButton()]));
+  buttons.append(quietGroup([restartButton(), listenButton(), idleButton(), idleJumpButton(), muteButton()]));
   bar.append(buttons);
   return bar;
 }
@@ -451,6 +451,29 @@ function listenButton() {
       : '读教室有多响：待机页按它染色，吵得停不下来会提醒。点开调阈值',
     'aria-label': on ? '正在听教室' : '听教室',
     onClick: () => openOverlay('listen'),
+  });
+}
+
+/**
+ * 现在就去待机页。
+ *
+ * 与旁边那颗 🌙 是**两件事**：🌙 管的是「这一场要不要自己换屏」，这一颗管的是「现在就
+ * 换过去」—— 课上常常是老师要离开一会儿（去走廊上看看、去讲台后面拿东西），随手把屏幕
+ * 换成大钟；也常常是班设置里选了「不切」，而某一刻就是想要那块钟。所以它与 🌙 的档位
+ * 互不影响，也不压暗。
+ *
+ * 换过去之后由待机页自己那一下点回来；回来时任何操作都会重新计待机的时间。
+ */
+function idleJumpButton() {
+  return h('button', {
+    class: 'btn btn--icon',
+    text: '💤',
+    title: '现在就把屏幕换成大时钟（点屏幕回来；与旁边那颗管「要不要自己换」的不是一回事）',
+    'aria-label': '现在换成大时钟',
+    onClick: () => {
+      state.mask = 'idle';
+      render();
+    },
   });
 }
 
