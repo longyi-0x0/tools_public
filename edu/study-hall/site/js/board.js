@@ -468,7 +468,7 @@ export function updateDynamic() {
 
   // 点名层开着时，名字的灰蓝也走定点更新 —— 点一下只换一个格子的脸，
   // 不重画整块（重画会把老师正点着的那个位置和键盘焦点一起丢掉）
-  updateRollCall(session);
+  updateRollCall();
 
   for (const student of state.klass.students) {
     const tile = tiles.get(student.id);

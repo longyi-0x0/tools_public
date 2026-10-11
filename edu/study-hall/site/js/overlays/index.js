@@ -11,7 +11,7 @@ import { renderConflict } from './conflict.js';
 import { renderHistory } from './history.js';
 import { renderNewClass } from './newclass.js';
 import { renderRemark } from './remark.js';
-import { cancelRollCall, renderRollCall, resetRollCallRefs } from './rollcall.js';
+import { renderRollCall, resetRollCallRefs } from './rollcall.js';
 import { renderSettings } from './settings.js';
 
 export function openOverlay(name) {
@@ -22,18 +22,16 @@ export function openOverlay(name) {
 /**
  * 关掉当前浮层。
  *
- * 点名层是唯一的例外：它的 ✕ / Esc / 点窗外都是**撤销这一趟**，交给 `cancelRollCall`
- * 去做（它把名单退回开门那一刻，再收窗）。
+ * 点名层攒着的那一趟一并清掉：收窗就是「这一趟不算数」，层里从没往会话上写过东西，
+ * 所以不必往回退。
  */
 export function closeOverlay() {
-  if (state.overlay === 'rollCall') {
-    void cancelRollCall();
-    return;
-  }
   state.overlay = null;
   state.remarkStudentId = null;
   state.pendingNewClass = null;
   state.newClassName = null;
+  // 点名层攒着的那一趟：收窗就是不算数，连同它一起清掉（层里没往会话上写过东西）
+  state.rollCallOpen = null;
   render();
 }
 

@@ -1,15 +1,19 @@
 /**
  * 点名层：一块盖在自习看板上的窗。
  *
- * 它是**可选的**，不是必经的一步 —— 关掉自习一点不受影响，没点完也一样。名字的灰蓝
- * 由走秒那条路定点改，不重画整块：点一下只换那一个格子的脸，老师刚点着的位置与键盘
- * 焦点都留着。
+ * 这一趟点的名字先在层里攒着（`state.rollCallOpen`），**不落到自习那一场上** ——
+ * 按「完成」才一次写进去。所以点错了、或者半路不想点了，直接收窗走人，自习上什么都
+ * 没变过，也不会留下半截名单。
+ *
+ * 名字的灰蓝由走秒那条路定点改（`updateRollCall`），不重画整块：点一下只换那一个
+ * 格子的脸，老师刚点着的位置与键盘焦点都留着。
  */
 
 import { h, modalFrame } from '../dom.js';
-import { STATUS, invertAbsent, markAbsent, markPresent, statusOf } from '../domain.js';
+import { setAbsent } from '../domain.js';
 import { commitSession, noteActivity, render, showToast, state } from '../state.js';
 import { seatLine, tileTitle } from '../board.js';
+import { closeOverlay } from './index.js';
 
 /** 点名层里那些名字的格子：`学生 id → 格子`，与看板上那一套同理，走定点更新。 */
 const rollTiles = new Map();
@@ -17,18 +21,20 @@ const rollTiles = new Map();
 /** 点名层脚上那颗「完成」：人数变了要跟着改字，但不值得为它重画整块。 */
 let rollFoot = null;
 
-/** 走的计时与「离开中」的亮灭。模式与格子上那一套一致。 */
 /**
  * 点名层里那些名字的灰蓝，以及脚上那颗「完成」的人数。
  *
  * 与看板上的格子同理：点一下只换那一个格子的脸，不重画整块 —— 几十号人一次点不完，
  * 每次重画都会把老师刚点着的那个位置重新排一遍，键盘的焦点也会掉出去。
+ *
+ * 读的是这一趟攒着的那份名单，不是这一场自习的 —— 自习要等按「完成」才动。
  */
-export function updateRollCall(session) {
-  if (state.overlay !== 'rollCall' || session === null) {
+export function updateRollCall() {
+  const draft = state.rollCallOpen;
+  if (state.overlay !== 'rollCall' || draft === null) {
     return;
   }
-  const absent = new Set(session.absentIds);
+  const absent = new Set(draft.absentIds);
   for (const [studentId, tile] of rollTiles) {
     tile.classList.toggle('is-absent', absent.has(studentId));
   }
@@ -40,31 +46,30 @@ export function updateRollCall(session) {
 /**
  * 点名层：一块盖在自习上的窗。
  *
- * 它是**可选的**，不是必经的一步 —— 关掉自习一点不受影响，没点完也一样。点过的人当场
- * 变蓝并沉到看板后面，所以中途随时能收。
+ * 它是**可选的**，不是必经的一步 —— 关掉自习一点不受影响，没点完也一样。窗里的格子
+ * 按名册顺序摆：老师是照着名单点人，格子一挪就会点错。
  *
- * 栏上有两个出口，说的是两件事：
+ * 栏上两个出口，说的是两件事：
  *
- * - **✕**（右上）当作**撤销**：名单退回开门那一刻，这一趟点的全不算。课上常常是点着
- *   点着发现点错了人、或者班长说名单不对，整趟作废比逐个撤回快。
- * - **完成**（脚上，带「N 人没来」）：点过的留下，收窗回自习。
+ * - **完成**（脚上，带「N 人没来」）：这一趟点出来的没来落到这一场上，收窗回自习。
+ * - **✕ / Esc / 点窗外**：这一趟不算数，收窗回自习 —— 自习上什么都没变过。
  *
  * 两条路都得有：只给「完成」的话，点错整趟就得一个个退回去；只给「撤销」的话，
- * 点完想收工就没路。Esc 与点窗外跟 ✕ 同义（没保存就退出去，退的是这一趟）。
+ * 点完想收工就没路。
  */
 export function renderRollCall() {
   const klass = state.klass;
-  const session = state.session;
+  const draft = state.rollCallOpen;
   const body = [];
 
   body.push(
     h('p', {
       class: 'modal__hint',
-      text: '点一下名字就是「他没来」——他变蓝并沉到后面去；点错了再点一下退回灰色。不点名也能自习，随时关掉。',
+      text: '点一下名字就是「他没来」，他当场变蓝；点错了再点一下退回灰色。不点名也能自习，随时关掉；这一层里点的要按「完成」才落到自习上。',
     }),
   );
 
-  const absent = new Set(session?.absentIds ?? []);
+  const absent = new Set(draft?.absentIds ?? []);
   const list = h('div', { class: 'rollcall__list' });
   // 按名册顺序排：老师是照着名单点人，格子一挪就会点错
   for (const student of klass.students) {
@@ -73,7 +78,7 @@ export function renderRollCall() {
       class: `rollcall__tile${isAbsent ? ' is-absent' : ''}`,
       title: tileTitle(student),
       dataset: { rollcallId: student.id },
-      onClick: () => void doMarkPresentOrAbsent(student.id),
+      onClick: () => toggleRoll(student.id),
     });
     tile.append(h('span', { class: 'rollcall__name', text: student.name }));
     const seat = seatLine(student);
@@ -97,30 +102,30 @@ export function renderRollCall() {
       text: '反选',
       title: '把全班翻过来：没来的都算在座，在座的都算没来',
       disabled: klass.students.length === 0 ? '' : undefined,
-      onClick: () => void doInvert(),
+      onClick: doInvert,
     }),
   );
   const absentCount = absent.size;
-  // 主行动压在最右：点完按它就是收工。字随「记下几个人」变，由 `updateRollCall`
+  // 主行动压在最右：点完按它就是收工。字随「这一趟点出几个人」变，由 `updateRollCall`
   // 定点改，不为它重画整块。一层里只留这一条出口 —— 曾经脚上还有一颗「关闭」、
   // 标题栏还有一颗 ✕，三颗说同一件事，老师还得猜哪个算数。
   //
-  // 提示语里的数现读 `state.session`，不用上面那个 `absentCount`：这一层画出来之后
+  // 提示语里的人数现读那一份攒着的名单，不用上面那个 `absentCount`：这一层画出来之后
   // 老师又点了几下，闭包里的数早就旧了。
   const done = h('button', {
     class: 'btn btn--primary',
     dataset: { rollDone: '1' },
     text: rollDoneText(absentCount),
-    title: '点过的留下，收起这层回自习',
-    onClick: finishRollCall,
+    title: '这一趟点出来的没来落到这一场上，收起这层回自习',
+    onClick: () => void finishRollCall(),
   });
   rollFoot = done;
   foot.push(done);
   return modalFrame('点名', body, foot, {
     class: 'modal--rollcall',
-    closeLabel: '撤销这一趟点名',
-    closeTitle: '撤销这一趟：把刚才点出来的没来退回开门那一刻',
-    onClose: () => void cancelRollCall(),
+    closeLabel: '收窗，这一趟不算数',
+    closeTitle: '这一趟不算数：收窗回自习，自习上什么都没变',
+    onClose: closeOverlay,
   });
 }
 
@@ -130,92 +135,81 @@ function rollDoneText(absentCount) {
 }
 
 /**
- * 点名层的「反选」：全班翻过来 —— 没来的都算在座，在座的都算没来。
- *
- * 与逐个人点一样，这一下也走定点更新：几十个格子各自换脸，浮层不重画，老师刚点到的
- * 位置与焦点都留着。
- */
-async function doInvert() {
-  const ids = state.klass.students.map((item) => item.id);
-  const next = invertAbsent(state.session, ids, state.now);
-  await commitSession(next);
-  const absent = next.absentIds.length;
-  const total = ids.length;
-  showToast(
-    absent === total
-      ? '全班都算作没来了；在座的点一下他，变回灰色'
-      : absent === 0
-        ? '全班都算作在座了'
-        : `翻过来了：${total - absent} 人在座，${absent} 人没来`,
-  );
-}
-
-/**
- * 点名层里点一个人：蓝的退回灰，灰的记成没来。
+ * 层里点一个人：这一趟的名单里翻一下他（灰 ↔ 蓝），自习不动。
  *
  * 只换那一个格子，不重画整块 —— 几十号人一次点不完，重画会把老师刚点着的位置重新
- * 排一遍，键盘的焦点也会掉出去。所以这里不传 `forceRender`，由 `updateDynamic`
- * 里的 `updateRollCall` 定点改。
+ * 排一遍，键盘的焦点也会掉出去。
  */
-async function doMarkPresentOrAbsent(studentId) {
-  const status = statusOf(state.session, studentId, state.now, state.klass);
-  const at = state.now;
-  await commitSession(
-    status === STATUS.ABSENT
-      ? markPresent(state.session, studentId)
-      : markAbsent(state.session, studentId, at),
+function toggleRoll(studentId) {
+  const draft = state.rollCallOpen;
+  if (draft === null) {
+    return;
+  }
+  const absent = new Set(draft.absentIds);
+  draft.absentIds = absent.has(studentId)
+    ? draft.absentIds.filter((id) => id !== studentId)
+    : [...draft.absentIds, studentId];
+  updateRollCall();
+}
+
+/**
+ * 点名层的「反选」：这一趟的名单翻过来 —— 没来的都算在座，在座的都算没来。
+ *
+ * 翻的是这一层攒着的那份，自习同样不动；翻完按名册顺序定下来，反复翻不会越翻越乱。
+ * 与逐个人点一样走定点更新：几十个格子各自换脸，浮层不重画，老师刚点到的位置与焦点
+ * 都留着。
+ */
+function doInvert() {
+  const draft = state.rollCallOpen;
+  if (draft === null) {
+    return;
+  }
+  const students = state.klass.students;
+  const absent = new Set(draft.absentIds);
+  const flipped = students.filter((student) => !absent.has(student.id));
+  draft.absentIds = flipped.map((student) => student.id);
+  updateRollCall();
+  showToast(
+    flipped.length === students.length
+      ? '全班都算作没来了；在座的点一下他，变回灰色'
+      : flipped.length === 0
+        ? '全班都算作在座了'
+        : `翻过来了：${students.length - flipped.length} 人在座，${flipped.length} 人没来`,
   );
 }
 
 /**
- * 点名层的开关。两种收工，各说各的意思：
+ * 开这一层。
  *
- * - **完成**（脚上的主钮）：点过的照旧留着，收窗回自习 —— 这一趟点出来的没来就是这一场的账。
- * - **✕ / Esc / 点窗外**：撤销这一趟 —— 回到**开门那一刻**的名单，中间点过的一概不留。
- *
- * 课上常常是点着点着发现点错了人、或者班长说名单不对，整趟作废比逐个撤回快；
- * 当然也可能相反（点了一大半不想走回头路），那就按「完成」。所以出口是两个，不是一个。
+ * 把这一场现在的名单**抄一份**进来，往后只在层里改 —— 这一趟点的不该中途影响自习，
+ * 也不该在刷新后留下半截名单。
  */
 export function openRollCall() {
   if (state.session === null) {
     return;
   }
   noteActivity();
-  // 记下开门那一刻的名单：✕ 撤销时回到这里。撤销不落盘之外的痕迹 —— 只写一次会话
   state.rollCallOpen = { absentIds: [...state.session.absentIds] };
   state.overlay = 'rollCall';
   render();
 }
 
-/** 「完成」：这一趟点出来的没来留下，收窗回自习。 */
-function finishRollCall() {
-  const count = state.session?.absentIds.length ?? 0;
-  closeRollCall();
-  showToast(count === 0 ? '全班都在座' : `已记下 ${count} 人没来`);
-}
-
-/** ✕：这一趟作废，名单退回开门那一刻，收窗回自习。 */
-export async function cancelRollCall() {
-  const opened = state.rollCallOpen;
-  // 先收窗（层与看板都整块重画，见下），再往回退
-  state.rollCallOpen = null;
-  state.overlay = null;
-  state.remarkStudentId = null;
-  if (opened === null || state.session === null) {
-    render();
+/** 「完成」：这一趟点出来的没来一次落到这一场上，收窗回自习。 */
+async function finishRollCall() {
+  const draft = state.rollCallOpen;
+  const session = state.session;
+  if (draft === null || session === null) {
+    closeOverlay();
     return;
   }
-  await commitSession({ ...state.session, absentIds: [...opened.absentIds] }, true);
-  showToast('已撤销这一趟点名');
-}
-
-/** 收窗。名单已经改好了（或已撤销），这里只把层拿掉、把格子归位。 */
-function closeRollCall() {
-  state.rollCallOpen = null;
-  state.overlay = null;
-  state.remarkStudentId = null;
-  // 关掉之后「没来的人」才归位到最后那一块，所以这一下要整块重画
-  render();
+  // 按名册顺序定下来：这一层是照名单点的，导出的点名明细也按名册逐人查在不在里面
+  const absent = new Set(draft.absentIds);
+  const students = state.klass.students;
+  const absentIds = students.filter((student) => absent.has(student.id)).map((student) => student.id);
+  // 先落到这一场上、再收窗：反过来会在收窗那一帧画一遍旧名单，看着像闪了一下
+  await commitSession(setAbsent(session, absentIds, Date.now()), true);
+  closeOverlay();
+  showToast(absentIds.length === 0 ? '全班都在座' : `已记下 ${absentIds.length} 人没来`);
 }
 
 /** 清掉上一帧点名层的索引（同样是重画之前先清）。 */

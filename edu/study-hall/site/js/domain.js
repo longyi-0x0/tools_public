@@ -5,6 +5,7 @@
  * 时间一律由调用方以毫秒时间戳传进来，所以同一份逻辑在界面上拿真时钟跑、
  * 在脑子里推演时拿假时钟跑，结果一致。
  */
+
 /** 一次记录（一场自习）走到哪一相。 */
 export const PHASE = {
   /** 自习中：按「开始自习」之后的常态。全班默认在座，计时已经在走。 */
@@ -242,50 +243,41 @@ export function endSession(session, at) {
 }
 
 /**
+ * 把没来名单整份设成给的那一份。
+ *
+ * 点名层里点的那些人先在层里攒着，按「完成」时才由这里一次落到这一场上。
+ *
+ * 落在名单上的人，开着的离开**当场合上** —— 没来过的人谈不上离开。不合的话那个
+ * 定时器会一直跑：格子按离开的颜色画，到了时长还会响，而人明明标着没来。
+ *
+ * 顺序按调用方给的来；导出与统计都只看「在不在里面」，与顺序无关。
+ */
+export function setAbsent(session, absentIds, at) {
+  let next = { ...session, absentIds: [...absentIds] };
+  for (const studentId of absentIds) {
+    next = closeOpenLeave(next, studentId, at);
+  }
+  return next;
+}
+
+/**
  * 记一个「没来」：灰 → 蓝。
  *
  * 开始自习时全班都是灰的（在座），所以点名做的不是「标记到了的」，而是反过来
  * 挑出没来的那几个 —— 一个班几十号人，多数都在座位上，挑少数才省力气。
  *
- * 不要求处于某一相：点名是可选的一层，自习里随时能把一个人退回没来（他走了、
- * 一开始就点错了）。
- *
- * 他还开着一段离开的话，那一段**当场合上** —— 没来过的人谈不上离开。不合的话那个
- * 定时器会一直跑：格子按离开的颜色画，到了时长还会响，而人明明标着没来。
+ * 不要求处于某一相：自习里随时能把一个人退回没来（他走了、一开始就点错了）。
  */
 export function markAbsent(session, studentId, at) {
-  const marked = session.absentIds.includes(studentId)
-    ? session
-    : { ...session, absentIds: [...session.absentIds, studentId] };
-  return closeOpenLeave(marked, studentId, at);
+  const absentIds = session.absentIds.includes(studentId)
+    ? session.absentIds
+    : [...session.absentIds, studentId];
+  return setAbsent(session, absentIds, at);
 }
 
 /** 取消「没来」：蓝 → 灰。点错了可以退回去。 */
 export function markPresent(session, studentId) {
   return { ...session, absentIds: session.absentIds.filter((id) => id !== studentId) };
-}
-
-/**
- * 反选：在座的都算没来，没来的都算在座。点名层那一颗「反选」用这个。
- *
- * 结果按 `studentIds` 给的顺序（名册顺序）排，不保留原先点选的先后 ——
- * 翻一次之后顺序统一了，反复翻也不会让 `absentIds` 越翻越乱。
- *
- * 导出不受影响：点名明细是按名册逐人查「在不在 absentIds 里」，与这个数组的顺序无关。
- */
-export function invertAbsent(session, studentIds, at) {
-  const absent = new Set(session.absentIds);
-  const flipped = { ...session, absentIds: studentIds.filter((id) => !absent.has(id)) };
-  // 翻成「没来」的那几个，跟着把开着的离开合上（同 `markAbsent`）
-  const newlyAbsent = new Set(flipped.absentIds.filter((id) => !absent.has(id)));
-  return {
-    ...flipped,
-    leaves: flipped.leaves.map((leave) =>
-      newlyAbsent.has(leave.studentId) && leave.returnedAt === undefined && at !== undefined
-        ? { ...leave, returnedAt: at }
-        : leave,
-    ),
-  };
 }
 
 /** 合上这个人开着的离开（`at` 没给就原样返回 —— 这一层不读时钟，得调用方给）。 */
