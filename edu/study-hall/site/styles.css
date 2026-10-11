@@ -342,6 +342,52 @@ body {
   gap: 12px;
 }
 
+/* 时钟与统计同排：宽屏上时钟在左、统计推到右边，窄屏上折行 */
+.board__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+  flex: none;
+}
+
+/* 自习时间：这一屏最大的字。大屏上老师抬头第一眼要看的就是它。 */
+.clock {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 6px 16px 8px;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+}
+
+.clock__label {
+  color: var(--ink-dim);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.clock__value {
+  font: 700 40px/1.1 var(--mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
+  /* 等宽数字下宽度是稳的，但小时位从 0 变 1 时字面宽会变，留一点余量防抖 */
+  min-width: 4.9ch;
+}
+
+/* 还没进自习：数字沉下去，不抢眼 */
+.clock__value.is-idle {
+  color: color-mix(in srgb, var(--ink-dim) 55%, var(--surface));
+}
+
+@media (max-width: 720px) {
+  .clock__value {
+    font-size: 30px;
+  }
+}
+
 .controls {
   display: flex;
   align-items: center;

@@ -23,6 +23,7 @@ import {
   remarkTextOf,
   startSession,
   statusOf,
+  studyMs,
   summarize,
   unmarkPresent,
 } from './domain.js';
@@ -123,6 +124,18 @@ export function formatDuration(ms) {
   return hours > 0 ? `${hours}:${pad(minutes)}:${pad(seconds)}` : `${pad(minutes)}:${pad(seconds)}`;
 }
 
+/**
+ * 自习时间的写法：一律 `时:分:秒`，两位一段。
+ *
+ * 大屏上的数字宽度得稳 —— 分秒那种「12:34」走到一小时忽然变成「1:02:03」，
+ * 字会跳一下。所以小时位一直留着。
+ */
+export function formatStudyTime(ms) {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  const pad = (value) => String(value).padStart(2, '0');
+  return `${pad(Math.floor(total / 3600))}:${pad(Math.floor(total / 60) % 60)}:${pad(total % 60)}`;
+}
+
 function formatDate(ms) {
   const date = new Date(ms);
   const pad = (value) => String(value).padStart(2, '0');
@@ -177,6 +190,21 @@ async function openClass(klass) {
  * 只有相变了（按钮要换、控件要换）才整块重画。浮层收起来这种「壳变了、格子没变」
  * 的情况由调用方传 `forceRender`。
  */
+/**
+ * 把当前这一场同步进 `state.sessions`。
+ *
+ * 历史表读的是 `state.sessions` 那一份，而写只会写 `state.session` —— 不跟着换，
+ * 历史表里这一场就一直是打开班级时读到的那份旧数据（明明结束了还写「进行中」）。
+ */
+function syncSessionList(session) {
+  const index = state.sessions.findIndex((item) => item.id === session.id);
+  if (index >= 0) {
+    state.sessions[index] = session;
+  } else {
+    state.sessions = [...state.sessions, session];
+  }
+}
+
 async function commitSession(next, forceRender = false) {
   if (next === state.session) {
     if (forceRender) {
@@ -186,6 +214,7 @@ async function commitSession(next, forceRender = false) {
   }
   const phaseChanged = state.session === null || state.session.phase !== next.phase;
   state.session = next;
+  syncSessionList(next);
   await store.putSession(next);
   if (phaseChanged || forceRender) {
     render();
@@ -584,7 +613,8 @@ function themeLabel(theme) {
 function renderClassView() {
   const main = h('main', { class: 'board', 'data-theme': state.klass.theme });
   main.append(renderControls());
-  main.append(renderStatusBar());
+  // 时钟与统计同排：宽屏上一左一右，窄屏上折行
+  main.append(h('div', { class: 'board__head' }, [renderClock(), renderStatusBar()]));
 
   const grid = h('div', { class: 'grid' });
   grid.style.setProperty('--cols', String(GRID_COLUMNS[state.klass.theme] ?? 6));
@@ -653,7 +683,6 @@ function renderStatusBar() {
     { key: 'left', label: '离开中', tone: 'left' },
     { key: 'overtime', label: '超时', tone: 'overtime' },
     { key: 'leaves', label: '累计人次', tone: '' },
-    { key: 'duration', label: '累计离开', tone: '' },
   ];
   for (const item of items) {
     const cell = h('div', { class: 'status__cell' });
@@ -664,6 +693,21 @@ function renderStatusBar() {
     bar.append(cell);
   }
   return bar;
+}
+
+/**
+ * 自习时间：这一屏最大的那个数。
+ *
+ * 教室前面的屏，老师抬头第一眼要能读到「这一节自习走了多久」。所以它比统计那几个
+ * 数都大，值单独挂 `data-clock` 给走秒那条路定点改，不整块重画。
+ */
+function renderClock() {
+  const clock = h('div', { class: 'clock' });
+  clock.append(h('span', { class: 'clock__label', text: '自习时间' }));
+  const value = h('span', { class: 'clock__value', text: '00:00:00' });
+  value.dataset.clock = 'study';
+  clock.append(value);
+  return clock;
 }
 
 function renderTile(student) {
@@ -735,13 +779,21 @@ function updateDynamic() {
   }
 
   const summary = session === null
-    ? { total: state.klass.students.length, present: 0, absent: state.klass.students.length, left: 0, overtime: 0, leaveCount: 0, leaveDurationMs: 0 }
+    ? { total: state.klass.students.length, present: 0, absent: state.klass.students.length, left: 0, overtime: 0, leaveCount: 0 }
     : summarize(state.klass, session, now);
 
   // 提示语随点名进度变，但它不换结构，所以在这里定点改
   const hint = root.querySelector('[data-hint]');
   if (hint !== null) {
     hint.textContent = phaseHint(state.klass, session ?? { phase: PHASE.PREPARING, markedIds: [], leaves: [], startedAt: now });
+  }
+
+  // 自习时间：点名结束前是 0 且暗淡，自习中一路走，结束后定住
+  const clock = root.querySelector('[data-clock="study"]');
+  if (clock !== null) {
+    const running = session !== null && session.rollCallEndedAt !== undefined;
+    clock.textContent = formatStudyTime(running ? studyMs(session, now) : 0);
+    clock.classList.toggle('is-idle', !running);
   }
   const values = {
     total: String(summary.total),
@@ -750,7 +802,6 @@ function updateDynamic() {
     left: String(summary.left),
     overtime: String(summary.overtime),
     leaves: String(summary.leaveCount),
-    duration: formatDuration(summary.leaveDurationMs),
   };
   for (const node of root.querySelectorAll('[data-metric]')) {
     const next = values[node.dataset.metric];
@@ -1130,7 +1181,7 @@ function renderHistory() {
   } else {
     const table = h('table', { class: 'table' });
     const head = h('tr');
-    for (const label of ['开始', '结束', '已到', '离开人次', '累计离开']) {
+    for (const label of ['开始', '结束', '自习时长', '已到', '离开人次']) {
       head.append(h('th', { text: label }));
     }
     table.append(h('thead', {}, [head]));
@@ -1141,9 +1192,9 @@ function renderHistory() {
       const row = h('tr');
       row.append(h('td', { text: formatDate(session.startedAt) }));
       row.append(h('td', { text: session.endedAt === undefined ? '进行中' : formatDate(session.endedAt) }));
+      row.append(h('td', { text: formatStudyTime(studyMs(session, endAt)) }));
       row.append(h('td', { text: String(summary.present) }));
       row.append(h('td', { text: String(summary.leaveCount) }));
-      row.append(h('td', { text: formatDuration(summary.leaveDurationMs) }));
       tbody.append(row);
     }
     table.append(tbody);

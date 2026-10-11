@@ -226,6 +226,20 @@ export function awayMs(session, studentId, now) {
   return leave === undefined ? 0 : Math.max(0, now - leave.leftAt);
 }
 
+/**
+ * 这一场已经自习了多久。
+ *
+ * 从**结束点名**那一刻算起 —— 点名一结束就是正式的自习时间。还在点名或准备时是 0；
+ * 已经结束的那一场定格在结束那一刻，不再往前走。
+ */
+export function studyMs(session, now) {
+  if (session.rollCallEndedAt === undefined) {
+    return 0;
+  }
+  const end = session.endedAt ?? now;
+  return Math.max(0, end - session.rollCallEndedAt);
+}
+
 /** 把模板与补充拼成一行备注。 */
 export function remarkTextOf(klass, leave) {
   if (leave === undefined) {
