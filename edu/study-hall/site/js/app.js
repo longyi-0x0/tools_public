@@ -56,15 +56,22 @@ function baseName(fileName) {
 }
 
 const state = {
-  view: 'home',
   /**
    * 盖在页上的蒙版：null 是没盖，'session' 是自习看板，'idle' 是待机。
    *
    * 自习不再挤在班级页里，而是盖住整屏的一块 —— 一次自习就是这一块。老师可以随时
-   * 把它收起来（会话继续跑），班级页上那颗钮变成「继续自习」。
+   * 把它收起来（会话继续跑），班级卡上那颗钮变成「继续自习」。
    */
   mask: null,
   classes: [],
+  /**
+   * 每个班当前那场**没结束的**自习：`班级 id → 会话`。
+   *
+   * 班级列表要显示「自习中 00:12:33」并把钮换成「继续自习」，就得知道哪些班还在跑。
+   * 一次读全量再分好，比按班各跑一趟省事。`state.session` 是**正在看的那一场**，
+   * 这个表是**列表要用的总览**，两者由 `commitSession` 一处保持同步。
+   */
+  running: new Map(),
   klass: null,
   session: null,
   sessions: [],
@@ -195,17 +202,44 @@ function phaseLabel(phase) {
 
 async function refreshClasses() {
   state.classes = (await store.listClasses()).map(normaliseKlass);
+  state.running = await readRunningSessions();
 }
 
-async function openClass(klass) {
+/** 每个班当前那场没结束的自习。一次读全量再分好，不按班各跑一趟。 */
+async function readRunningSessions() {
+  const sessions = await store.listSessions();
+  const map = new Map();
+  for (const session of sessions) {
+    if (session.phase !== PHASE.ENDED) {
+      map.set(session.classId, normaliseSession(session));
+    }
+  }
+  return map;
+}
+
+/**
+ * 把某个班装进状态：名册、记录、有没有一场还没结束的。
+ *
+ * 没有专门的班级页了，这个函数就是「按这个班的上下文做一件事」的入口 ——
+ * 开始自习、设置、全班记录都从班级卡上按，按之前先把它的上下文装上。
+ */
+async function loadClass(klass) {
   state.klass = normaliseKlass(klass);
   const sessions = (await store.listSessions(klass.id)).map(normaliseSession);
   state.sessions = sessions;
-  const active = sessions.find((item) => item.phase !== PHASE.ENDED);
-  state.session = active ?? null;
-  state.view = 'class';
-  state.mask = null;
-  await store.putSetting('lastClassId', klass.id);
+  state.session = sessions.find((item) => item.phase !== PHASE.ENDED) ?? null;
+}
+
+/** 从班级卡上进自习：先把这个班装上。 */
+async function enterSessionFrom(klass) {
+  await loadClass(klass);
+  await enterSession();
+}
+
+/** 从班级卡上开一个挂在这个班上的浮层（设置 / 全班记录）。 */
+async function openFromCard(klass, overlay) {
+  await loadClass(klass);
+  state.overlay = overlay;
   render();
 }
 
@@ -230,6 +264,7 @@ async function enterSession() {
   await store.putSession(session);
   state.session = session;
   state.sessions = [...state.sessions, session];
+  syncRunning(session);
   state.mask = 'session';
   render();
 }
@@ -256,6 +291,12 @@ function syncSessionList(session) {
   }
 }
 
+/**
+ * 把一场记录写进库与内存，并同步班级列表要用的那份总览。
+ *
+ * `state.running` 是班级卡看的，`state.session` 是正在看的那一场 —— 两者只能在这里
+ * 一处同时改，不然列表上会出现「已经结束的一场还写着自习中」。
+ */
 async function commitSession(next, forceRender = false) {
   if (next === state.session) {
     if (forceRender) {
@@ -266,11 +307,21 @@ async function commitSession(next, forceRender = false) {
   const phaseChanged = state.session === null || state.session.phase !== next.phase;
   state.session = next;
   syncSessionList(next);
+  syncRunning(next);
   await store.putSession(next);
   if (phaseChanged || forceRender) {
     render();
   } else {
     updateDynamic();
+  }
+}
+
+/** 把一场记录登记进 `state.running`；已经结束的就从表里去掉。 */
+function syncRunning(session) {
+  if (session.phase === PHASE.ENDED) {
+    state.running.delete(session.classId);
+  } else {
+    state.running.set(session.classId, session);
   }
 }
 
@@ -296,7 +347,7 @@ async function doEndRollCall() {
 
 async function doEndSession() {
   await commitSession(endSession(state.session, Date.now()));
-  // 这一场定格了，蒙版收起来 —— 结束自习就是回花名册
+  // 这一场定格了，蒙版收起来 —— 结束自习就是回班级列表
   state.mask = null;
   render();
 }
@@ -515,8 +566,7 @@ async function importClassFile(file, overwrite) {
   await refreshClasses();
   state.overlay = null;
   state.pendingImport = null;
-  const fresh = await store.getClass(targetId);
-  await openClass(fresh);
+  render();
 }
 
 /* ---------- 视图 ---------- */
@@ -531,7 +581,7 @@ function render() {
 }
 
 /**
- * 三层：班级列表 → 班级页（花名册）→ 自习蒙版 / 待机蒙版。
+ * 两层：班级列表 → 自习蒙版 / 待机蒙版。
  *
  * 蒙版盖住整屏，所以有蒙版时就不再画底下那一页 —— 反正看不见，白画一遍还慢。
  */
@@ -542,8 +592,6 @@ function renderShell() {
     shell.append(renderSessionMask());
   } else if (state.mask === 'idle') {
     shell.append(renderIdleMask());
-  } else if (state.view === 'class' && state.klass !== null) {
-    shell.append(renderClassPage());
   } else {
     shell.append(renderClassesPage());
   }
@@ -646,26 +694,68 @@ function renderClassesPage() {
   return main;
 }
 
+/**
+ * 一张班级卡：谁、多少人、有没有在跑的一场，加一行动作。
+ *
+ * 这里就是入口 —— 不再有单独的班级页。花名册在自习蒙版里看，设置与全班记录从这张卡
+ * 上开（都是浮层）。
+ */
 function renderClassCard(klass) {
+  const running = state.running.get(klass.id) ?? null;
   const card = h('article', { class: 'card' });
-  card.append(
-    h('button', {
-      class: 'card__open',
-      onClick: () => void openClass(klass),
-      title: `打开 ${klass.name}`,
-    }, [
-      h('h3', { class: 'card__name', text: klass.name }),
-      h('p', {
-        class: 'card__meta',
-        text: `${klass.students.length} 人 · 超时 ${Math.round(klass.overtimeThresholdMs / 60000)} 分钟 · ${themeLabel(klass.theme)}`,
-      }),
-    ]),
-  );
+
+  const head = h('div', { class: 'card__head' });
+  head.append(h('h3', { class: 'card__name', text: klass.name }));
+  const bits = [
+    `${klass.students.length} 人`,
+    `超时 ${Math.round(klass.overtimeThresholdMs / 60000)} 分钟`,
+    themeLabel(klass.theme),
+  ];
+  head.append(h('p', { class: 'card__meta', text: bits.join(' · ') }));
+  if (running !== null) {
+    head.append(
+      h('span', { class: `chip chip--${running.phase}` }, [
+        h('span', { text: `${phaseLabel(running.phase)} ` }),
+        h('span', {
+          class: 'chip__clock',
+          dataset: { clock: `card:${klass.id}` },
+          text: '00:00:00',
+        }),
+      ]),
+    );
+  }
+  card.append(head);
+
   const actions = h('div', { class: 'card__actions' });
-  actions.append(h('button', { class: 'btn btn--small', text: '导出', onClick: () => void exportClass(klass) }));
   actions.append(
     h('button', {
-      class: 'btn btn--small btn--danger',
+      class: 'btn btn--primary',
+      text: running === null ? '开始自习' : '继续自习',
+      onClick: () => void enterSessionFrom(klass),
+    }),
+  );
+  actions.append(
+    h('button', {
+      class: 'btn',
+      text: '全班记录',
+      onClick: () => void openFromCard(klass, 'history'),
+    }),
+  );
+  actions.append(
+    h('button', {
+      class: 'btn',
+      text: '设置',
+      onClick: () => void openFromCard(klass, 'settings'),
+    }),
+  );
+  card.append(actions);
+
+  // 资料动作另起一行：上一行是「上课时随手按的」，这一行是「平时才动的」
+  const quiet = h('div', { class: 'card__actions card__actions--quiet' });
+  quiet.append(h('button', { class: 'btn', text: '导出', onClick: () => void exportClass(klass) }));
+  quiet.append(
+    h('button', {
+      class: 'btn btn--danger',
       text: '删除',
       onClick: async () => {
         if (window.confirm(`删除「${klass.name}」及其全部记录？这一步不能撤回。`)) {
@@ -676,97 +766,12 @@ function renderClassCard(klass) {
       },
     }),
   );
-  card.append(actions);
+  card.append(quiet);
   return card;
 }
 
 function themeLabel(theme) {
   return { junior: '童趣（小学）', middle: '标准', senior: '沉稳（高中）' }[theme] ?? theme;
-}
-
-/**
- * 班级页：这个班的花名册，加一颗「开始自习」。
- *
- * 花名册在这里是**中性**的 —— 不带四色，因为四色只在一次自习里才有意义（没到 / 到了 /
- * 离开）。这一页回答的是「这个班有谁」，自习里那套状态归蒙版管。
- */
-function renderClassPage() {
-  const klass = state.klass;
-  // 「还在跑」指的是有**没结束**的一场。结束过的那一场仍留在 state.session 里
-  // （要给历史和导出看），所以不能只看非空。
-  const running = state.session !== null && state.session.phase !== PHASE.ENDED;
-  const main = h('main', { class: 'page', 'data-theme': klass.theme });
-  main.append(
-    tabBar({
-      crumb: klass.name,
-      actions: [
-        running ? renderRunningChip() : undefined,
-        h('button', { class: 'btn', text: '全班记录', onClick: () => openOverlay('history') }),
-        h('button', { class: 'btn', text: '设置', onClick: () => openOverlay('settings') }),
-        h('button', {
-          class: 'btn',
-          text: '返回',
-          onClick: () => {
-            state.view = 'home';
-            state.klass = null;
-            state.session = null;
-            state.mask = null;
-            render();
-          },
-        }),
-      ].filter((node) => node !== undefined),
-    }),
-  );
-
-  const body = h('div', { class: 'school' });
-  const bar = h('div', { class: 'school__bar' });
-  bar.append(
-    h('button', {
-      class: 'btn btn--primary btn--tall',
-      text: running ? '继续自习' : '开始自习',
-      onClick: () => void enterSession(),
-    }),
-  );
-  const bits = [
-    `${klass.students.length} 人`,
-    `超时 ${Math.round(klass.overtimeThresholdMs / 60000)} 分钟`,
-    themeLabel(klass.theme),
-  ];
-  if (running) {
-    bits.push('有一次自习还没结束');
-  }
-  bar.append(h('p', { class: 'school__meta', text: bits.join(' · ') }));
-  body.append(bar);
-
-  const grid = h('div', { class: 'grid grid--roster' });
-  grid.style.setProperty('--cols', String(GRID_COLUMNS[klass.theme] ?? 6));
-  if (klass.students.length === 0) {
-    grid.append(h('p', { class: 'empty__hint', text: '这个班还没有学生。到「设置」里导入名册。' }));
-  }
-  for (const student of klass.students) {
-    grid.append(renderRosterTile(student));
-  }
-  body.append(grid);
-  main.append(body);
-  return main;
-}
-
-/** 班级页顶栏那颗「还在跑」的牌子：相名加自习时间。 */
-function renderRunningChip() {
-  const session = state.session;
-  const children = [h('span', { text: `${phaseLabel(session.phase)} ` })];
-  if (session.rollCallEndedAt !== undefined) {
-    children.push(h('span', { class: 'chip__clock', dataset: { clock: 'page' }, text: '00:00:00' }));
-  }
-  return h('span', { class: `chip chip--${session.phase}` }, children);
-}
-
-/** 花名册上的一格：只有名字与座位 · 学号，点不动。 */
-function renderRosterTile(student) {
-  const tile = h('div', { class: 'tile tile--roster' });
-  tile.append(h('span', { class: 'tile__name', text: student.name }));
-  tile.append(h('span', { class: 'tile__meta', text: seatLine(student) }));
-  return tile;
 }
 
 /**
@@ -823,7 +828,7 @@ function renderSessionMask() {
 
   if (!running) {
     section.append(
-      h('p', { class: 'mask__foot', text: '这一场已结束，收起这块回到花名册。' }),
+      h('p', { class: 'mask__foot', text: '这一场已结束，收起这块回到班级列表。' }),
     );
   }
   return section;
@@ -895,7 +900,7 @@ function renderIdleMask() {
     foot.append(cards);
   }
   section.append(foot);
-  section.append(h('p', { class: 'idle__hint', text: '点一下屏幕回到花名册' }));
+  section.append(h('p', { class: 'idle__hint', text: '点一下屏幕回到看板' }));
   return section;
 }
 
@@ -1064,19 +1069,24 @@ function seatLine(student) {
  * 每 500ms 一次。格子多的时候这是唯一不闪的做法 —— 重画会把还没落的手势打断。
  */
 function updateDynamic() {
-  if (state.klass === null) {
-    return;
-  }
+  const now = state.now;
+
   if (state.mask === 'idle') {
     updateIdle();
     return;
   }
-  const now = state.now;
+  // 班级列表上没有看板，但卡片上有还在跑的那一场的时钟
+  if (state.mask === null) {
+    updateCardClocks(now);
+    return;
+  }
+  if (state.klass === null) {
+    return;
+  }
   const threshold = state.klass.overtimeThresholdMs;
   const session = state.session;
-  updatePageClock(now);
+  updateCardClocks(now);
 
-  // 花名册那一页没有会话状态可更新：格子是中性的
   if (state.mask !== 'session') {
     return;
   }
@@ -1153,15 +1163,18 @@ function updateDynamic() {
 
 /* ---------- 逐拍更新 ---------- */
 
-/** 班级页顶栏那个「自习中 00:12:33」—— 蒙版收起来时也要看得到还在走。 */
-function updatePageClock(now) {
-  const node = root.querySelector('[data-clock="page"]');
-  if (node === null) {
-    return;
+/**
+ * 班级卡上那些「自习中 00:12:33」。
+ *
+ * 蒙版收起来以后，还在跑的那一场只能从卡片上看出走了多久。一张卡一个节点，
+ * 名字是 `card:<班级 id>`，从 `state.running` 里取那一场。
+ */
+function updateCardClocks(now) {
+  for (const node of root.querySelectorAll('[data-clock^="card:"]')) {
+    const session = state.running.get(node.dataset.clock.slice('card:'.length)) ?? null;
+    node.textContent =
+      session !== null && session.rollCallEndedAt !== undefined ? formatStudyTime(studyMs(session, now)) : '00:00:00';
   }
-  const session = state.session;
-  const running = session !== null && session.rollCallEndedAt !== undefined && session.phase !== PHASE.ENDED;
-  node.textContent = formatStudyTime(running ? studyMs(session, now) : 0);
 }
 
 /** 待机蒙版：墙钟、自习已进行、统计一行、每张卡片上的时长。 */
@@ -1337,7 +1350,7 @@ function renderNewClass() {
         state.pendingNewClass = undefined;
         state.newClassName = undefined;
         state.overlay = null;
-        await openClass(klass);
+        render();
       },
     }),
   );
@@ -1499,7 +1512,7 @@ function renderSettings() {
     ['60', '1 分钟'],
     ['120', '2 分钟'],
     ['300', '5 分钟'],
-    ['0', '不切（一直显示花名册）'],
+    ['0', '不切（一直显示看板）'],
   ]) {
     idleSelect.append(
       h('option', {
@@ -1557,6 +1570,11 @@ function renderSettings() {
         h('button', { class: 'btn', text: '导回名册（换成表里的）', onClick: () => rosterInput.click() }),
         h('button', { class: 'btn', text: '导出全班 xlsx', onClick: () => void exportClass(klass) }),
       ]),
+      // 没有单独的花名册页了，名字就在这里看
+      h('p', {
+        class: 'field__note field__note--roster',
+        text: klass.students.length === 0 ? '还没有学生。' : klass.students.map((item) => item.name).join('、'),
+      }),
       rosterInput,
     ]),
   );
@@ -1659,7 +1677,7 @@ function renderConflict() {
         await refreshClasses();
         state.pendingImport = null;
         state.overlay = null;
-        await openClass(copy);
+        render();
       },
     }),
   );
@@ -1764,16 +1782,15 @@ function tick() {
 async function boot() {
   await store.requestPersistence();
   await refreshClasses();
-  const lastId = await store.getSetting('lastClassId', null);
-  if (lastId !== null) {
-    const klass = await store.getClass(lastId);
-    if (klass !== null) {
-      await openClass(klass);
-      // 有一场自习还在跑就直接盖上蒙版：刷新或崩了重开，老师要回到看板接着用。
-      // 上一场已经结束的不会盖上 —— 那种情形该看到花名册。
-      if (state.session !== null && state.session.phase !== PHASE.ENDED) {
-        state.mask = 'session';
-      }
+
+  // 有一场自习还在跑就直接盖上蒙版：刷新或崩了重开，老师要回到看板接着用。
+  // 扫全库而不是记「上次打开的班」—— 上次打开的可能是别的班，那不是正在跑的那一场。
+  const [runningClassId] = state.running.keys();
+  if (runningClassId !== undefined) {
+    const klass = state.classes.find((item) => item.id === runningClassId);
+    if (klass !== undefined) {
+      await loadClass(klass);
+      state.mask = 'session';
     }
   }
   noteActivity();
