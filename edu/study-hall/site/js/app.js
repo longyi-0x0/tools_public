@@ -18,6 +18,7 @@ import {
   endSession,
   isPaused,
   leaveReport,
+  markAllPresent,
   markLeft,
   markNotified,
   markPresent,
@@ -223,8 +224,8 @@ function phaseHint(klass, session) {
     case PHASE.ROLL_CALL: {
       const missing = klass.students.length - session.markedIds.length;
       return missing > 0
-        ? `点名中：还有 ${missing} 人没点到（蓝色）。点错了再点一下可以退回。`
-        : '全班点到，按「结束点名」进入自习。';
+        ? `点名中：还有 ${missing} 人没点到（蓝色）。人多的话按「剩下都到」省点力气，点错了再点一下可以退回。`
+        : '全班都点到了。没来的人点一下退回蓝色，确认好就按「结束点名」进入自习。';
     }
     case PHASE.SELF_STUDY: {
       if (isPaused(session)) {
@@ -393,6 +394,22 @@ async function doEndRollCall() {
   await commitSession(endRollCall(state.session, Date.now()));
 }
 
+/** 点名阶段一键：剩下没点的都算到了。 */
+async function doAttendRest() {
+  const ids = state.klass.students.map((item) => item.id);
+  const before = state.session.markedIds.length;
+  const next = markAllPresent(state.session, ids);
+  if (next === state.session) {
+    return;
+  }
+  // 强制整块重画：相没变时 commitSession 只走定点更新，这颗钮的「压暗」状态
+  // 是它自己算出来的，不重画就一直显示成还能按
+  await commitSession(next, true);
+  const added = next.markedIds.length - before;
+  // 说清退路：一定会有没来的人，老师要知道怎么把他们点回来
+  showToast(`还有 ${added} 人算作到了；没来的点一下他，退回蓝色`);
+}
+
 async function doEndSession() {
   await commitSession(endSession(state.session, Date.now()));
   // 留在蒙版上：下课那一刻老师要看到这一场的账（小结就在下面），看完了自己按「收起」
@@ -448,7 +465,9 @@ async function tapStudent(studentId) {
     return;
   }
   if (status === STATUS.ABSENT) {
-    await commitSession(markPresent(session, studentId));
+    // 自习中按「到了的在前」排过：他这一下是归队，得整块重画 ——
+    // 不然格子还留在「没到」那一段里，分界线上的人数也不跟着变
+    await commitSession(markPresent(session, studentId), session.phase === PHASE.SELF_STUDY);
     return;
   }
   if (status === STATUS.PRESENT) {
@@ -1032,6 +1051,27 @@ function renderClassCard(klass) {
   return card;
 }
 
+/**
+ * 看板上花名册的排布。
+ *
+ * 点名一结束就把到了的排到前面：自习里老师看的是「谁在这儿、谁在外面」，
+ * 没到的那几个沉到最后另起一块才不占眼睛。
+ *
+ * 点名中（含准备）不排 —— 那时老师正顺着名册逐个点，格子一挪就会点错人。
+ * 已结束也照排，免得下课那一刻整块跳回去。待机蒙版与导出的明细都另按名册顺序走，
+ * 这里只管看板上的显示。
+ */
+function displayOrder(klass, session) {
+  if (session === null || session.phase === PHASE.PREPARING || session.phase === PHASE.ROLL_CALL) {
+    return klass.students;
+  }
+  const marked = new Set(session.markedIds);
+  return [
+    ...klass.students.filter((student) => marked.has(student.id)),
+    ...klass.students.filter((student) => !marked.has(student.id)),
+  ];
+}
+
 function themeLabel(theme) {
   return { junior: '童趣（小学）', middle: '标准', senior: '简洁（高中）' }[theme] ?? theme;
 }
@@ -1088,7 +1128,19 @@ function renderSessionMask() {
   if (klass.students.length === 0) {
     grid.append(h('p', { class: 'empty__hint', text: '这个班还没有学生。收起这块，到「设置」里导入名册。' }));
   }
-  for (const student of klass.students) {
+  // 自习阶段：到了的排前面，没到的沉到后面，中间画一条线说清那是另一拨人
+  const order = displayOrder(klass, state.session);
+  const marked = new Set(state.session?.markedIds ?? []);
+  const absentStart = order.findIndex((student) => !marked.has(student.id));
+  for (const [index, student] of order.entries()) {
+    if (index === absentStart && absentStart > 0) {
+      grid.append(
+        h('p', {
+          class: 'grid__divider',
+          text: `没到 ${order.length - absentStart} 人`,
+        }),
+      );
+    }
     const tile = renderTile(student);
     tiles.set(student.id, tile);
     grid.append(tile);
@@ -1308,7 +1360,7 @@ function renderControls() {
         onClick: () => void doEndRollCall(),
       }),
     );
-    buttons.append(quietGroup([restartButton(), muteButton()]));
+    buttons.append(attendRestButton());
   } else {
     buttons.append(
       isPaused(session)
@@ -1346,6 +1398,30 @@ function renderControls() {
  * 先确认，再结束 + 开新场。旧的那一场留在记录里，不删。低频又不可回退，所以摆在小
  * 字那格里，不与「暂停 / 结束」同重。
  */
+/**
+ * 点名阶段那一颗「剩下都到」。
+ *
+ * 一个班几十号人，绝大多数都在座位上，一个个点太慢。先把没点的都算成到了，
+ * 再点回那几个没来的（点名阶段点一下灰的就退回蓝）—— 大多数人只用点一两下。
+ *
+ * 全班都点到之后这颗压暗：那时候它没事干。
+ */
+function attendRestButton() {
+  const total = state.klass?.students.length ?? 0;
+  const marked = state.session?.markedIds.length ?? 0;
+  const rest = total - marked;
+  return h('button', {
+    class: 'btn btn--tall',
+    text: '剩下都到',
+    title:
+      rest === 0
+        ? '全班都已经点到了'
+        : `还没点的 ${rest} 人都算到了；没来的点一下退回蓝色`,
+    disabled: rest === 0 ? '' : undefined,
+    onClick: () => void doAttendRest(),
+  });
+}
+
 function restartButton() {
   return h('button', {
     class: 'btn',

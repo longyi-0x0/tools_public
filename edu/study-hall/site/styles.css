@@ -744,7 +744,20 @@ body {
   justify-content: center;
   align-items: center;
   gap: 2px;
-  min-height: 74px;
+  /*
+   * 高度按最坏情况算：名字 + 原因 + 计时三行。
+   *
+   * 原来写死 74px（只够两行），有人离开时多出来的第三行会溢出到格子外面 ——
+   * 上下都被相邻那两行的格子盖住，名字和计时看着就像被裁了。写死一个值不行：
+   * 三套主题的字号差得不小（17px 到 24px），所以按变量算。
+   *
+   * 按「三行都放得下」定高还有个好处：谁离开、谁回来都不会让格子变高变矮，
+   * 一整屏的排布不跟着跳。
+   */
+  min-height: calc(
+    var(--name-size) * 1.2 + var(--meta-size) * 1.45 + var(--timer-size) * 1.2 + 4px +
+      var(--tile-pad) * 2
+  );
   padding: var(--tile-pad);
   border: 1px solid transparent;
   border-radius: var(--tile-radius);
@@ -807,6 +820,7 @@ body {
 }
 
 .tile__meta {
+  line-height: 1.45;
   font-size: var(--meta-size);
   opacity: 0.72;
   overflow: hidden;
@@ -1121,6 +1135,25 @@ body {
 /* 焦点落到浮层本身时不要给整个对话框套一圈描边（那是键盘「进来」的作用点，不是控件） */
 .modal:focus {
   outline: none;
+}
+
+/* 自习阶段「到了」与「没到」之间那条分界：横跨一整行 */
+.grid__divider {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 4px 0 0;
+  color: var(--absent);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.grid__divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: color-mix(in srgb, var(--absent) 30%, var(--rule));
 }
 
 .hidden {

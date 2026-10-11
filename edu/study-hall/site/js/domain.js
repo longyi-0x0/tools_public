@@ -228,6 +228,25 @@ export function markPresent(session, studentId) {
   return { ...session, markedIds: [...session.markedIds, studentId] };
 }
 
+/**
+ * 剩下没点的都算到了。点名阶段那一颗「剩下都到」用这个。
+ *
+ * 只补不覆盖：已经点过的保持原样（顺序也不动，导出按这个顺序出），
+ * 因此先点了几个人再按它，前面那几个人的结果不会被抹掉。
+ * 一个都没补到时返回原对象，调用方可以据此跳过落盘。
+ */
+export function markAllPresent(session, studentIds) {
+  if (session.phase !== PHASE.ROLL_CALL) {
+    throw new Error(`当前阶段（${session.phase}）不能点名`);
+  }
+  const marked = new Set(session.markedIds);
+  const added = studentIds.filter((id) => !marked.has(id));
+  if (added.length === 0) {
+    return session;
+  }
+  return { ...session, markedIds: [...session.markedIds, ...added] };
+}
+
 /** 取消点到：灰 → 蓝。点错了可以退回去。 */
 export function unmarkPresent(session, studentId) {
   if (session.phase !== PHASE.ROLL_CALL && session.phase !== PHASE.SELF_STUDY) {
