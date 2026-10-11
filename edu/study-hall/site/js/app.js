@@ -1353,6 +1353,8 @@ function renderControls() {
     );
     buttons.append(quietGroup([restartButton(), muteButton()]));
   } else if (session.phase === PHASE.ROLL_CALL) {
+    // 蓝的那一颗放后面：一排钮里最边上的一颗最好按，而这一相里更常按的是「剩下都到」
+    buttons.append(attendRestButton());
     buttons.append(
       h('button', {
         class: 'btn btn--primary btn--tall',
@@ -1360,7 +1362,6 @@ function renderControls() {
         onClick: () => void doEndRollCall(),
       }),
     );
-    buttons.append(attendRestButton());
   } else {
     buttons.append(
       isPaused(session)
