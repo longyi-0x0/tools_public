@@ -39,6 +39,7 @@ import * as sound from './sound.js';
 import * as speech from './speech.js';
 import { readSheetFile } from './readSheets.js';
 import { exportClassWorkbook, parseClassWorkbook } from './klassFile.js';
+import { buildZip } from './xlsx.js';
 
 /** 走秒的间隔。500ms 够计时看上去是连续的，也不费。 */
 const TICK_MS = 500;
@@ -91,6 +92,12 @@ const state = {
   remarkStudentId: null,
   /** 冲突导入：同名班级已在库时的待决文件 */
   pendingImport: null,
+  /**
+   * 班级列表的多选态：`null` 是平时，否则是选中班级的 id 集合。
+   *
+   * 导出与删除平时都收在「设置」里，一个班一个班来；要一次收拾好几个班就走这里。
+   */
+  picking: null,
   toast: '',
 };
 
@@ -568,10 +575,8 @@ function rosterFromSheets(sheets) {
 
 /* ---------- 导出 / 导入整班 ---------- */
 
-function download(filename, bytes) {
-  const blob = new Blob([bytes], {
-    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-  });
+function download(filename, bytes, type = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') {
+  const blob = new Blob([bytes], { type });
   const url = URL.createObjectURL(blob);
   const anchor = h('a', { href: url, download: filename });
   document.body.append(anchor);
@@ -591,6 +596,110 @@ function today() {
   const date = new Date();
   const pad = (value) => String(value).padStart(2, '0');
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+/* ---------- 班级列表的多选 ---------- */
+
+/** 多选态下已经被勾上的班，按列表顺序。 */
+function pickedClasses() {
+  if (state.picking === null) {
+    return [];
+  }
+  return state.classes.filter((klass) => state.picking.has(klass.id));
+}
+
+function togglePick(klassId) {
+  if (state.picking === null) {
+    return;
+  }
+  if (state.picking.has(klassId)) {
+    state.picking.delete(klassId);
+  } else {
+    state.picking.add(klassId);
+  }
+  render();
+}
+
+function startPicking() {
+  state.picking = new Set();
+  render();
+}
+
+function endPicking() {
+  state.picking = null;
+  render();
+}
+
+function togglePickAll() {
+  const picked = pickedClasses();
+  state.picking = picked.length === state.classes.length ? new Set() : new Set(state.classes.map((klass) => klass.id));
+  render();
+}
+
+/**
+ * 把选中的班各导成一份 xlsx，装进一个 zip 下下来。
+ *
+ * 不能连着触发好几次下载：浏览器会拦「是否允许下载多个文件」，老师多半选否。
+ */
+async function exportPicked() {
+  const picked = pickedClasses();
+  if (picked.length === 0) {
+    return;
+  }
+  const entries = [];
+  const used = new Set();
+  for (const klass of picked) {
+    const sessions = await store.listSessions(klass.id);
+    const bytes = await exportClassWorkbook(klass, sessions);
+    entries.push({ name: uniqueEntryName(`${klass.name}-${today()}.xlsx`, used), bytes });
+  }
+  download(`自习点名 ${picked.length} 个班 ${today()}.zip`, await buildZip(entries), 'application/zip');
+}
+
+/** 归档里的条目名不能重：同名时插一个序号，别让后面的把前面的顶掉。 */
+function uniqueEntryName(name, used) {
+  if (!used.has(name)) {
+    used.add(name);
+    return name;
+  }
+  const dot = name.lastIndexOf('.');
+  const stem = dot === -1 ? name : name.slice(0, dot);
+  const tail = dot === -1 ? '' : name.slice(dot);
+  for (let index = 2; ; index += 1) {
+    const candidate = `${stem}(${index})${tail}`;
+    if (!used.has(candidate)) {
+      used.add(candidate);
+      return candidate;
+    }
+  }
+}
+
+/** 一次删掉选中的几个班。名单可能很长，确认话里只念前三个。 */
+async function removePicked() {
+  const picked = pickedClasses();
+  if (picked.length === 0) {
+    return;
+  }
+  const names = picked.slice(0, 3).map((klass) => klass.name).join('、');
+  const rest = picked.length > 3 ? ` 等 ${picked.length} 个班` : '';
+  const runningCount = picked.filter((klass) => state.running.has(klass.id)).length;
+  const warning =
+    runningCount > 0 ? `\n其中 ${runningCount} 个班有正在进行的自习，那一场也一起删掉。` : '';
+  if (!window.confirm(`删除「${names}」${rest}及其全部记录？${warning}\n这一步不能撤回。`)) {
+    return;
+  }
+  for (const klass of picked) {
+    await store.deleteClass(klass.id);
+    // 删掉的正好是当前装着的那个班：把上下文一并放下，别留一个指向空班的引用
+    if (state.klass?.id === klass.id) {
+      state.klass = null;
+      state.session = null;
+      state.sessions = [];
+    }
+  }
+  state.picking = null;
+  await refreshClasses();
+  showToast(picked.length === 1 ? `「${picked[0].name}」已删除` : `已删除 ${picked.length} 个班`);
 }
 
 /** 删掉一个班（连同它的全部记录）。问一句，确认了才动手。 */
@@ -726,6 +835,54 @@ function requestFullscreen() {
   }
 }
 
+/**
+ * 班级列表的页头动作。
+ *
+ * 平时是「新建 / 恢复」；进了多选态就换成批量的那几颗 —— 一个班一个班地导出、
+ * 删除仍然在「设置」里，这里只管一次收拾好几个班。
+ */
+function renderHomeActions() {
+  if (state.picking !== null) {
+    const picked = pickedClasses();
+    const all = state.classes.length > 0 && picked.length === state.classes.length;
+    return h('div', { class: 'home__actions' }, [
+      h('span', { class: 'home__picked', text: `已选 ${picked.length} / ${state.classes.length}` }),
+      h('button', { class: 'btn', text: all ? '取消全选' : '全选', onClick: togglePickAll }),
+      h('button', {
+        class: 'btn',
+        text: '导出选中',
+        title: '每个班一份 xlsx，打成一个 zip 下载',
+        disabled: picked.length === 0 ? '' : undefined,
+        onClick: () => void exportPicked(),
+      }),
+      h('button', {
+        class: 'btn btn--danger',
+        text: '删除选中',
+        disabled: picked.length === 0 ? '' : undefined,
+        onClick: () => void removePicked(),
+      }),
+      // 不叫「取消」：旁边就挨着「取消全选」，两颗都以取消开头容易按错
+      h('button', { class: 'btn btn--quiet', text: '退出多选', onClick: endPicking }),
+    ]);
+  }
+  return h('div', { class: 'home__actions' }, [
+    h('button', {
+      class: 'btn',
+      text: '多选',
+      title: '一次导出或删除好几个班',
+      // 一个班都没有时没什么可多选的
+      disabled: state.classes.length === 0 ? '' : undefined,
+      onClick: startPicking,
+    }),
+    h('button', {
+      class: 'btn btn--primary',
+      text: '新建班级',
+      onClick: () => openOverlay('newClass'),
+    }),
+    h('button', { class: 'btn', text: '从文件恢复一个班', title: '导入之前导出的整班 xlsx（含记录）', onClick: () => pickFile('.xlsx', importClassFile) }),
+  ]);
+}
+
 function renderClassesPage() {
   const main = h('main', { class: 'page' });
   // 这一页不在教室前面用，用不上全屏钮
@@ -734,16 +891,7 @@ function renderClassesPage() {
   const body = h('div', { class: 'home' });
   const bar = h('div', { class: 'home__bar' });
   bar.append(h('h2', { class: 'home__title', text: '班级' }));
-  bar.append(
-    h('div', { class: 'home__actions' }, [
-      h('button', {
-        class: 'btn btn--primary',
-        text: '新建班级',
-        onClick: () => openOverlay('newClass'),
-      }),
-      h('button', { class: 'btn', text: '从文件恢复一个班', title: '导入之前导出的整班 xlsx（含记录）', onClick: () => pickFile('.xlsx', importClassFile) }),
-    ]),
-  );
+  bar.append(renderHomeActions());
   body.append(bar);
 
   if (state.classes.length === 0) {
@@ -756,6 +904,7 @@ function renderClassesPage() {
     );
     steps.append(h('li', { text: '开始自习，逐个点名字 —— 蓝色的点到就变灰（到了）' }));
     steps.append(h('li', { text: '有人临时离开，点一下他，会开始计时；超过设定时长转红并提醒' }));
+    steps.append(h('li', { text: '换机器或留档：按「多选」勾上几个班，导出成一个 zip；一个班一份 xlsx' }));
     body.append(
       h('div', { class: 'empty' }, [
         h('p', { class: 'empty__title', text: '还没有班级' }),
@@ -779,20 +928,36 @@ function renderClassesPage() {
 /**
  * 一张班级卡：谁、多少人、有没有在跑的一场，加一行动作。
  *
- * 这里就是入口 —— 不再有单独的班级页。花名册在自习蒙版里看，设置与全班记录从这张卡
+ * 这里就是入口 —— 不再有单独的班级页，花名册在自习蒙版里看，设置与全班记录从这张卡
  * 上开（都是浮层）。
- */
-/**
- * 一张班级卡：谁、多少人、有没有在跑的一场。
  *
- * 排布按「按下去的频次」分三处：卡右上角是导出 / 设置 / 删除（平时才动），
- * 底下一条是全班记录（靠左）与开始自习（靠右）—— 自习时最常按的就是右边那颗。
+ * 排布按「按下去的频次」分三处：卡右上角是设置（平时才动），底下一条是全班记录
+ * （靠左）与开始自习（靠右）—— 自习时最常按的就是右边那颗。多选态下整张卡变成一个
+ * 勾选项，这些钮全让位：那时候按卡片是这个意思，不是那个意思。
  */
 function renderClassCard(klass) {
   const running = state.running.get(klass.id) ?? null;
-  const card = h('article', { class: 'card' });
+  const picking = state.picking !== null;
+  const picked = picking && state.picking.has(klass.id);
+  const card = h('article', { class: `card${picking ? ' card--pick' : ''}${picked ? ' is-picked' : ''}` });
+  if (picking) {
+    card.setAttribute('role', 'checkbox');
+    card.setAttribute('aria-checked', picked ? 'true' : 'false');
+    card.tabIndex = 0;
+    card.addEventListener('click', () => togglePick(klass.id));
+    card.addEventListener('keydown', (event) => {
+      if (event.key === ' ' || event.key === 'Enter') {
+        event.preventDefault();
+        togglePick(klass.id);
+      }
+    });
+  }
 
   const head = h('div', { class: 'card__head' });
+  if (picking) {
+    // 放在卡头上而不是标题里：标题那一列是纵的，勾选框会掉到名字上面去
+    head.append(h('span', { class: 'card__pick', 'aria-hidden': 'true', text: picked ? '✓' : '' }));
+  }
   const title = h('div', { class: 'card__title' });
   title.append(h('h3', { class: 'card__name', text: klass.name }));
   const bits = [
@@ -815,29 +980,33 @@ function renderClassCard(klass) {
   }
   head.append(title);
 
-  const tools = h('div', { class: 'card__tools' });
-  tools.append(
-    h('button', { class: 'btn', text: '设置', onClick: () => void openFromCard(klass, 'settings') }),
-  );
-  head.append(tools);
+  if (!picking) {
+    const tools = h('div', { class: 'card__tools' });
+    tools.append(
+      h('button', { class: 'btn', text: '设置', onClick: () => void openFromCard(klass, 'settings') }),
+    );
+    head.append(tools);
+  }
   card.append(head);
 
-  const foot = h('div', { class: 'card__foot' });
-  foot.append(
-    h('button', {
-      class: 'btn',
-      text: '全班记录',
-      onClick: () => void openFromCard(klass, 'history'),
-    }),
-  );
-  foot.append(
-    h('button', {
-      class: 'btn btn--primary btn--tall',
-      text: running === null ? '开始自习' : '继续自习',
-      onClick: () => void enterSessionFrom(klass),
-    }),
-  );
-  card.append(foot);
+  if (!picking) {
+    const foot = h('div', { class: 'card__foot' });
+    foot.append(
+      h('button', {
+        class: 'btn',
+        text: '全班记录',
+        onClick: () => void openFromCard(klass, 'history'),
+      }),
+    );
+    foot.append(
+      h('button', {
+        class: 'btn btn--primary btn--tall',
+        text: running === null ? '开始自习' : '继续自习',
+        onClick: () => void enterSessionFrom(klass),
+      }),
+    );
+    card.append(foot);
+  }
   return card;
 }
 
@@ -1720,7 +1889,7 @@ function renderSettings() {
   body.push(h('label', { class: 'field' }, [h('span', { class: 'field__label', text: '班级名称' }), nameInput]));
 
   const themeSelect = h('select', { class: 'input' });
-  for (const [value, label] of [['junior', '童趣（小学）'], ['middle', '标准'], ['senior', '沉稳（高中）']]) {
+  for (const [value, label] of [['junior', '童趣（小学）'], ['middle', '标准'], ['senior', '简洁（高中）']]) {
     themeSelect.append(h('option', { value, text: label, ...(klass.theme === value ? { selected: true } : {}) }));
   }
   body.push(h('label', { class: 'field' }, [h('span', { class: 'field__label', text: '主题' }), themeSelect]));

@@ -133,8 +133,11 @@ async function inflateRaw(bytes) {
  *
  * Excel 只认 1900 年以后的时间，这里给所有条目盖同一个当前时刻的 DOS 时间戳 ——
  * 文件在归档里的时间不重要，内容是。
+ *
+ * 一个工作簿本身也是 ZIP，所以批量导出多个班时直接拿它把几份 xlsx 装起来，
+ * 不必再引一个打包库。
  */
-async function zip(entries) {
+export async function buildZip(entries) {
   const encoder = new TextEncoder();
   const now = new Date();
   const dosTime =
@@ -358,7 +361,7 @@ export async function buildWorkbook(sheets) {
     });
   });
 
-  return zip(files);
+  return buildZip(files);
 }
 
 /* ---------- 读工作簿 ---------- */

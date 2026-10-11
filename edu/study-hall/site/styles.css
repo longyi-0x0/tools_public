@@ -59,7 +59,7 @@
   --overtime: #e8404a;
 }
 
-/* 沉稳：高中。格子更紧凑、饱和度更低，一屏能多放几个人。 */
+/* 简洁：高中。格子更紧凑、饱和度更低，一屏能多放几个人。 */
 [data-theme="senior"] {
   --radius: 8px;
   --tile-radius: 8px;
@@ -266,6 +266,30 @@ body {
   font-size: 13px;
 }
 
+/* 收尾那一颗（取消之类）：不跟主行动抢眼 */
+.btn--quiet {
+  background: transparent;
+  border-color: transparent;
+  color: var(--ink-dim);
+}
+
+.btn--quiet:hover {
+  background: color-mix(in srgb, var(--ink) 6%, var(--surface));
+  border-color: transparent;
+  color: var(--ink);
+}
+
+/* 没东西可多选、没东西可导出时得看得出来按不动 */
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.btn:disabled:hover {
+  background: var(--surface);
+  border-color: var(--rule);
+}
+
 .btn--tall {
   padding: 11px 22px;
   font-size: 16px;
@@ -428,7 +452,14 @@ body {
 
 .home__actions {
   display: flex;
+  align-items: center;
   gap: 8px;
+}
+
+.home__picked {
+  color: var(--ink-dim);
+  font-size: 13.5px;
+  font-variant-numeric: tabular-nums;
 }
 
 .cards {
@@ -505,6 +536,54 @@ body {
 .card__foot .btn {
   padding: 6px 13px;
   font-size: 13.5px;
+}
+
+/* ---------- 多选态下的班级卡 ---------- */
+
+/* 整张卡就是勾选框：多选时那些钮会让位，卡片自己得表现出「可以按」 */
+.card--pick {
+  cursor: pointer;
+  user-select: none;
+}
+
+/* 卡头是 space-between 的，多选态下只剩勾选框与标题两个，得靠左排 */
+.card--pick .card__head {
+  justify-content: flex-start;
+}
+
+.card--pick:hover {
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--rule));
+}
+
+.card--pick:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.card.is-picked {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 5%, var(--surface));
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.card__pick {
+  display: inline-flex;
+  margin-top: 2px;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 18px;
+  height: 18px;
+  border: 1.5px solid var(--rule);
+  border-radius: 5px;
+  color: #fff;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.card.is-picked .card__pick {
+  background: var(--accent);
+  border-color: var(--accent);
 }
 
 /* ---------- 自习看板 ---------- */
