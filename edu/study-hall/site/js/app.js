@@ -11,7 +11,15 @@ import { updateDynamic } from './board.js';
 import { endPicking } from './classes.js';
 import * as sound from './sound.js';
 import * as store from './store.js';
-import { commitSession, loadClass, noteActivity, refreshClasses, render, state } from './state.js';
+import {
+  commitSession,
+  endPickingStudents,
+  loadClass,
+  noteActivity,
+  refreshClasses,
+  render,
+  state,
+} from './state.js';
 import { closeOverlay } from './overlays/index.js';
 
 /** 走秒的间隔。500ms 够计时看上去是连续的，也不费。 */
@@ -61,6 +69,10 @@ function maybeGoIdle() {
   // 浮层开着就不切：老师正开着点名层或备注窗，那是他当下在做的事。切了的话看板会从
   // 底下换成大钟，那扇窗还浮在大钟上面 —— 两层各说各的，看着像坏了
   if (state.overlay !== null) {
+    return false;
+  }
+  // 多选中也不切：那会儿老师正一个个勾人，屏幕上换成大钟，勾到一半的手就断了
+  if (state.pickingStudents !== null) {
     return false;
   }
   // 只在正式自习时间里切：点名时屏幕上正等着老师点人，不该自己走掉。
@@ -135,6 +147,12 @@ document.addEventListener('keydown', (event) => {
   if (state.picking !== null) {
     event.preventDefault();
     endPicking();
+    return;
+  }
+  // 看板上的多选同一个道理：这一下退的是勾，不是这一场自习
+  if (state.pickingStudents !== null) {
+    event.preventDefault();
+    endPickingStudents();
   }
 });
 

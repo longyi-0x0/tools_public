@@ -12,6 +12,7 @@
 import {
   PHASE,
   STATUS,
+  activeLeave,
   endSession,
   markLeft,
   markReturned,
@@ -31,7 +32,7 @@ import { download } from './roster.js';
 import { formatSpan, today } from './format.js';
 import { focusIntoOverlay, h, requestFullscreen, root, uid } from './dom.js';
 import { renderClassesPage } from './classes.js';
-import { renderIdleMask, renderSessionMask, resetTileRefs, updateDynamic } from './board.js';
+import { renderIdleMask, renderSessionMask, resetTileRefs, updateDynamic, paintPicking } from './board.js';
 import { renderOverlay, resetOverlayRefs } from './overlays/index.js';
 
 export const state = {
@@ -87,8 +88,21 @@ export const state = {
    * 可能正好是空的，不能拿它当开关。
    */
   rollCallOpen: null,
-  /** 备注浮层当前针对的学生 id */
-  remarkStudentId: null,
+  /**
+   * 备注浮层当前针对的学生 id。
+   *
+   * 是**一串**：点一个格子开浮层就是一个人，看板上多选勾出来的就是好几个人 ——
+   * 一起出去的那几位本来就该从同一刻起算，挑一条备注一次记上。
+   */
+  remarkStudentIds: [],
+  /**
+   * 自习看板上的多选态：`null` 是平时，否则是勾上的学生 id 集合。
+   *
+   * 常见的一幕是「几个人一起出去」—— 一个一个点、一次次挑备注太啰嗦，这里勾上几个
+   * 再挑一次备注就完事。只认**在座**的人：这一手是「记离开」，没来的谈不上离开，
+   * 已经在外面也不必再记一次（见 [`togglePickStudent`]）。
+   */
+  pickingStudents: null,
   /** 冲突导入：同名班级已在库时的待决文件 */
   pendingImport: null,
   /**
@@ -277,6 +291,8 @@ export async function doEndSession() {
   }
   await commitSession(endSession(session, Date.now()));
   state.mask = null;
+  // 多选态跟着这一场一起收：都下课了，回来不该还留着上一轮的勾
+  state.pickingStudents = null;
   render();
   showToast(
     klass === null
@@ -329,6 +345,12 @@ export async function tapStudent(studentId) {
     return;
   }
 
+  // 多选态下点格子是「勾上他」，不是「他离开」—— 勾完了按「记离开」再挑备注
+  if (state.pickingStudents !== null) {
+    togglePickStudent(studentId);
+    return;
+  }
+
   const status = statusOf(session, studentId, state.now, state.klass);
   if (status === STATUS.ABSENT) {
     // 到没到只由「点名」定，看板上点他没这一手 —— 顶一句，别默不作声
@@ -337,7 +359,7 @@ export async function tapStudent(studentId) {
   }
   if (status === STATUS.PRESENT) {
     // 变黄前先问备注：模板可以一条都不选，直接确定就是纯计时
-    state.remarkStudentId = studentId;
+    state.remarkStudentIds = [studentId];
     state.overlay = 'remark';
     render();
     return;
@@ -345,19 +367,77 @@ export async function tapStudent(studentId) {
   await commitSession(markReturned(session, studentId, Date.now()));
 }
 
-/** 备注浮层点「确定」。浮层要收起来，所以这一笔要整块重画。 */
+/** 进看板上的多选态：勾几个在座的人，一次给同一条离开备注。 */
+export function startPickingStudents() {
+  state.pickingStudents = new Set();
+  render();
+}
+
+/** 退多选：勾上的都不算数，谁也没被记上。 */
+export function endPickingStudents() {
+  state.pickingStudents = null;
+  render();
+}
+
+/**
+ * 多选态下勾一个人 / 取消勾。
+ *
+ * 只认在座的人：这一手是「给几个要走的人一起记离开」。勾不动的得顶一句 —— 格子是
+ * 按钮的样子，点下去没反应，老师会以为坏了。
+ */
+export function togglePickStudent(studentId) {
+  if (state.pickingStudents === null) {
+    return;
+  }
+  if (activeLeave(state.session, studentId) !== undefined) {
+    showToast('他已经在外面了，不用再记一次离开');
+    return;
+  }
+  if (state.session.absentIds.includes(studentId)) {
+    showToast('他是没来的，记不了离开');
+    return;
+  }
+  if (state.pickingStudents.has(studentId)) {
+    state.pickingStudents.delete(studentId);
+  } else {
+    state.pickingStudents.add(studentId);
+  }
+  // 只改这一个格子与「已选 N 人」：整块重画会把指头底下那颗节点换掉，连点会丢
+  paintPicking();
+}
+
+/** 勾完了：开备注浮层，挑一条就给这几个人一起记上。 */
+export function beginBatchLeave() {
+  const studentIds = [...(state.pickingStudents ?? [])];
+  if (studentIds.length === 0) {
+    return;
+  }
+  state.remarkStudentIds = studentIds;
+  state.overlay = 'remark';
+  render();
+}
+
+/**
+ * 备注浮层点「确定」。
+ *
+ * 浮层上那几位一起记上同一条备注、同一个时刻 —— 一起出去的人本来就该从同一秒起算，
+ * 各记一个时刻反而是假数据。浮层要收起来，所以这一笔走整块重画。
+ */
 export async function confirmLeave(templateId, remark) {
-  const studentId = state.remarkStudentId;
+  const studentIds = state.remarkStudentIds;
   state.overlay = null;
-  state.remarkStudentId = null;
-  const next = markLeft(state.session, {
-    id: uid('l'),
-    studentId,
-    at: Date.now(),
-    templateId,
-    remark,
-  });
+  state.remarkStudentIds = [];
+  const at = Date.now();
+  let next = state.session;
+  for (const studentId of studentIds) {
+    next = markLeft(next, { id: uid('l'), studentId, at, templateId, remark });
+  }
+  // 多选这一轮到这儿为止：记完就回看板，勾还留着会让人以为没生效
+  state.pickingStudents = null;
   await commitSession(next, true);
+  if (studentIds.length > 1) {
+    showToast(`已给 ${studentIds.length} 人记离开`);
+  }
 }
 
 export async function exportClass(klass) {

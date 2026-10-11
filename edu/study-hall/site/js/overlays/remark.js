@@ -3,6 +3,9 @@
  *
  * 挑一条常用备注就开始计时，还能再补一句话（支持语音输入，那是可选增强）。一条都
  * 不挑也行 —— 那就是默认的黄、不限时，纯粹计个数。
+ *
+ * 看板上多选勾出来的是好几位：这一层照样只问一次，同一条备注、同一个起算时刻落在他们
+ * 每个人身上（一起出去的人本来就该从同一秒算）。
  */
 
 import { h, modalFrame } from '../dom.js';
@@ -12,12 +15,20 @@ import { closeOverlay } from './index.js';
 
 export function renderRemark() {
   const klass = state.klass;
-  const student = klass.students.find((item) => item.id === state.remarkStudentId);
+  const students = state.remarkStudentIds
+    .map((studentId) => klass.students.find((item) => item.id === studentId))
+    .filter((student) => student !== undefined);
   const body = [];
+  // 人一多就只报前三个加个数：把十几个名字铺满一行，反而看不出「一共几位」
+  const names = students.map((student) => student.name);
+  const who = names.length > 3 ? `${names.slice(0, 3).join('、')} 等 ${names.length} 人` : names.join('、');
   body.push(
     h('p', {
       class: 'modal__hint',
-      text: `给「${student?.name ?? ''}」记一次临时离开。挑一条常用备注，他的格子就按那条的颜色走；那条填了时长的话，过了就转红并出声。不挑也行，就是默认的黄、不限时。`,
+      text:
+        names.length > 1
+          ? `给「${who}」记一次临时离开 —— 这几位一起开始计时，同一条备注、同一个时刻。挑一条常用备注，他们的格子就按那条的颜色走；那条填了时长的话，过了就转红并出声。不挑也行，就是默认的黄、不限时。`
+          : `给「${who}」记一次临时离开。挑一条常用备注，他的格子就按那条的颜色走；那条填了时长的话，过了就转红并出声。不挑也行，就是默认的黄、不限时。`,
     }),
   );
 
@@ -115,7 +126,8 @@ export function renderRemark() {
       onClick: () => void confirmLeave(templateId, textarea.value.trim()),
     }),
   );
-  return modalFrame('临时离开', body, foot, { onClose: closeOverlay });
+  const title = names.length > 1 ? `临时离开 · ${names.length} 人` : '临时离开';
+  return modalFrame(title, body, foot, { onClose: closeOverlay });
 }
 
 let listening = null;

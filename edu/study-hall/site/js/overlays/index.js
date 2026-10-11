@@ -27,7 +27,7 @@ export function openOverlay(name) {
  */
 export function closeOverlay() {
   state.overlay = null;
-  state.remarkStudentId = null;
+  state.remarkStudentIds = [];
   state.pendingNewClass = null;
   state.newClassName = null;
   // 点名层攒着的那一趟：收窗就是不算数，连同它一起清掉（层里没往会话上写过东西）。

@@ -22,14 +22,17 @@ import {
   themeColumns,
 } from './domain.js';
 import {
+  beginBatchLeave,
   doEndSession,
   doPause,
   doResume,
   doRestart,
+  endPickingStudents,
   markReturnedFromIdle,
   noteActivity,
   render,
   showToast,
+  startPickingStudents,
   state,
   tapStudent,
 } from './state.js';
@@ -43,8 +46,20 @@ const timerText = new Map();
 
 const metaText = new Map();
 
+/** 多选态下每格的勾选框，键与学生 id 同 [`tiles`]。 */
+const pickMarks = new Map();
+
+/** 多选态那一条里的「已选 N 人」与「记离开」，由 [`paintPicking`] 定点改。 */
+let pickedCountNode = null;
+
+let leaveButtonNode = null;
+
 /** 一句话说清当前这一相要老师做什么。 */
 function phaseHint(klass, session) {
+  // 多选态是「老师正勾着人」的一刻，这一句得说清勾完往哪按
+  if (state.pickingStudents !== null) {
+    return '多选中：点一下在座的人就勾上他，可以一次勾好几个；勾完按「记离开」挑一条备注，他们从同一刻起算。按「取消多选」退出。';
+  }
   if (session === null) {
     return '按「开始自习」进入计时；想点名就按「点名」。';
   }
@@ -85,6 +100,8 @@ export function renderSessionMask() {
           title: running ? '收起看板，自习继续计时' : '收起看板，回到班级列表',
           onClick: () => {
             state.mask = null;
+            // 多选态跟着看板一起收：回来时那几颗勾还在，反而像没退出去
+            state.pickingStudents = null;
             render();
           },
         }),
@@ -226,6 +243,13 @@ function renderControls() {
   hint.dataset.hint = '1';
   bar.append(hint);
 
+  // 多选态下那一排动作钮全让位 —— 那时按格子是「选他」，暂停 / 点名 / 结束都不该待在
+  // 手边（与班级卡多选时钮让位是同一个道理）
+  if (state.pickingStudents !== null) {
+    bar.append(renderPickBar());
+    return bar;
+  }
+
   // 主行动、普通行动、低频破坏性各占一档：原来全是 btn--tall，一排按钮一样重，
   // 手快就会按到「结束并重开」上。
   // 走到这里 session 一定是在跑的那一场：结束一场就收起看板（见 `doEndSession`），
@@ -259,6 +283,14 @@ function renderControls() {
   buttons.append(
     h('button', {
       class: 'btn btn--tall',
+      text: '多选',
+      title: '勾几个在座的人，一次给他们记同一条离开备注',
+      onClick: () => startPickingStudents(),
+    }),
+  );
+  buttons.append(
+    h('button', {
+      class: 'btn btn--tall',
       text: '结束自习',
       title: '这一场定格，回到班级列表',
       onClick: () => void doEndSession(),
@@ -266,6 +298,38 @@ function renderControls() {
   );
   buttons.append(quietGroup([restartButton(), idleButton(), muteButton()]));
   bar.append(buttons);
+  return bar;
+}
+
+/**
+ * 多选态那条钮：选了几个、记离开、退出。
+ *
+ * 「记离开」是这一态里唯一的出口，所以它是主行动，一颗没勾时按住不让按（见
+ * `paintPicking`）—— 那时按下去只会开一层空的备注窗。
+ */
+function renderPickBar() {
+  const bar = h('div', { class: 'controls__buttons' });
+  pickedCountNode = h('span', {
+    class: 'controls__picked',
+    text: `已选 ${state.pickingStudents.size} 人`,
+  });
+  bar.append(pickedCountNode);
+  leaveButtonNode = h('button', {
+    class: 'btn btn--primary btn--tall',
+    text: '记离开',
+    title: '挑一条备注，给勾上的这几位一起记上',
+    disabled: state.pickingStudents.size === 0 ? '' : undefined,
+    onClick: () => beginBatchLeave(),
+  });
+  bar.append(leaveButtonNode);
+  bar.append(
+    h('button', {
+      class: 'btn btn--tall',
+      text: '取消多选',
+      title: '勾上的都不算数，谁也不会被记上',
+      onClick: () => endPickingStudents(),
+    }),
+  );
   return bar;
 }
 
@@ -385,11 +449,20 @@ function renderClock() {
 }
 
 function renderTile(student) {
+  const picking = pickingTile(student.id);
+  const picked = picking && state.pickingStudents.has(student.id);
   const tile = h('button', {
-    class: 'tile',
+    class: `tile${picking ? ' tile--pick' : ''}${picked ? ' is-picked' : ''}`,
     dataset: { studentId: student.id },
     title: tileTitle(student),
   });
+  if (picking) {
+    // 多选态下这一格是勾选框：勾没勾得上报给读屏，别只靠那颗小勾的颜色
+    tile.setAttribute('aria-pressed', picked ? 'true' : 'false');
+    const mark = h('span', { class: 'tile__pick', 'aria-hidden': 'true', text: picked ? '✓' : '' });
+    pickMarks.set(student.id, mark);
+    tile.append(mark);
+  }
   tile.append(h('span', { class: 'tile__name', text: student.name }));
   const meta = h('span', { class: 'tile__meta', text: seatLine(student) });
   tile.append(meta);
@@ -399,6 +472,46 @@ function renderTile(student) {
   timerText.set(student.id, timer);
   tile.addEventListener('click', () => void tapStudent(student.id));
   return tile;
+}
+
+/**
+ * 这一格在多选态下要不要长勾选框。
+ *
+ * 只认在座的人：多选是为了「给几个要走的人一起记离开」，没来的、已经在外面的人都勾
+ * 不动（点上去由 `togglePickStudent` 顶一句），那几格就不该长出一颗按不了的勾。
+ */
+function pickingTile(studentId) {
+  if (state.pickingStudents === null || state.session === null) {
+    return false;
+  }
+  return statusOf(state.session, studentId, state.now, state.klass) === STATUS.PRESENT;
+}
+
+/**
+ * 多选态那一层：勾选框、已选人数、以及「记离开」能不能按。
+ *
+ * 点一下只改那一个格子与那两个数 —— 整块重画会把指头底下那颗节点换掉（点击事件还在
+ * 它身上），连点就会丢。
+ */
+export function paintPicking() {
+  const picking = state.pickingStudents !== null;
+  const picked = picking ? state.pickingStudents.size : 0;
+  for (const [studentId, mark] of pickMarks) {
+    const on = picking && state.pickingStudents.has(studentId);
+    mark.textContent = on ? '✓' : '';
+    const tile = tiles.get(studentId);
+    if (tile !== undefined) {
+      tile.classList.toggle('is-picked', on);
+      tile.setAttribute('aria-pressed', on ? 'true' : 'false');
+    }
+  }
+  if (pickedCountNode !== null) {
+    pickedCountNode.textContent = `已选 ${picked} 人`;
+  }
+  if (leaveButtonNode !== null) {
+    // 一个都没勾时按住不让按：按下去只会开一层空的备注窗
+    leaveButtonNode.disabled = picked === 0;
+  }
 }
 
 /**
@@ -595,4 +708,7 @@ export function resetTileRefs() {
   tiles.clear();
   timerText.clear();
   metaText.clear();
+  pickMarks.clear();
+  pickedCountNode = null;
+  leaveButtonNode = null;
 }
