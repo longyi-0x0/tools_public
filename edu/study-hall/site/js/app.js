@@ -537,6 +537,16 @@ async function exportClass(klass) {
   download(`${klass.name}.xlsx`, bytes);
 }
 
+/** 删掉一个班（连同它的全部记录）。问一句，确认了才动手。 */
+async function removeClass(klass) {
+  if (!window.confirm(`删除「${klass.name}」及其全部记录？这一步不能撤回。`)) {
+    return false;
+  }
+  await store.deleteClass(klass.id);
+  await refreshClasses();
+  return true;
+}
+
 /** 读一个整班文件。同名时交给界面问一句。 */
 async function importClassFile(file, overwrite) {
   const bytes = new Uint8Array(await file.arrayBuffer());
@@ -743,22 +753,8 @@ function renderClassCard(klass) {
   head.append(title);
 
   const tools = h('div', { class: 'card__tools' });
-  tools.append(h('button', { class: 'btn', text: '导出', onClick: () => void exportClass(klass) }));
   tools.append(
     h('button', { class: 'btn', text: '设置', onClick: () => void openFromCard(klass, 'settings') }),
-  );
-  tools.append(
-    h('button', {
-      class: 'btn btn--danger',
-      text: '删除',
-      onClick: async () => {
-        if (window.confirm(`删除「${klass.name}」及其全部记录？这一步不能撤回。`)) {
-          await store.deleteClass(klass.id);
-          await refreshClasses();
-          render();
-        }
-      },
-    }),
   );
   head.append(tools);
   card.append(head);
@@ -1588,6 +1584,28 @@ function renderSettings() {
         text: klass.students.length === 0 ? '还没有学生。' : klass.students.map((item) => item.name).join('、'),
       }),
       rosterInput,
+    ]),
+  );
+
+  // 删班是「平时的资料动作」，放在设置的最后一行 —— 不跟保存挤在底栏里
+  const danger = h('button', {
+    class: 'btn btn--danger',
+    text: '删除这个班',
+    onClick: async () => {
+      if (await removeClass(klass)) {
+        state.klass = null;
+        state.session = null;
+        state.sessions = [];
+        state.overlay = null;
+        showToast(`「${klass.name}」已删除`);
+      }
+    },
+  });
+  body.push(
+    h('div', { class: 'field field--danger' }, [
+      h('span', { class: 'field__label', text: '删除' }),
+      h('span', { class: 'field__note', text: '连同这个班的全部记录一起删掉，不能撤回。' }),
+      danger,
     ]),
   );
 

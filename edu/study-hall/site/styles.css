@@ -915,6 +915,19 @@ body {
   flex-wrap: wrap;
 }
 
+/* 删除是末尾那一手：画一条线把它与上面的设置隔开 */
+.field--danger {
+  gap: 4px;
+  margin-top: 6px;
+  padding-top: 14px;
+  border-top: 1px solid var(--rule);
+}
+
+.field--danger .btn {
+  align-self: flex-start;
+  margin-top: 4px;
+}
+
 .input {
   width: 100%;
   padding: 8px 11px;
