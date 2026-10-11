@@ -1537,11 +1537,22 @@ body {
   color: inherit;
   background: var(--present);
   cursor: pointer;
-  transition: background-color 120ms ease, color 120ms ease;
+  transition: background-color 120ms ease, color 120ms ease, box-shadow 120ms ease;
 }
 
 .rollcall__tile:hover {
   border-color: color-mix(in srgb, var(--ink) 24%, transparent);
+}
+
+/*
+ * 自动点名正在念的那一格，外面描一圈。
+ *
+ * 两圈（贴身一圈纸色 + 外面一圈墨色）而不是一圈单色：这一格底下是蓝是灰都可能有，
+ * 单色压在格子上总有一头看不清；垫一圈纸色像把它从排好的格子里抠出来，两种底色上都认得出。
+ */
+.rollcall__cell.is-saying .rollcall__tile {
+  border-color: transparent;
+  box-shadow: 0 0 0 2px var(--paper), 0 0 0 4px var(--ink);
 }
 
 .rollcall__cell.is-absent .rollcall__tile {

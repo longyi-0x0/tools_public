@@ -77,6 +77,20 @@ function announce(index) {
   return true;
 }
 
+/**
+ * 念到谁，就在那一格上描一圈边。
+ *
+ * 老师听名字抬头对名单，得一眼看见「现在念的是这一格」—— 光靠那行「3 / 6」得自己数。
+ * 只改前后两个格子（不是重画整块）：几十号人，每念一个重画一遍会把焦点与滚位都抖掉。
+ */
+function paintAutoMark() {
+  const students = state.klass?.students ?? [];
+  const saying = auto.index >= 0 && auto.index < students.length ? students[auto.index].id : null;
+  for (const [studentId, cell] of rollCells) {
+    cell.classList.toggle('is-saying', studentId === saying);
+  }
+}
+
 /** 排下一个。走到最后一名就停下，不绕回去 —— 再绕一圈会把刚点过的名字又喊一遍。 */
 function scheduleAuto() {
   window.clearTimeout(auto.timer);
@@ -155,8 +169,9 @@ function setAutoMs(ms) {
 /**
  * 把自动点名那一栏按当前状态画一遍。
  *
- * 只有这一栏随状态变（按钮的字、第几个/共几个），名字格子的脸由 `updateRollCall` 管 ——
- * 两边各管各的，互不重画。
+ * 只有这一栏随状态变（按钮的字、第几个/共几个），名字格子的灰蓝由 `updateRollCall` 管 ——
+ * 两边各管各的，互不重画。念到哪一格那一圈边也跟着这里走：它同样是「自动点名走到哪儿了」
+ * 的一件事（见 [`paintAutoMark`]）。
  */
 function paintAuto() {
   if (autoNodes === null) {
@@ -179,6 +194,7 @@ function paintAuto() {
   next.disabled = auto.index >= students.length - 1;
   position.textContent =
     auto.index < 0 ? `共 ${students.length} 人` : `${auto.index + 1} / ${students.length}`;
+  paintAutoMark();
 }
 
 /**
