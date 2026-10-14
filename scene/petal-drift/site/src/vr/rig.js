@@ -30,6 +30,8 @@ export class VRRig {
     this.eye = new THREE.Vector3();
     this.freePos = new THREE.Vector3();
     this._baseSpace = null;
+    /** Set when the runtime refuses reference-space translation; the rig then stops trying. */
+    this.spaceError = '';
     this._q = new THREE.Quaternion();
     this._e = new THREE.Euler(0, 0, 0, 'YXZ');
     this._fwd = new THREE.Vector3(0, 0, -1);
@@ -48,6 +50,7 @@ export class VRRig {
   attach(renderer) {
     this._baseSpace = renderer.xr.getReferenceSpace() || null;
     this._lastOffset.set(NaN, NaN, NaN);
+    this.spaceError = '';
   }
 
   detach() {
@@ -138,11 +141,21 @@ export class VRRig {
       // skip the alloc + runtime call when we have not actually moved
       if (!this._v3.equals(this._lastOffset)) {
         this._lastOffset.copy(this._v3);
-        const t = new XRRigidTransform(
-          { x: this._v3.x, y: this._v3.y, z: this._v3.z },
-          { x: 0, y: 0, z: 0, w: 1 },
-        );
-        renderer.xr.setReferenceSpace(this._baseSpace.getOffsetReferenceSpace(t));
+        // Moving the floor anchor is a comfort optimisation, not the render path. If this
+        // runtime refuses it, say so once and keep drawing from wherever the head already is —
+        // a throw here would abort the frame before `render()`, which reads as a black world.
+        if (!this.spaceError) {
+          try {
+            const t = new XRRigidTransform(
+              { x: this._v3.x, y: this._v3.y, z: this._v3.z },
+              { x: 0, y: 0, z: 0, w: 1 },
+            );
+            renderer.xr.setReferenceSpace(this._baseSpace.getOffsetReferenceSpace(t));
+          } catch (e) {
+            this.spaceError = (e && e.message) || String(e);
+            window.__showErr(`[VR] 移动参照空间失败：${this.spaceError}`);
+          }
+        }
       }
     }
   }

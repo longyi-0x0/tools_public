@@ -667,14 +667,29 @@ export async function boot() {
     };
 
     last = performance.now();
+    vrStats = { frames: 0, calls: 0, tris: 0, error: '', notes: [] };
     renderer.xr.setAnimationLoop(() => {
       const now = performance.now();
       let dt = (now - last) / 1000;
       last = now;
       if (!(dt > 0)) dt = 1 / 90;
-      if (!paused) step(Math.min(dt, 1 / 30));
+      // A throw anywhere in the simulation must not cost us the frame: an exception here
+      // would skip `render()` too, and the eye framebuffer would just stay black — while the
+      // DOM error strip is hidden for the whole session, so nothing would say why.
+      try {
+        if (!paused) step(Math.min(dt, 1 / 30));
+      } catch (e) {
+        if (!vrStats.error) {
+          vrStats.error = (e && e.message) || String(e);
+          window.__showErr(`[VR] 每帧更新出错：${(e && e.stack) || e}`);
+        }
+      }
       // three supplies the ArrayCamera and the per-eye viewports at this call
       renderer.render(scene, cam.camera);
+      const info = renderer.info.render;
+      vrStats.frames++;
+      vrStats.calls = info.calls;
+      vrStats.tris = info.triangles;
     });
 
     setVRChrome(true);
@@ -693,11 +708,25 @@ export async function boot() {
     petals.speedScale = 1;
     setVRChrome(false);
     last = performance.now();
+    // Nothing composed inside the session, so this is the only moment the session can be
+    // reported. Frame count and draw calls separate "nothing was drawn" from "drawn but
+    // wrong": the eye framebuffer starts black, so zero calls is exactly what black looks like.
+    if (vrStats) {
+      const { frames, calls, tris, error } = vrStats;
+      const dark = calls === 0 || tris === 0;
+      vrNote = `上次会话 ${(frames / 60).toFixed(0)}s 左右：${frames} 帧 · 绘制 ${calls} · 三角 ${(tris / 1000).toFixed(0)}k`
+        + (error ? ` · 更新出错：${error}` : '');
+      diag.notes.push(`vr session: frames=${frames} calls=${calls} tris=${tris} error=${error || 'none'}`);
+      if (dark || error) window.__showErr(`VR 会话：${vrNote}`);
+    }
     if (auto) loop();
   }
 
   // the runtime can end the session from its own system UI; keep our state in step
   vrSession.onSessionEnd = () => { if (vrActive) exitVR(); };
+
+  /** What the last immersive session actually drew. Read after exit — nothing is visible inside. */
+  let vrStats = null;
 
   let vrSupported = false;
   // Head-mounted browsers have no devtools worth opening, and the entry button is hidden by
