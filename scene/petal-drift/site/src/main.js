@@ -26,6 +26,23 @@ import { VRSky } from './vr/skybox.js';
 
 const diag = window.__diag || (window.__diag = { errors: [], shaderErrors: [], notes: [] });
 
+/**
+ * Probe failed — say which link is missing. `boot()` builds the scene before probing, so a
+ * thrown error (no WebGL2, a failed shader) shows up in the red overlay instead; reaching
+ * here means the scene is up and only the headset side said no.
+ */
+function vrUnavailableWhy() {
+  if (typeof navigator === 'undefined' || !navigator.xr) return '这个浏览器没有 navigator.xr';
+  if (!window.isSecureContext) return '不是安全上下文（要 https）';
+  const framed = window.self !== window.top;
+  let policy = '查不到';
+  const pol = document.permissionsPolicy || document.featurePolicy;
+  if (pol && typeof pol.allowsFeature === 'function') {
+    try { policy = pol.allowsFeature('xr-spatial-tracking') ? '放行' : '被挡住'; } catch (e) { policy = '查询出错'; }
+  }
+  return `设备未报告 immersive-vr（框架内 ${framed ? '是' : '否'} · 权限策略 ${policy}）`;
+}
+
 function installShaderDiagnostics(renderer) {
   renderer.debug.checkShaderErrors = true;
   renderer.debug.onShaderError = (gl, program, glVertex, glFragment) => {
@@ -420,7 +437,8 @@ export async function boot() {
         `草叶 ${(grass.count / 1000).toFixed(0)}k · 花 ${flowers.total}<br>` +
         `绘制 ${renderer.info.render.calls} · 三角 ${(renderer.info.render.triangles / 1000).toFixed(0)}k<br>` +
         `渲染倍率 ${(renderer.getPixelRatio()).toFixed(2)} · 云步进 ${sky.steps}<br>` +
-        `风 ${U.uWindStrength.value.toFixed(2)} · 花瓣 ${petals.count}`,
+        `风 ${U.uWindStrength.value.toFixed(2)} · 花瓣 ${petals.count}<br>` +
+        `WebXR ${vrNote}`,
       );
     }
   }
@@ -644,12 +662,18 @@ export async function boot() {
   vrSession.onSessionEnd = () => { if (vrActive) exitVR(); };
 
   let vrSupported = false;
+  // Head-mounted browsers have no devtools worth opening, and the entry button is hidden by
+  // design when the probe fails — so the reason goes into the settings panel's 状态 block.
+  let vrNote = '探测中…';
   vrSession.probe().then((ok) => {
     vrSupported = ok;
     const btn = document.getElementById('vrbtn');
     if (btn) btn.hidden = !ok;
+    vrNote = ok ? '可用' : `不可用：${vrUnavailableWhy()}`;
     diag.notes.push(ok ? 'webxr immersive-vr available' : 'webxr immersive-vr unavailable');
-  }).catch(() => { /* non-secure context, or no XR at all */ });
+  }).catch((e) => {
+    vrNote = `不可用：探测出错（${(e && e.message) || e}）`;
+  });
 
   window.__game.vr = {
     enter: enterVR,
