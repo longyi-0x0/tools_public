@@ -146,6 +146,10 @@ export async function boot() {
   if (params.has('grass')) settings.grassDensity = Math.max(0.05, Math.min(2, Number(params.get('grass')) || 1));
   if (params.has('steps')) settings.cloudSteps = Math.max(8, Math.min(96, Number(params.get('steps')) || 32));
   const startWeather = params.get('w') && PRESETS.some((p) => p.key === params.get('w')) ? params.get('w') : 'dawn';
+  // Diagnostic probe: `?vrclear=1` paints the eye framebuffer magenta while a session is open.
+  // Magenta on the headset means the runtime *is* presenting what we clear and the scene is
+  // what is missing; black again means nothing of ours reaches the eyes at all.
+  const vrClearProbe = params.has('vrclear');
   const q0 = QUALITY[settings.quality] || QUALITY.high;
 
   U.uNoiseTex.value = makeNoiseTexture(20240521);
@@ -648,8 +652,11 @@ export async function boot() {
     }
 
     vrActive = true;
+    // The XR animation loop drives `step()` from here on. Restarting the 2D rAF loop as well
+    // would run the simulation twice a frame and re-bake the cloud cube mid-session.
     if (rafId) { cancelAnimationFrame(rafId); rafId = 0; }
 
+    if (vrClearProbe) renderer.setClearColor(0xff00ff, 1);
     setSceneFog(fogMaterials, true);
     vrSky.setVisible(true);
     scene.add(vrSky.bg);
@@ -707,6 +714,7 @@ export async function boot() {
     vrRig.detach();
     petals.speedScale = 1;
     setVRChrome(false);
+    if (vrClearProbe) renderer.setClearColor(0x000000, 1);
     last = performance.now();
     // Nothing composed inside the session, so this is the only moment the session can be
     // reported. Frame count and draw calls separate "nothing was drawn" from "drawn but
@@ -714,9 +722,19 @@ export async function boot() {
     if (vrStats) {
       const { frames, calls, tris, error } = vrStats;
       const dark = calls === 0 || tris === 0;
+      // Eyes and eye-framebuffer size come from the runtime: one eye, or a 0×0 target, would
+      // explain a black view that has nothing to do with our shaders.
+      let eyes = '?', fb = '?';
+      try {
+        eyes = String(renderer.xr.getCamera().cameras.length);
+        const rt = renderer.xr.getRenderTarget();
+        if (rt) fb = `${rt.width}×${rt.height}`;
+      } catch (e) { /* runtime already torn the session down */ }
       vrNote = `上次会话 ${(frames / 60).toFixed(0)}s 左右：${frames} 帧 · 绘制 ${calls} · 三角 ${(tris / 1000).toFixed(0)}k`
+        + ` · 眼睛 ${eyes} · 眼缓冲 ${fb}`
+        + (vrClearProbe ? ' · 清屏色探针已开' : '')
         + (error ? ` · 更新出错：${error}` : '');
-      diag.notes.push(`vr session: frames=${frames} calls=${calls} tris=${tris} error=${error || 'none'}`);
+      diag.notes.push(`vr session: frames=${frames} calls=${calls} tris=${tris} eyes=${eyes} fb=${fb} error=${error || 'none'}`);
       if (dark || error) window.__showErr(`VR 会话：${vrNote}`);
     }
     if (auto) loop();
