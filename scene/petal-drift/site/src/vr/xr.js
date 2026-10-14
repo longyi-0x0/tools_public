@@ -13,6 +13,8 @@ export class XRSession {
     this.renderer = renderer;
     this.session = null;
     this.supported = false;
+    /** Why the last `enter()` refused. The DOM has nowhere else to read it from. */
+    this.lastError = '';
     this.active = false;
     /** @type {'local-floor'|'local'} */
     this.spaceType = 'local-floor';
@@ -47,18 +49,43 @@ export class XRSession {
     return this.supported;
   }
 
-  async enter() {
-    if (!this.supported || this.active) return null;
-    if (typeof navigator.xr.requestSession !== 'function') return null;
+  /**
+   * Ask for an immersive session.
+   *
+   * `force` skips the capability check: some runtimes answer "no immersive-vr device" until
+   * a session is actually requested, and a headset has no console to read a refusal from,
+   * so the button always lets the request through and `lastError` carries the reply.
+   */
+  async enter({ force = false } = {}) {
+    this.lastError = '';
+    if (this.active) {
+      this.lastError = '已经在 VR 会话里';
+      return null;
+    }
+    if (!force && !this.supported) {
+      this.lastError = '能力探测说这个运行时没有 immersive-vr 设备';
+      return null;
+    }
+    if (typeof navigator === 'undefined' || !navigator.xr || typeof navigator.xr.requestSession !== 'function') {
+      this.lastError = '这个浏览器没有 navigator.xr.requestSession';
+      return null;
+    }
 
     let session;
     try {
       session = await navigator.xr.requestSession('immersive-vr', {
         optionalFeatures: ['local-floor', 'bounded-floor', 'hand-tracking', 'layers'],
       });
-    } catch (e) {
+    } catch (first) {
       // 'layers' or 'hand-tracking' being rejected should not cost us the session
-      session = await navigator.xr.requestSession('immersive-vr');
+      try {
+        session = await navigator.xr.requestSession('immersive-vr');
+      } catch (e) {
+        this.lastError = `requestSession 被拒：${(e && e.message) || e}`;
+        if (e && e.name) this.lastError += `（${e.name}）`;
+        else if (first && first.name) this.lastError += `（${first.name}）`;
+        return null;
+      }
     }
 
     this.session = session;

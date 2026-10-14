@@ -604,10 +604,18 @@ export async function boot() {
     }
   }
 
-  async function enterVR() {
+  async function enterVR({ force = false } = {}) {
     if (vrActive) return null;
-    const session = await vrSession.enter();
-    if (!session) return null;
+    const session = await vrSession.enter({ force });
+    if (!session) {
+      // The button is always on screen, so a dead click has to say why — on a headset the
+      // error strip is the only place the user can read it.
+      const why = vrSession.lastError || vrNote;
+      window.__showErr(`进入 VR 失败：${why}`);
+      diag.notes.push(`enter vr failed: ${why}`);
+      if (!force) vrNote = `不可用：${why}`;
+      return null;
+    }
 
     vrActive = true;
     if (rafId) { cancelAnimationFrame(rafId); rafId = 0; }
@@ -667,12 +675,18 @@ export async function boot() {
   let vrNote = '探测中…';
   vrSession.probe().then((ok) => {
     vrSupported = ok;
-    const btn = document.getElementById('vrbtn');
-    if (btn) btn.hidden = !ok;
+    // The button stays on screen either way — the probe only feeds the status line.
     vrNote = ok ? '可用' : `不可用：${vrUnavailableWhy()}`;
     diag.notes.push(ok ? 'webxr immersive-vr available' : 'webxr immersive-vr unavailable');
   }).catch((e) => {
     vrNote = `不可用：探测出错（${(e && e.message) || e}）`;
+  });
+
+  // Clicking always tries to enter, even when the probe said no: some runtimes report no
+  // immersive-vr device until a session is asked for, and a headset has nowhere to print a
+  // console. Failure therefore lands in the error strip with the reason.
+  document.getElementById('vrbtn')?.addEventListener('click', () => {
+    void enterVR({ force: true });
   });
 
   window.__game.vr = {

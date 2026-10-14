@@ -71,8 +71,10 @@
          display: grid; place-items: center; font-size: 15px; backdrop-filter: blur(8px); }
   #cog:hover { background: rgba(9,13,17,.8); }
 
-  /* VR entry. Hidden by default; main.js un-hides it only when the runtime actually
-     reports an immersive-vr device, so we never advertise a mode this device cannot enter. */
+  /* VR entry. Always on screen: a headset is exactly where you cannot open a console, and the
+     capability probe is not trustworthy enough to be the only way in (some runtimes report no
+     immersive-vr device until a session is asked for). Clicking it always tries to enter and
+     reports the failure in the error strip. */
   #vrbtn { position: fixed; right: 58px; top: 14px; z-index: 9; height: 34px; padding: 0 14px;
            border-radius: 999px; background: rgba(9,13,17,.55); border: 1px solid rgba(246,241,230,.18);
            color: var(--ink); cursor: pointer; font-size: 12px; letter-spacing: .1em;
@@ -123,7 +125,7 @@
 </div>
 
 <button id="cog" title="设置 (H)">☰</button>
-<button id="vrbtn" hidden title="进入 VR（需要支持 WebXR 的头显）">进入 VR</button>
+<button id="vrbtn" title="进入 VR（需要支持 WebXR 的头显；进不去时页面底部会说明原因）">进入 VR</button>
 
 <aside id="panel">
   <h2>Petal Drift</h2>
