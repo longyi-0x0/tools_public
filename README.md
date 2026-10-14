@@ -4,6 +4,8 @@
 
 `edu/` 下是给老师用的工具：一个班的日常（当前有 `study-hall` 自习点名）。
 
+`scene/` 下是可玩可看的场景（当前有 `petal-drift` 花语）。
+
 `test/` 下是验证发布链路的测试工具：一条外链 `link-public`，一张自检页 `self-check-public`；它们只验证链路，不是日常使用的工具。
 
 仓库根目录的 `toolbox.json` 定义顶层分组。新增分组时，在 `children` 中加入直接子目录名，并在该目录放置自己的 `toolbox.json`；分组可以递归嵌套。工具目录通过 `type: "tool"` 描述：
