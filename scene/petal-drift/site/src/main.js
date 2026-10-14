@@ -27,12 +27,41 @@ import { VRSky } from './vr/skybox.js';
 const diag = window.__diag || (window.__diag = { errors: [], shaderErrors: [], notes: [] });
 
 /**
- * Probe failed — say which link is missing. `boot()` builds the scene before probing, so a
- * thrown error (no WebGL2, a failed shader) shows up in the red overlay instead; reaching
- * here means the scene is up and only the headset side said no.
+ * Everything the headset side of WebXR looks like from inside this page, as one line.
+ *
+ * A head-mounted browser has no devtools, so this is the only way to tell "the API is not
+ * there at all" from "the API is there but this runtime says no device" — and which frame
+ * the page is in, which matters because a runtime may expose WebXR only to a top-level
+ * document. `boot()` builds the scene before probing, so a thrown error (no WebGL2, a failed
+ * shader) shows in the red overlay instead of here; reaching here means the scene is up.
  */
+function webxrReport() {
+  const bits = [];
+  const xr = typeof navigator !== 'undefined' ? navigator.xr : undefined;
+  bits.push(`navigator.xr：${xr ? '有' : '没有'}`);
+  if (xr) {
+    const members = [];
+    for (const k in xr) members.push(k);
+    bits.push(`成员：${members.length ? members.join('/') : '（列不出来）'}`);
+    bits.push(`requestSession：${typeof xr.requestSession === 'function' ? '有' : '没有'}`);
+    bits.push(`isSessionSupported：${typeof xr.isSessionSupported === 'function' ? '有' : '没有'}`);
+  }
+  bits.push(`window.XRSystem：${typeof window.XRSystem}`);
+  bits.push(`安全上下文：${window.isSecureContext ? '是' : '否'}`);
+  bits.push(`框架内：${window.self !== window.top ? '是' : '否'}`);
+  const pol = document.permissionsPolicy || document.featurePolicy;
+  if (pol && typeof pol.allowsFeature === 'function') {
+    try { bits.push(`XR 权限策略：${pol.allowsFeature('xr-spatial-tracking') ? '放行' : '被挡住'}`); } catch (e) { bits.push('XR 权限策略：查询出错'); }
+  }
+  bits.push(`UA：${navigator.userAgent}`);
+  return bits.join(' · ');
+}
+
+/** The short reason for the status line. */
 function vrUnavailableWhy() {
-  if (typeof navigator === 'undefined' || !navigator.xr) return '这个浏览器没有 navigator.xr';
+  const xr = typeof navigator !== 'undefined' ? navigator.xr : undefined;
+  if (!xr) return '这个浏览器没有 navigator.xr';
+  if (typeof xr.requestSession !== 'function') return 'navigator.xr 上没有 requestSession';
   if (!window.isSecureContext) return '不是安全上下文（要 https）';
   const framed = window.self !== window.top;
   let policy = '查不到';
@@ -439,8 +468,7 @@ export async function boot() {
         `渲染倍率 ${(renderer.getPixelRatio()).toFixed(2)} · 云步进 ${sky.steps}<br>` +
         `风 ${U.uWindStrength.value.toFixed(2)} · 花瓣 ${petals.count}<br>` +
         `WebXR ${vrNote}`,
-      );
-    }
+      );    }
   }
 
   let auto = true;
@@ -611,8 +639,10 @@ export async function boot() {
       // The button is always on screen, so a dead click has to say why — on a headset the
       // error strip is the only place the user can read it.
       const why = vrSession.lastError || vrNote;
-      window.__showErr(`进入 VR 失败：${why}`);
-      diag.notes.push(`enter vr failed: ${why}`);
+      // The full report goes along: on a headset this strip is the only readable diagnostic,
+      // and the report is what tells "API missing" apart from "runtime said no".
+      window.__showErr(`进入 VR 失败：${why}\n${webxrReport()}`);
+      diag.notes.push(`enter vr failed: ${why} | ${webxrReport()}`);
       if (!force) vrNote = `不可用：${why}`;
       return null;
     }
