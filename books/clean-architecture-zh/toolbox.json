@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "type": "tool",
+  "id": "clean-architecture-zh",
+  "name": "整洁架构（中文）",
+  "description": "Robert C. Martin《Clean Architecture》中文译本在线阅读。",
+  "kind": "web",
+  "entry": "https://geekdaxue.co/read/Clean-Architecture-zh/docs-README.md",
+  "capabilities": []
+}

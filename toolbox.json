@@ -2,5 +2,7 @@
   "schemaVersion": 1,
   "type": "folder",
   "name": "公开工具",
-  "children": ["edu", "scene", "test"]
+  "children": ["books", "dev", "edu", "scene", "test"]
 }
+
+

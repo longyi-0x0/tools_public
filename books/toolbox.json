@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "type": "folder",
+  "name": "书籍",
+  "children": ["clean-architecture-zh"]
+}

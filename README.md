@@ -2,6 +2,10 @@
 
 这是工具箱的公开工具仓库。
 
+`books/` 下是在线书籍：当前有 `clean-architecture-zh`（《整洁架构》中文）。
+
+`dev/` 下是开发向工具：`html-css-js`（HTML/CSS/JS 在线编辑与预览）、`plantuml`（PlantUML）、`react-lab`（React 演练场）、`regex-tester`（正则表达式在线测试）。
+
 `edu/` 下是给老师用的工具：一个班的日常（当前有 `study-hall` 自习点名）。
 
 `scene/` 下是可玩可看的场景（当前有 `petal-drift` 花语）。
