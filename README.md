@@ -1,20 +1,37 @@
 # tools_public（公开工具源）
 
-这是工具箱的公开工具仓库。
+这是工具箱的公开工具仓库。工具放在 `tools/` 下一层，不再用目录表达分类；分类由壳程序的标签树决定，工具只声明 `tags`。
 
-`books/` 下是在线书籍：当前有 `clean-architecture-zh`（《整洁架构》中文）。
+## 布局
 
-`dev/` 下是开发向工具：`html-css-js`（HTML/CSS/JS 在线编辑与预览）、`plantuml`（PlantUML）、`react-lab`（React 演练场）、`regex-tester`（正则表达式在线测试）。
+```text
+.
+├── README.md
+└── tools/
+    ├── plantuml.tool.json          # web 简便：单文件
+    ├── study-hall/                 # h5 / 带附属文件：目录
+    │   ├── tool.json
+    │   ├── README.md               # 可选，不发布
+    │   └── site/
+    │       └── index.html
+    └── …
+```
 
-`edu/` 下是给老师用的工具：一个班的日常（当前有 `study-hall` 自习点名）。
+- **单文件** `tools/<id>.tool.json`：仅 `kind: "web"`，文件名主干与字段 `id` 一致。
+- **目录** `tools/<id>/tool.json`：`web` 或 `h5`；`h5` 必须有 `site/`。目录内其它文件（说明、日后的详情页等）本轮发布忽略。
+- 仓库根可放贡献说明等；发布只扫 `tools/`。
 
-`scene/` 下是可玩可看的场景（当前有 `petal-drift` 花语）。
+## 当前工具
 
-`test/` 下是验证发布链路的测试工具：一条外链 `link-public`，一张自检页 `self-check-public`；它们只验证链路，不是日常使用的工具。
+| id | 形态 | tags |
+| --- | --- | --- |
+| clean-architecture-zh | 单文件 web | books |
+| plantuml / react-lab / regex-tester / html-css-js | 单文件 web | dev |
+| study-hall | 目录 h5 | edu |
+| petal-drift | 目录 h5 | scene |
+| link-public | 单文件 web | test |
+| self-check-public | 目录 h5 | test |
 
-仓库根目录的 `toolbox.json` 定义顶层分组。新增分组时，在 `children` 中加入直接子目录名，并在该目录放置自己的 `toolbox.json`；分组可以递归嵌套。工具目录通过 `type: "tool"` 描述：
+`test` 下工具只验证发布链路，不是日常使用工具。
 
-- H5 工具将页面文件放在 `site/`，并在 `toolbox.json` 指定入口。
-- Web 工具在 `toolbox.json` 中写入 HTTPS 地址。
-
-发布器会按工具箱清单契约校验字段、路径与入口；仅将根 `children` 及其递归声明的内容纳入发布。
+发布器按工具箱清单契约校验字段与入口；契约见仓库文档 `docs/containers/toolbox_app/附录/01-工具清单.md`。

@@ -1,6 +1,0 @@
-{
-  "schemaVersion": 1,
-  "type": "folder",
-  "name": "测试",
-  "children": ["link-public", "self-check-public"]
-}

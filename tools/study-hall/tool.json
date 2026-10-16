@@ -1,10 +1,13 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "type": "tool",
   "id": "study-hall",
   "name": "自习点名",
   "description": "自习点名工具：开始自习即计时，全班默认在座（蓝）；点名可选，点出来的没来变灰；临时离开计时、超时转红并出声提醒。花名册支持 .xlsx 与 .xls（含被存成 .xls 的网页表格），按班导出 xlsx，数据存在本机浏览器里。",
   "kind": "h5",
   "entry": "index.html",
-  "capabilities": []
+  "capabilities": [],
+  "tags": [
+    "edu"
+  ]
 }

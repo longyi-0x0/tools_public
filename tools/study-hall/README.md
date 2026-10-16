@@ -524,7 +524,7 @@ python3 -m http.server 5210 --directory src/tcb/toolbox_service/tool_sources/too
 
 浏览器打开 <http://127.0.0.1:5210/>。要语音输入得走 HTTPS（`localhost` 例外）。
 
-发布走工具箱那一套：本目录的 `toolbox.json` 声明为一个 `kind: "h5"` 的工具，
+发布走工具箱那一套：本目录的 `tool.json` 声明为一个 `kind: "h5"` 的工具，
 `site/` 下的文件由 `toolbox_service` 发布，工具箱壳从发布地址装载。清单契约见主仓的
 `docs/containers/toolbox_app/附录/01-工具清单.md`。
 

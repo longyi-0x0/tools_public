@@ -1,8 +1,0 @@
-{
-  "schemaVersion": 1,
-  "type": "folder",
-  "name": "公开工具",
-  "children": ["books", "dev", "edu", "scene", "test"]
-}
-
-

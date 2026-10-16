@@ -1,10 +1,13 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "type": "tool",
   "id": "react-lab",
   "name": "React 演练场",
   "description": "在浏览器里编写并预览 React 代码。",
   "kind": "web",
   "entry": "https://react-lab.skyone.host/",
-  "capabilities": []
+  "capabilities": [],
+  "tags": [
+    "dev"
+  ]
 }
