@@ -9,8 +9,6 @@
 import {
   MODE,
   MODE_LABELS,
-  STAGE,
-  STAGE_LABELS,
   addPerson,
   addPrize,
   availablePrizes,
@@ -41,7 +39,7 @@ import {
   writeRunState,
 } from './data.js';
 import { clear, clockTime, el, h } from './dom.js';
-import { createStage } from './stages/index.js';
+import { DEFAULT_STAGE, STAGES, createStage, stageLabel } from './stages/index.js';
 import { flushApp, loadApp, saveApp } from './store.js';
 import {
   buildResultWorkbook,
@@ -123,7 +121,7 @@ function mountStage() {
   if (host === null || run === null) {
     return;
   }
-  ui.stage = createStage(run.stage, host);
+  ui.stage = createStage(activity()?.stage, host);
 }
 
 function destroyStage() {
@@ -311,7 +309,7 @@ function renderActivityPane() {
       }),
       h('p', {
         class: 'detail-meta',
-        text: `${MODE_LABELS[item.mode]} · ${STAGE_LABELS[item.stage]} · 每次抽 ${item.batch} 人 · ${handed} / ${total} 已抽出`,
+        text: `${MODE_LABELS[item.mode]} · ${stageLabel(item.stage)} · 每次抽 ${item.batch} 人 · ${handed} / ${total} 已抽出`,
       }),
     ),
     h(
@@ -357,8 +355,8 @@ function renderActivityPane() {
                 render();
               },
             },
-            Object.values(STAGE).map((stage) =>
-              h('option', { value: stage, text: STAGE_LABELS[stage], selected: item.stage === stage }),
+            STAGES.map((stage) =>
+              h('option', { value: stage.id, text: stage.label, selected: item.stage === stage.id }),
             ),
           ),
         ),
@@ -866,7 +864,7 @@ function renderNewDialog() {
       rosterId: app.rosters[0]?.id ?? '',
       prizeSetId: app.prizeSets[0]?.id ?? '',
       batch: 1,
-      stage: STAGE.LIST,
+      stage: DEFAULT_STAGE,
       uniqueWinner: true,
     };
   const set = (patch) => {
@@ -1023,8 +1021,12 @@ function renderNewDialog() {
                 class: 'field-select',
                 onChange: (event) => set({ stage: event.currentTarget.value }),
               },
-              Object.values(STAGE).map((stage) =>
-                h('option', { value: stage, text: STAGE_LABELS[stage], selected: draft.stage === stage }),
+              STAGES.map((stage) =>
+                h('option', {
+                  value: stage.id,
+                  text: stage.label,
+                  selected: draft.stage === stage.id,
+                }),
               ),
             ),
           ),

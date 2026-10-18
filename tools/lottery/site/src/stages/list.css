@@ -1,0 +1,41 @@
+/* 滚动名单：一列名字向上跑。 */
+
+.stage-list {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.reel {
+  position: relative;
+  width: min(56vw, 420px);
+  height: min(58vh, 520px);
+  overflow: hidden;
+  mask-image: linear-gradient(180deg, transparent, #000 16%, #000 84%, transparent);
+}
+
+.reel-track { display: flex; flex-direction: column; will-change: transform; }
+
+.reel-col { display: flex; flex-direction: column; gap: 9px; padding-bottom: 9px; }
+
+.reel-item {
+  font-family: var(--serif);
+  font-size: clamp(18px, 2.2vw, 24px);
+  letter-spacing: 0.12em;
+  color: rgba(242, 238, 230, 0.7);
+  text-align: center;
+  white-space: nowrap;
+}
+
+.running .reel-track { animation: reel 6.5s linear infinite; }
+
+@keyframes reel { from { transform: translateY(0); } to { transform: translateY(-50%); } }
+
+.stopped .reel { opacity: 0.09; transition: opacity 0.4s ease; }
+
+.stage-list .stage-plate { bottom: auto; top: 50%; transform: translate(-50%, calc(-50% + 10px)); }
+
+.stage-list .stage-plate.on { transform: translate(-50%, -50%); }

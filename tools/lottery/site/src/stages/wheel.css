@@ -1,0 +1,25 @@
+/* 转盘：一块 canvas，扇区与指针都画在里面。 */
+
+.stage-wheel {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+
+.wheel-canvas { display: block; }
+
+.stage-wheel .stage-plate {
+  position: static;
+  left: auto;
+  bottom: auto;
+  transform: none;
+  min-height: 84px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}

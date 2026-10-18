@@ -9,7 +9,8 @@
  * 活动中途有人退场、奖品加量，那些都该发生在这份活动的副本上。
  */
 
-import { MODE, STAGE, createState, nextId } from './engine.js';
+import { MODE, createState, nextId } from './engine.js';
+import { DEFAULT_STAGE, isStageId } from './stages/index.js';
 
 export const APP_VERSION = 2;
 
@@ -85,7 +86,7 @@ function cleanActivity(activity, index) {
     id: cleanText(activity?.id, `g${index + 1}`),
     title: cleanText(activity?.title, '未命名抽奖'),
     mode: activity?.mode === MODE.PERSON ? MODE.PERSON : MODE.PRIZE,
-    stage: Object.values(STAGE).includes(activity?.stage) ? activity.stage : STAGE.LIST,
+    stage: isStageId(activity?.stage) ? activity.stage : DEFAULT_STAGE,
     batch: Math.max(1, Math.min(50, Math.floor(Number(activity?.batch) || 1))),
     uniqueWinner: activity?.uniqueWinner !== false,
     rosterId: cleanText(activity?.rosterId),
@@ -265,7 +266,7 @@ export function createActivity(app, { title, mode, stage, batch, uniqueWinner, r
     id: nextId(app.activities, 'g'),
     title: cleanText(title, `抽奖 ${app.activities.length + 1}`),
     mode: mode === MODE.PERSON ? MODE.PERSON : MODE.PRIZE,
-    stage: Object.values(STAGE).includes(stage) ? stage : STAGE.LIST,
+    stage: isStageId(stage) ? stage : DEFAULT_STAGE,
     batch: Math.max(1, Math.min(50, Math.floor(Number(batch) || 1))),
     uniqueWinner: uniqueWinner !== false,
     rosterId: roster?.id ?? '',
@@ -286,7 +287,6 @@ export function runState(activity) {
   return createState({
     title: activity.title,
     mode: activity.mode,
-    stage: activity.stage,
     uniqueWinner: activity.uniqueWinner,
     prizes: activity.prizes,
     people: activity.people,
@@ -304,7 +304,6 @@ export function writeRunState(app, activityId, next) {
         ? {
             ...activity,
             mode: next.mode,
-            stage: next.stage,
             uniqueWinner: next.uniqueWinner,
             prizes: next.prizes,
             people: next.people,
@@ -331,7 +330,7 @@ export function updateActivity(app, activityId, patch) {
       if (patch.mode !== undefined) {
         next.mode = patch.mode === MODE.PERSON ? MODE.PERSON : MODE.PRIZE;
       }
-      if (patch.stage !== undefined && Object.values(STAGE).includes(patch.stage)) {
+      if (patch.stage !== undefined && isStageId(patch.stage)) {
         next.stage = patch.stage;
       }
       if (patch.batch !== undefined) {

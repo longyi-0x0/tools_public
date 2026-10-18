@@ -14,21 +14,6 @@ export const MODE = {
   PERSON: 'person-prize',
 };
 
-/** 舞台形态。 */
-export const STAGE = {
-  LIST: 'list',
-  CARDS: 'cards',
-  WHEEL: 'wheel',
-  BALL: 'ball',
-};
-
-export const STAGE_LABELS = {
-  [STAGE.LIST]: '滚动名单',
-  [STAGE.CARDS]: '抽卡',
-  [STAGE.WHEEL]: '转盘',
-  [STAGE.BALL]: '球体',
-};
-
 export const MODE_LABELS = {
   [MODE.PRIZE]: '奖品抽人',
   [MODE.PERSON]: '人抽奖品',
@@ -51,7 +36,6 @@ export function createState(overrides = {}) {
     version: 1,
     title: '',
     mode: MODE.PRIZE,
-    stage: STAGE.LIST,
     uniqueWinner: true,
     prizes: [],
     people: [],

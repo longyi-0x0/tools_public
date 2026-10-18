@@ -47,6 +47,47 @@
 - 解析、存储、导出都在本机浏览器里完成，没有服务端，也不上传文件。
 - 没有账号、多人同步与扫码加入。换设备要重新导入，旧设备的结果可以导出带走。
 
+## 加一种抽奖形态
+
+一个形态就是一个文件，默认导出 `{ id, label, hint, styles, create }`：
+
+```js
+// site/src/stages/marquee.js
+import { createPlate, el, mount } from './common.js';
+
+export default {
+  id: 'marquee',
+  label: '跑马灯',
+  hint: '名字沿着一圈灯带跑',
+  styles: new URL('./marquee.css', import.meta.url).href,
+
+  create(host) {
+    // 把画面挂进 host；只用这里拿到的 DOM，不要碰外面的状态
+    const root = mount(host, 'stage-marquee');
+    const plate = createPlate();
+    root.append(plate.node);
+
+    return {
+      begin({ labels }) {},   // 开始转
+      reveal({ winners, prizeName }) { plate.show({ winners, prizeName }); },
+      reset() {},             // 回到待机
+      destroy() { host.replaceChildren(); }, // 清定时器、动画帧、观察者
+    };
+  },
+};
+```
+
+然后在 [`site/src/stages/index.js`](./site/src/stages/index.js) 的 `STAGES` 数组里加一行 `import` 与一项。
+下拉选项、数据校验、舞台装载都从那个数组读，别的地方不用改。
+
+要点：
+
+- 引擎与界面只通过 `begin` / `reveal` / `reset` / `destroy` 打交道；形态不读 `run`、不抽奖。
+- 揭晓统一用 `createPlate()`；`plate.show({ winners, prizeName, meta })`。
+- 定时器、`requestAnimationFrame`、`ResizeObserver` 一律走 `createCleanup()`，`destroy()` 里 `clearAll()`。
+- 样式放在同目录的 `<id>.css`，通过 `styles` 导出；`stages/index.js` 会在启动时统一挂上。
+- `id` 用小写字母、数字与连字符；旧数据里认不出的 id 会自动退回第一种形态。
+
 ## 目录
 
 | 路径 | 内容 |
@@ -59,7 +100,7 @@
 | `site/src/workbook.js` | xlsx 读入、列映射、模板与结果导出 |
 | `site/src/xlsx.js` | 最小 xlsx 读写（ZIP + OOXML），与 `study-hall` 同源 |
 | `site/src/store.js` | localStorage 存取 |
-| `site/src/stages/` | 四种舞台形态 |
+| `site/src/stages/` | 形态：一个形态一个文件（js + css），登记在 `index.js` |
 | `site/src/main.js` | 左右两栏界面、弹窗与抽奖页 |
 | `tests/engine.test.mjs` | 引擎单测，`node --test` |
 
