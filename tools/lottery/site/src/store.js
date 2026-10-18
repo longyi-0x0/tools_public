@@ -1,60 +1,55 @@
 /**
- * 活动状态存在本机浏览器里：刷新、关掉再开都还在。
+ * 存档：名单库、奖品库与抽奖活动都放在本机浏览器里。
  *
- * 只存一份当前活动。读回来时补上缺的字段，旧版本存下的东西不至于把页面卡住。
+ * 旧版只有一场活动的存档（`lottery.state.v1`）会在第一次打开时拆成
+ * 一份名单 + 一份奖品 + 一个活动，开奖记录原样保留。
  */
 
-import { MODE, STAGE, createState } from './engine.js';
+import { createApp, migrate } from './data.js';
 
-const KEY = 'lottery.state.v1';
+const KEY = 'lottery.app.v2';
+const LEGACY_KEY = 'lottery.state.v1';
 
-function shape(raw) {
-  if (raw === null || typeof raw !== 'object') {
-    return createState();
+function readJson(key) {
+  try {
+    const text = window.localStorage.getItem(key);
+    return text === null ? null : JSON.parse(text);
+  } catch {
+    return null;
   }
-  const state = createState();
-  return {
-    ...state,
-    title: typeof raw.title === 'string' ? raw.title : '',
-    mode: raw.mode === MODE.PERSON ? MODE.PERSON : MODE.PRIZE,
-    stage: Object.values(STAGE).includes(raw.stage) ? raw.stage : STAGE.LIST,
-    uniqueWinner: raw.uniqueWinner !== false,
-    prizes: Array.isArray(raw.prizes) ? raw.prizes.filter((item) => item && item.id) : [],
-    people: Array.isArray(raw.people) ? raw.people.filter((item) => item && item.id) : [],
-    results: Array.isArray(raw.results) ? raw.results.filter((item) => item && Array.isArray(item.winners)) : [],
-  };
 }
 
-/** 读上一次的活动；没有就新建。 */
-export function loadState() {
-  try {
-    const stored = window.localStorage.getItem(KEY);
-    return stored === null ? createState() : shape(JSON.parse(stored));
-  } catch {
-    return createState();
+/** 读存档；没有就新建，有旧存档就迁移一次。 */
+export function loadApp() {
+  const current = readJson(KEY);
+  if (current !== null) {
+    return migrate(current);
   }
+  const legacy = readJson(LEGACY_KEY);
+  if (legacy !== null) {
+    return migrate(legacy);
+  }
+  return createApp();
 }
 
 let pending = 0;
 
+function write(app) {
+  try {
+    window.localStorage.setItem(KEY, JSON.stringify(app));
+  } catch {
+    /* 隐私模式或配额满了：页面照跑，只是关掉会丢 */
+  }
+}
+
 /** 存一份；连写时只在空闲后落一次。 */
-export function saveState(state) {
+export function saveApp(app) {
   window.clearTimeout(pending);
-  pending = window.setTimeout(() => {
-    try {
-      window.localStorage.setItem(KEY, JSON.stringify(state));
-    } catch {
-      /* 隐私模式或配额满了：页面照跑，只是关掉会丢 */
-    }
-  }, 120);
+  pending = window.setTimeout(() => write(app), 120);
 }
 
 /** 立即写一次（切走页面时用）。 */
-export function flushState(state) {
+export function flushApp(app) {
   window.clearTimeout(pending);
-  try {
-    window.localStorage.setItem(KEY, JSON.stringify(state));
-  } catch {
-    /* 同上 */
-  }
+  write(app);
 }

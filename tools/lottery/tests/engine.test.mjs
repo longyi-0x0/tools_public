@@ -19,6 +19,7 @@ import {
   resetProgress,
   undoLast,
   updatePrize,
+  voidWinner,
 } from '../site/src/engine.js';
 
 function baseState() {
@@ -196,4 +197,38 @@ test('两种方向都记下用了哪个模型', () => {
   });
   const b = drawByPerson(personState, 'p1', stubRandom([0]));
   assert.equal(b.state.results[0].mode, MODE.PERSON);
+});
+
+test('作废：不计中奖、名额还回去、票移出池', () => {
+  const state = baseState();
+  const { state: drawn, winners } = drawByPrize(state, 'a2', 2, stubRandom([0.1, 0.6]));
+  const resultId = drawn.results[0].id;
+  const gone = winners[0].personId;
+
+  const next = voidWinner(drawn, resultId, gone);
+  assert.equal(prizeDrawn(next, 'a2'), 1);
+  assert.equal(prizeRemaining(next, 'a2'), 1);
+  assert.deepEqual(next.excluded, [gone]);
+  assert.ok(eligiblePeople(next).every((person) => person.id !== gone));
+  assert.equal(next.results[0].winners.length, 1);
+});
+
+test('作废到一条记录空了就删掉这条', () => {
+  const state = baseState();
+  const { state: drawn, winners } = drawByPrize(state, 'a1', 1, stubRandom([0]));
+  const next = voidWinner(drawn, drawn.results[0].id, winners[0].personId);
+  assert.equal(next.results.length, 0);
+  assert.equal(prizeDrawn(next, 'a1'), 0);
+  assert.equal(prizeRemaining(next, 'a1'), 1);
+  assert.throws(() => voidWinner(next, 'r9', 'p1'), /找不到这次开奖/);
+});
+
+test('作废后名额可以重新抽给在场的其他人', () => {
+  const state = baseState();
+  const { state: drawn, winners } = drawByPrize(state, 'a1', 1, stubRandom([0]));
+  const gone = winners[0].personId;
+  const next = voidWinner(drawn, drawn.results[0].id, gone);
+  const again = drawByPrize(next, 'a1', 1, stubRandom([0]));
+  assert.notEqual(again.winners[0].personId, gone);
+  assert.equal(prizeRemaining(again.state, 'a1'), 0);
 });

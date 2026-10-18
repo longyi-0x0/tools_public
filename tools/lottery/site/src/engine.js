@@ -56,6 +56,10 @@ export function createState(overrides = {}) {
     prizes: [],
     people: [],
     results: [],
+    /** 作废过的人：抽中了但人不在，票移出池，之后不再被抽到。 */
+    excluded: [],
+    /** 上次停在那一屏，刷新后回到原处。 */
+    lastView: 'prepare',
     ...overrides,
   };
 }
@@ -108,13 +112,15 @@ export function hasWon(state, personId) {
   return winnerIds(state).has(personId);
 }
 
-/** 还能被抽中的人。`uniqueWinner` 关掉时就是全部。 */
+/** 还能被抽中的人：作废的不算，`uniqueWinner` 关掉时中过的也算。 */
 export function eligiblePeople(state) {
+  const excluded = new Set(state.excluded ?? []);
+  const pool = state.people.filter((person) => !excluded.has(person.id));
   if (!state.uniqueWinner) {
-    return state.people.slice();
+    return pool;
   }
   const won = winnerIds(state);
-  return state.people.filter((person) => !won.has(person.id));
+  return pool.filter((person) => !won.has(person.id));
 }
 
 /** 还有名额的奖项。 */
@@ -265,6 +271,31 @@ export function drawByPerson(state, personId, random = Math.random) {
   };
 }
 
+/**
+ * 作废某次开奖里的一个人：他不算中奖，票移出池，名额还给奖项。
+ *
+ * 与撤销不同 —— 撤销是「这次开错了」，作废是「这个人不在场」。
+ * 一次开奖里的人都作废掉时，这条记录一并删掉。
+ */
+export function voidWinner(state, resultId, personId) {
+  const result = state.results.find((item) => item.id === resultId);
+  if (result === undefined) {
+    throw new DrawError('result-missing', '找不到这次开奖');
+  }
+  const winners = result.winners.filter((winner) => winner.personId !== personId);
+  if (winners.length === result.winners.length) {
+    throw new DrawError('winner-missing', '这次开奖里没有这个人');
+  }
+  const results =
+    winners.length === 0
+      ? state.results.filter((item) => item.id !== resultId)
+      : state.results.map((item) => (item.id === resultId ? { ...item, winners } : item));
+  const excluded = (state.excluded ?? []).includes(personId)
+    ? state.excluded
+    : [...(state.excluded ?? []), personId];
+  return { ...state, results, excluded };
+}
+
 /** 撤掉最后一次开奖；没有记录时原样返回。 */
 export function undoLast(state) {
   if (state.results.length === 0) {
@@ -373,6 +404,7 @@ export function replacePools(state, { prizes, people }) {
       employeeId: trimmed(person.employeeId),
     })),
     results: [],
+    excluded: [],
   };
 }
 

@@ -36,6 +36,18 @@ function append(element, children) {
   }
 }
 
+/** 建一个带类名、可选文字的节点。 */
+export function el(tag, className, text) {
+  const node = document.createElement(tag);
+  if (className) {
+    node.className = className;
+  }
+  if (text !== undefined) {
+    node.textContent = text;
+  }
+  return node;
+}
+
 /** 清空一个节点。 */
 export function clear(element) {
   while (element.firstChild !== null) {

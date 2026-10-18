@@ -1,7 +1,9 @@
 /**
- * 抽奖台的界面：准备、活动、舞台、结果四面，外加顶栏上的模型与形态开关。
+ * 抽奖台。
  *
- * 状态改完一律先落本机再画界面；舞台是独立的一层，不和列表一起重画。
+ * 左右两栏：左边是列表（抽奖 / 名单 / 奖品三种），右边是选中项的详情。
+ * 列表上方的加号开新建弹窗；详情底部的按钮开始抽奖。
+ * 抽奖页占满整屏，全屏是它内部的开关。
  */
 
 import {
@@ -19,18 +21,28 @@ import {
   nextPerson,
   prizeDrawn,
   prizeRemaining,
-  readiness,
-  removePerson,
-  removePrize,
-  replacePools,
-  resetProgress,
   undoLast,
-  updatePerson,
-  updatePrize,
+  voidWinner,
 } from './engine.js';
-import { clear, clockTime, h } from './dom.js';
+import {
+  activityById,
+  activitySummary,
+  addPrizeSet,
+  addRoster,
+  createActivity,
+  patchActivityPools,
+  removeActivity,
+  removePrizeSet,
+  removeRoster,
+  runState,
+  updateActivity,
+  updatePrizeSet,
+  updateRoster,
+  writeRunState,
+} from './data.js';
+import { clear, clockTime, el, h } from './dom.js';
 import { createStage } from './stages/index.js';
-import { flushState, loadState, saveState } from './store.js';
+import { flushApp, loadApp, saveApp } from './store.js';
 import {
   buildResultWorkbook,
   buildTemplateWorkbook,
@@ -39,1063 +51,1538 @@ import {
 } from './workbook.js';
 
 const appEl = document.getElementById('app');
-const stageEl = document.getElementById('stage');
 const fileEl = document.getElementById('file');
+const packageEl = document.getElementById('package');
 
-let state = loadState();
+let app = loadApp();
 
 const ui = {
-  view: state.prizes.length > 0 || state.people.length > 0 ? 'event' : 'prepare',
-  selectedPrizeId: null,
-  batch: 1,
-  pending: null,
-  peopleQuery: '',
-  personPickId: null,
-  stageOpen: false,
+  /** draw 是全屏抽奖；其余都在抽奖台的左右两栏里。 */
+  drawing: app.lastView === 'draw',
+  /** lotteries | rosters | prizes */
+  mode: ['rosters', 'prizes'].includes(app.lastView) ? app.lastView : 'lotteries',
+  activityId: app.lastActivityId ?? app.activities[0]?.id ?? null,
+  rosterId: app.rosters[0]?.id ?? null,
+  prizeSetId: app.prizeSets[0]?.id ?? null,
+  dialog: null,
+  draft: null,
+  importTarget: null,
   spinning: false,
+  revealed: false,
+  rehearsal: false,
   stage: null,
+  selectedPrizeId: null,
+  personPickId: null,
+  resultsView: 'prize',
 };
 
-ui.selectedPrizeId = availablePrizes(state)[0]?.id ?? state.prizes[0]?.id ?? null;
+/** 抽奖页的引擎状态。 */
+let run = null;
 
-/* ---------- 本地状态 ---------- */
+/* ---------- 存档 ---------- */
 
 function commit(next) {
-  state = next;
-  saveState(state);
-  if (ui.stageOpen) {
-    updateStageChrome();
-    return;
-  }
+  app = next;
+  saveApp(app);
   render();
 }
 
-function toast(message) {
-  const existing = document.querySelector('.toast');
-  if (existing !== null) {
-    existing.remove();
+function commitRun(next) {
+  run = next;
+  app = writeRunState(app, ui.activityId, next);
+  saveApp(app);
+  paintDraw();
+}
+
+function remember() {
+  app = {
+    ...app,
+    lastView: ui.drawing ? 'draw' : ui.mode,
+    lastActivityId: ui.activityId,
+  };
+  saveApp(app);
+}
+
+function render() {
+  clear(appEl);
+  if (ui.drawing) {
+    appEl.append(renderDraw());
+    mountStage();
+    paintDraw();
+    return;
   }
+  destroyStage();
+  appEl.append(renderShell());
+  remember();
+}
+
+/** 把舞台实例挂到 #stage 上。页面结构已经进 DOM，直接挂即可。 */
+function mountStage() {
+  destroyStage();
+  const host = document.getElementById('stage');
+  if (host === null || run === null) {
+    return;
+  }
+  ui.stage = createStage(run.stage, host);
+}
+
+function destroyStage() {
+  if (ui.stage !== null) {
+    ui.stage.destroy();
+    ui.stage = null;
+  }
+}
+
+function toast(message) {
+  document.querySelector('.toast')?.remove();
   const node = h('div', { class: 'toast', text: message });
   document.body.append(node);
   window.setTimeout(() => node.classList.add('leaving'), 2600);
   window.setTimeout(() => node.remove(), 3200);
 }
 
-/* ---------- 顶栏 ---------- */
+const activity = () => activityById(app, ui.activityId);
+const roster = () => app.rosters.find((item) => item.id === ui.rosterId) ?? null;
+const prizeSet = () => app.prizeSets.find((item) => item.id === ui.prizeSetId) ?? null;
 
-function renderChrome() {
-  const tabs = [
-    ['prepare', '准备'],
-    ['event', '活动'],
-    ['results', '结果'],
-  ];
-  const topbar = h(
-    'header',
-    { class: 'topbar' },
+/* ---------- 左右两栏 ---------- */
+
+function renderShell() {
+  return h(
+    'div',
+    { class: 'shell' },
     h(
-      'div',
-      { class: 'brand' },
-      h('span', { class: 'brand-mark', text: '抽奖台' }),
-      h('span', {
-        class: `brand-title${state.title ? '' : ' empty'}`,
-        text: state.title,
-      }),
-    ),
-    h(
-      'nav',
-      { class: 'tabs' },
-      tabs.map(([id, label]) =>
-        h('button', {
-          class: `tab${ui.view === id ? ' active' : ''}`,
-          type: 'button',
-          text: label,
-          onClick: () => {
-            ui.view = id;
-            render();
-          },
-        }),
-      ),
-      h('button', {
-        class: 'tab tab-stage',
-        type: 'button',
-        text: '舞台',
-        onClick: openStage,
-      }),
-    ),
-    h(
-      'div',
-      { class: 'switches' },
+      'aside',
+      { class: 'side' },
       h(
         'div',
-        { class: 'seg', role: 'group', 'aria-label': '抽奖模型' },
-        [MODE.PRIZE, MODE.PERSON].map((mode) =>
+        { class: 'side-head' },
+        h('span', { class: 'side-title', text: modeLabel() }),
+        h('button', {
+          class: 'side-add',
+          type: 'button',
+          text: '+',
+          'aria-label': `新建${modeLabel()}`,
+          onClick: onSideAdd,
+        }),
+      ),
+      renderSideList(),
+      h(
+        'div',
+        { class: 'side-foot' },
+        [
+          ['lotteries', '抽奖'],
+          ['rosters', '名单'],
+          ['prizes', '奖品'],
+        ].map(([mode, label]) =>
           h('button', {
-            class: `seg-item${state.mode === mode ? ' active' : ''}`,
+            class: `side-tab${ui.mode === mode ? ' active' : ''}`,
             type: 'button',
-            text: MODE_LABELS[mode],
+            text: label,
             onClick: () => {
-              if (state.mode === mode) {
-                return;
-              }
-              commit({ ...state, mode });
+              ui.mode = mode;
+              ui.dialog = null;
+              render();
             },
           }),
         ),
       ),
+    ),
+    h('main', { class: 'main' }, renderMainPane()),
+    ui.dialog === 'new' ? renderNewDialog() : null,
+    ui.dialog === 'results' ? renderResultsDialog() : null,
+  );
+}
+
+function modeLabel() {
+  return ui.mode === 'rosters' ? '名单' : ui.mode === 'prizes' ? '奖品' : '抽奖';
+}
+
+function onSideAdd() {
+  if (ui.mode === 'lotteries') {
+    ui.draft = null;
+    ui.dialog = 'new';
+    render();
+    return;
+  }
+  if (ui.mode === 'rosters') {
+    ui.importTarget = 'roster';
+    fileEl.click();
+    return;
+  }
+  ui.importTarget = 'prize';
+  fileEl.click();
+}
+
+function renderSideList() {
+  const items =
+    ui.mode === 'rosters' ? app.rosters : ui.mode === 'prizes' ? app.prizeSets : app.activities;
+
+  if (items.length === 0) {
+    return h('p', {
+      class: 'side-empty',
+      text:
+        ui.mode === 'rosters'
+          ? '还没有名单'
+          : ui.mode === 'prizes'
+            ? '还没有奖品'
+            : '还没有抽奖',
+    });
+  }
+
+  return h(
+    'ol',
+    { class: 'side-list' },
+    items.map((item) =>
       h(
-        'label',
-        { class: 'stage-pick' },
-        h('span', { text: '形态' }),
-        h(
-          'select',
-          {
-            onChange: (event) => {
-              const stage = event.currentTarget.value;
-              commit({ ...state, stage });
-              if (ui.stageOpen) {
-                renderStageBody();
-              }
-            },
+        'li',
+        {},
+        h('button', {
+          class: `side-item${item.id === currentId() ? ' active' : ''}`,
+          type: 'button',
+          text: ui.mode === 'lotteries' ? item.title : item.name,
+          onClick: () => {
+            if (ui.mode === 'rosters') {
+              ui.rosterId = item.id;
+            } else if (ui.mode === 'prizes') {
+              ui.prizeSetId = item.id;
+            } else {
+              ui.activityId = item.id;
+            }
+            render();
           },
-          Object.values(STAGE).map((stage) =>
-            h('option', {
-              value: stage,
-              text: STAGE_LABELS[stage],
-              selected: state.stage === stage,
-            }),
-          ),
-        ),
+        }),
       ),
     ),
   );
-  return topbar;
 }
 
-/* ---------- 四面 ---------- */
-
-function render() {
-  clear(appEl);
-  appEl.append(renderChrome(), h('main', { class: 'view' }, renderView()));
-  document.body.classList.toggle('stage-on', ui.stageOpen);
-}
-
-function renderView() {
-  if (ui.view === 'prepare') {
-    return renderPrepare();
+function currentId() {
+  if (ui.mode === 'rosters') {
+    return ui.rosterId;
   }
-  if (ui.view === 'results') {
-    return renderResults();
+  if (ui.mode === 'prizes') {
+    return ui.prizeSetId;
   }
-  return renderEvent();
+  return ui.activityId;
 }
 
-/* ---------- 准备 ---------- */
+function renderMainPane() {
+  if (ui.mode === 'rosters') {
+    return renderRosterPane();
+  }
+  if (ui.mode === 'prizes') {
+    return renderPrizeSetPane();
+  }
+  return renderActivityPane();
+}
 
-function renderPrepare() {
-  const drop = h(
-    'div',
-    {
-      class: 'drop',
-      tabindex: '0',
-      role: 'button',
-      onClick: () => fileEl.click(),
-      onKeydown: (event) => {
-        if (event.key === 'Enter' || event.key === ' ') {
-          event.preventDefault();
-          fileEl.click();
-        }
-      },
-      onDragover: (event) => {
-        event.preventDefault();
-        drop.classList.add('over');
-      },
-      onDragleave: () => drop.classList.remove('over'),
-      onDrop: (event) => {
-        event.preventDefault();
-        drop.classList.remove('over');
-        const file = event.dataTransfer?.files?.[0];
-        if (file !== undefined) {
-          handleFile(file);
-        }
-      },
-    },
-    h('span', { class: 'drop-main', text: '拖一份 .xlsx 进来' }),
-    h('span', { class: 'drop-sub', text: '或点这里选择文件 · 解析只在本机进行' }),
-  );
+/* ---------- 抽奖详情 ---------- */
 
-  const total = state.prizes.reduce((sum, prize) => sum + prize.count, 0);
+function renderActivityPane() {
+  const item = activity();
+  if (item === null) {
+    return h(
+      'div',
+      { class: 'pane-empty-full' },
+      h('p', { class: 'empty-title', text: '还没有选中的抽奖' }),
+      h('p', { class: 'empty-sub', text: '点左上角的 + 新建一场；名单与奖品可以在左下角切换过去维护。' }),
+      h('button', { class: 'primary', type: 'button', text: '新建抽奖', onClick: onSideAdd }),
+    );
+  }
+  const { total, handed } = activitySummary(item);
 
   return h(
-    'section',
-    { class: 'prepare' },
+    'div',
+    { class: 'detail' },
+    h(
+      'header',
+      { class: 'detail-head' },
+      h('input', {
+        class: 'detail-title',
+        type: 'text',
+        value: item.title,
+        'aria-label': '抽奖名称',
+        onInput: (event) => {
+          const value = event.currentTarget.value;
+          app = updateActivity(app, item.id, { title: value });
+          saveApp(app);
+        },
+      }),
+      h('p', {
+        class: 'detail-meta',
+        text: `${MODE_LABELS[item.mode]} · ${STAGE_LABELS[item.stage]} · 每次抽 ${item.batch} 人 · ${handed} / ${total} 已抽出`,
+      }),
+    ),
     h(
       'div',
-      { class: 'prepare-hero' },
-      h('p', { class: 'kicker', text: 'xlsx 进，号码出' }),
-      h('h1', { class: 'prepare-title', text: '把名单交给舞台' }),
-      h('p', {
-        class: 'lede',
-        text:
-          '一张「奖品」表写清奖项与名额，一张「名单」表写清来的人。两套抽法共用这一份数据：' +
-          '可以点名抽奖，也可以让每个人自己抽一次。',
-      }),
-      drop,
+      { class: 'detail-body' },
+      renderPrizePane(item),
+      renderPeoplePane(item),
+    ),
+    h(
+      'footer',
+      { class: 'detail-foot' },
       h(
         'div',
-        { class: 'prepare-actions' },
+        { class: 'settings' },
+        h(
+          'label',
+          { class: 'setting' },
+          h('span', { text: '每次' }),
+          h(
+            'select',
+            {
+              onChange: (event) => {
+                app = updateActivity(app, item.id, { batch: Number(event.currentTarget.value) });
+                saveApp(app);
+                render();
+              },
+            },
+            [1, 2, 3, 5, 10].map((size) =>
+              h('option', { value: String(size), text: `${size} 人`, selected: item.batch === size }),
+            ),
+          ),
+        ),
+        h(
+          'label',
+          { class: 'setting' },
+          h('span', { text: '形态' }),
+          h(
+            'select',
+            {
+              onChange: (event) => {
+                app = updateActivity(app, item.id, { stage: event.currentTarget.value });
+                saveApp(app);
+                render();
+              },
+            },
+            Object.values(STAGE).map((stage) =>
+              h('option', { value: stage, text: STAGE_LABELS[stage], selected: item.stage === stage }),
+            ),
+          ),
+        ),
+        h(
+          'label',
+          { class: 'setting' },
+          h('input', {
+            type: 'checkbox',
+            checked: item.uniqueWinner,
+            onChange: (event) => {
+              app = updateActivity(app, item.id, { uniqueWinner: event.currentTarget.checked });
+              saveApp(app);
+              render();
+            },
+          }),
+          h('span', { text: '不重复中奖' }),
+        ),
+        h('button', {
+          class: 'link danger',
+          type: 'button',
+          text: '删除',
+          onClick: () => {
+            if (!window.confirm(`删除「${item.title}」？名单与奖品不受影响。`)) {
+              return;
+            }
+            app = removeActivity(app, item.id);
+            ui.activityId = app.activities[0]?.id ?? null;
+            saveApp(app);
+            render();
+          },
+        }),
+      ),
+      h(
+        'div',
+        { class: 'detail-actions' },
+        h('button', { class: 'ghost', type: 'button', text: '结果', onClick: () => openResults() }),
         h('button', {
           class: 'ghost',
           type: 'button',
-          text: '下载模板',
-          onClick: async () => {
-            const bytes = await buildTemplateWorkbook();
-            downloadBytes('抽奖模板.xlsx', bytes, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-          },
+          text: '彩排',
+          title: '走一遍流程，结束后可清空',
+          onClick: () => openDraw(true),
         }),
-        state.prizes.length > 0
-          ? h('span', {
-              class: 'prepare-existing',
-              text: `本机已有一场：${state.prizes.length} 个奖项、${total} 个名额、${state.people.length} 人`,
-            })
-          : null,
+        h('button', {
+          class: 'primary',
+          type: 'button',
+          text: handed === 0 ? '开始抽奖' : '继续抽奖',
+          onClick: () => openDraw(false),
+        }),
       ),
     ),
-    ui.pending === null ? null : renderImportReport(),
-    renderFormatTable(),
   );
 }
 
-function renderFormatTable() {
-  const sheet = (name, columns, note) =>
+function renderPrizePane(item) {
+  const view = { prizes: item.prizes, results: item.results };
+  const write = (prizes) => {
+    app = patchActivityPools(app, item.id, { prizes });
+    saveApp(app);
+    render();
+  };
+
+  return h(
+    'section',
+    { class: 'pane' },
     h(
+      'header',
+      { class: 'pane-head' },
+      h('h2', { class: 'pane-title', text: '奖品' }),
+      h('span', {
+        class: 'pane-count',
+        text: `${item.prizes.length} 项 · ${item.prizes.reduce((n, p) => n + p.count, 0)} 个名额`,
+      }),
+      h('button', {
+        class: 'link',
+        type: 'button',
+        text: '+ 加一项',
+        onClick: () => {
+          const [next] = addPrize({ prizes: item.prizes }, { name: '新奖品', count: 1 });
+          write(next.prizes);
+        },
+      }),
+    ),
+    item.prizes.length === 0
+      ? h('p', { class: 'pane-empty', text: '还没有奖品。' })
+      : h(
+          'ol',
+          { class: 'rows-edit' },
+          item.prizes.map((prize) => {
+            const drawn = prizeDrawn(view, prize.id);
+            return h(
+              'li',
+              { class: 'edit-row' },
+              h('input', {
+                class: 'edit-text',
+                type: 'text',
+                value: prize.name,
+                'aria-label': '奖品名称',
+                onInput: (event) => {
+                  const value = event.currentTarget.value;
+                  app = patchActivityPools(app, item.id, {
+                    prizes: item.prizes.map((p) => (p.id === prize.id ? { ...p, name: value } : p)),
+                  });
+                  saveApp(app);
+                },
+              }),
+              h('span', { class: 'edit-progress', text: `${drawn} / ${prize.count}` }),
+              h('input', {
+                class: 'edit-count',
+                type: 'number',
+                min: String(Math.max(1, drawn)),
+                value: String(prize.count),
+                'aria-label': '名额',
+                onChange: (event) => {
+                  const value = Math.max(drawn, Math.floor(Number(event.currentTarget.value) || 1));
+                  app = patchActivityPools(app, item.id, {
+                    prizes: item.prizes.map((p) => (p.id === prize.id ? { ...p, count: value } : p)),
+                  });
+                  saveApp(app);
+                  render();
+                },
+              }),
+              h('button', {
+                class: 'icon-button',
+                type: 'button',
+                text: '×',
+                'aria-label': '删除奖品',
+                onClick: () => write(item.prizes.filter((p) => p.id !== prize.id)),
+              }),
+            );
+          }),
+        ),
+  );
+}
+
+function renderPeoplePane(item) {
+  const view = { people: item.people, results: item.results };
+  const write = (people) => {
+    app = patchActivityPools(app, item.id, { people });
+    saveApp(app);
+    render();
+  };
+
+  return h(
+    'section',
+    { class: 'pane' },
+    h(
+      'header',
+      { class: 'pane-head' },
+      h('h2', { class: 'pane-title', text: '名单' }),
+      h('span', { class: 'pane-count', text: `${item.people.length} 人` }),
+      h('button', {
+        class: 'link',
+        type: 'button',
+        text: '+ 加一人',
+        onClick: () => {
+          const [next] = addPerson({ people: item.people }, { name: '新参与人' });
+          write(next.people);
+        },
+      }),
+    ),
+    item.people.length === 0
+      ? h('p', { class: 'pane-empty', text: '还没有名单。' })
+      : h(
+          'ol',
+          { class: 'rows-edit' },
+          item.people.map((person) => {
+            const won = hasWon(view, person.id);
+            return h(
+              'li',
+              { class: `edit-row person${won ? ' won' : ''}` },
+              h('input', {
+                class: 'edit-text',
+                type: 'text',
+                value: person.name,
+                'aria-label': '姓名',
+                onInput: (event) => {
+                  const value = event.currentTarget.value;
+                  app = patchActivityPools(app, item.id, {
+                    people: item.people.map((p) => (p.id === person.id ? { ...p, name: value } : p)),
+                  });
+                  saveApp(app);
+                },
+              }),
+              h('input', {
+                class: 'edit-sub',
+                type: 'text',
+                value: person.dept ?? '',
+                placeholder: '部门',
+                'aria-label': '部门',
+                onInput: (event) => {
+                  const value = event.currentTarget.value;
+                  app = patchActivityPools(app, item.id, {
+                    people: item.people.map((p) => (p.id === person.id ? { ...p, dept: value } : p)),
+                  });
+                  saveApp(app);
+                },
+              }),
+              won ? h('span', { class: 'edit-flag', text: '已中奖' }) : h('span', { class: 'edit-flag' }),
+              h('button', {
+                class: 'icon-button',
+                type: 'button',
+                text: '×',
+                'aria-label': '删除这个人',
+                onClick: () => write(item.people.filter((p) => p.id !== person.id)),
+              }),
+            );
+          }),
+        ),
+  );
+}
+
+/* ---------- 名单详情 ---------- */
+
+function renderRosterPane() {
+  const item = roster();
+  if (item === null) {
+    return h(
       'div',
-      { class: 'format-sheet' },
-      h('div', { class: 'format-head' }, h('span', { class: 'format-name', text: name }), note ? h('span', { class: 'format-note', text: note }) : null),
-      h(
-        'div',
-        { class: 'format-columns' },
-        columns.map((column, index) =>
-          h(
-            'div',
-            { class: `format-column${column.optional ? ' optional' : ''}` },
-            h('span', { class: 'format-column-name', text: column.name }),
-            h('span', { class: 'format-column-rule', text: column.rule }),
-            index === columns.length - 1 ? null : h('span', { class: 'format-column-sep', text: '·' }),
-          ),
+      { class: 'pane-empty-full' },
+      h('p', { class: 'empty-title', text: '还没有名单' }),
+      h('p', { class: 'empty-sub', text: '点左上角的 + 上传一份含「姓名」列的 xlsx。' }),
+      h('button', {
+        class: 'primary',
+        type: 'button',
+        text: '上传 xlsx',
+        onClick: () => {
+          ui.importTarget = 'roster';
+          fileEl.click();
+        },
+      }),
+    );
+  }
+  const write = (people) => {
+    app = updateRoster(app, item.id, { people });
+    saveApp(app);
+    render();
+  };
+
+  return h(
+    'div',
+    { class: 'detail' },
+    h(
+      'header',
+      { class: 'detail-head' },
+      h('input', {
+        class: 'detail-title',
+        type: 'text',
+        value: item.name,
+        'aria-label': '名单名称',
+        onInput: (event) => {
+          const value = event.currentTarget.value;
+          app = updateRoster(app, item.id, { name: value });
+          saveApp(app);
+        },
+      }),
+      h('p', { class: 'detail-meta', text: `${item.people.length} 人 · 改这里不影响已经建好的抽奖` }),
+    ),
+    h(
+      'ol',
+      { class: 'rows-edit wide' },
+      item.people.map((person) =>
+        h(
+          'li',
+          { class: 'edit-row person' },
+          h('input', {
+            class: 'edit-text',
+            type: 'text',
+            value: person.name,
+            'aria-label': '姓名',
+            onInput: (event) => {
+              const value = event.currentTarget.value;
+              app = updateRoster(app, item.id, {
+                people: item.people.map((p) => (p.id === person.id ? { ...p, name: value } : p)),
+              });
+              saveApp(app);
+            },
+          }),
+          h('input', {
+            class: 'edit-sub',
+            type: 'text',
+            value: person.dept ?? '',
+            placeholder: '部门',
+            'aria-label': '部门',
+            onInput: (event) => {
+              const value = event.currentTarget.value;
+              app = updateRoster(app, item.id, {
+                people: item.people.map((p) => (p.id === person.id ? { ...p, dept: value } : p)),
+              });
+              saveApp(app);
+            },
+          }),
+          h('input', {
+            class: 'edit-sub',
+            type: 'text',
+            value: person.employeeId ?? '',
+            placeholder: '工号',
+            'aria-label': '工号',
+            onInput: (event) => {
+              const value = event.currentTarget.value;
+              app = updateRoster(app, item.id, {
+                people: item.people.map((p) => (p.id === person.id ? { ...p, employeeId: value } : p)),
+              });
+              saveApp(app);
+            },
+          }),
+          h('button', {
+            class: 'icon-button',
+            type: 'button',
+            text: '×',
+            'aria-label': '删除这个人',
+            onClick: () => write(item.people.filter((p) => p.id !== person.id)),
+          }),
         ),
       ),
+    ),
+    h(
+      'footer',
+      { class: 'detail-foot' },
+      h(
+        'div',
+        { class: 'settings' },
+        h('button', {
+          class: 'link danger',
+          type: 'button',
+          text: '删除这份名单',
+          onClick: () => {
+            if (!window.confirm(`删除名单「${item.name}」？已经建好的抽奖不受影响。`)) {
+              return;
+            }
+            app = removeRoster(app, item.id);
+            ui.rosterId = app.rosters[0]?.id ?? null;
+            saveApp(app);
+            render();
+          },
+        }),
+      ),
+      h(
+        'div',
+        { class: 'detail-actions' },
+        h('button', {
+          class: 'ghost',
+          type: 'button',
+          text: '追加 xlsx',
+          onClick: () => {
+            ui.importTarget = 'roster-append';
+            fileEl.click();
+          },
+        }),
+        h('button', {
+          class: 'primary',
+          type: 'button',
+          text: '加一人',
+          onClick: () => {
+            const [next] = addPerson({ people: item.people }, { name: '新参与人' });
+            write(next.people);
+          },
+        }),
+      ),
+    ),
+  );
+}
+
+/* ---------- 奖品详情 ---------- */
+
+function renderPrizeSetPane() {
+  const item = prizeSet();
+  if (item === null) {
+    return h(
+      'div',
+      { class: 'pane-empty-full' },
+      h('p', { class: 'empty-title', text: '还没有奖品' }),
+      h('p', { class: 'empty-sub', text: '点左上角的 + 上传一份含「奖品名称」「数量」两列的 xlsx。' }),
+      h('button', {
+        class: 'primary',
+        type: 'button',
+        text: '上传 xlsx',
+        onClick: () => {
+          ui.importTarget = 'prize';
+          fileEl.click();
+        },
+      }),
+    );
+  }
+  const write = (prizes) => {
+    app = updatePrizeSet(app, item.id, { prizes });
+    saveApp(app);
+    render();
+  };
+
+  return h(
+    'div',
+    { class: 'detail' },
+    h(
+      'header',
+      { class: 'detail-head' },
+      h('input', {
+        class: 'detail-title',
+        type: 'text',
+        value: item.name,
+        'aria-label': '奖品名称',
+        onInput: (event) => {
+          const value = event.currentTarget.value;
+          app = updatePrizeSet(app, item.id, { name: value });
+          saveApp(app);
+        },
+      }),
+      h('p', {
+        class: 'detail-meta',
+        text: `${item.prizes.length} 项 · ${item.prizes.reduce((n, p) => n + p.count, 0)} 个名额 · 改这里不影响已经建好的抽奖`,
+      }),
+    ),
+    h(
+      'ol',
+      { class: 'rows-edit wide' },
+      item.prizes.map((prize) =>
+        h(
+          'li',
+          { class: 'edit-row' },
+          h('input', {
+            class: 'edit-text',
+            type: 'text',
+            value: prize.name,
+            'aria-label': '奖品名称',
+            onInput: (event) => {
+              const value = event.currentTarget.value;
+              write(item.prizes.map((p) => (p.id === prize.id ? { ...p, name: value } : p)));
+            },
+          }),
+          h('input', {
+            class: 'edit-count',
+            type: 'number',
+            min: '1',
+            value: String(prize.count),
+            'aria-label': '名额',
+            onChange: (event) => {
+              const value = Math.max(1, Math.floor(Number(event.currentTarget.value) || 1));
+              write(item.prizes.map((p) => (p.id === prize.id ? { ...p, count: value } : p)));
+            },
+          }),
+          h('button', {
+            class: 'icon-button',
+            type: 'button',
+            text: '×',
+            'aria-label': '删除奖品',
+            onClick: () => write(item.prizes.filter((p) => p.id !== prize.id)),
+          }),
+        ),
+      ),
+    ),
+    h(
+      'footer',
+      { class: 'detail-foot' },
+      h(
+        'div',
+        { class: 'settings' },
+        h('button', {
+          class: 'link danger',
+          type: 'button',
+          text: '删除这套奖品',
+          onClick: () => {
+            if (!window.confirm(`删除奖品「${item.name}」？已经建好的抽奖不受影响。`)) {
+              return;
+            }
+            app = removePrizeSet(app, item.id);
+            ui.prizeSetId = app.prizeSets[0]?.id ?? null;
+            saveApp(app);
+            render();
+          },
+        }),
+      ),
+      h(
+        'div',
+        { class: 'detail-actions' },
+        h('button', {
+          class: 'ghost',
+          type: 'button',
+          text: '追加 xlsx',
+          onClick: () => {
+            ui.importTarget = 'prize-append';
+            fileEl.click();
+          },
+        }),
+        h('button', {
+          class: 'primary',
+          type: 'button',
+          text: '加一项',
+          onClick: () => {
+            const [next] = addPrize({ prizes: item.prizes }, { name: '新奖品', count: 1 });
+            write(next.prizes);
+          },
+        }),
+      ),
+    ),
+  );
+}
+
+/* ---------- 新建弹窗 ---------- */
+
+function renderNewDialog() {
+  const draft =
+    ui.draft ?? {
+      title: '',
+      mode: MODE.PRIZE,
+      rosterId: app.rosters[0]?.id ?? '',
+      prizeSetId: app.prizeSets[0]?.id ?? '',
+      batch: 1,
+      stage: STAGE.LIST,
+      uniqueWinner: true,
+    };
+  const set = (patch) => {
+    ui.draft = { ...draft, ...patch };
+    render();
+  };
+
+  const modeCard = (id, title, text) =>
+    h(
+      'button',
+      {
+        class: `choice${draft.mode === id ? ' selected' : ''}`,
+        type: 'button',
+        onClick: () => set({ mode: id }),
+      },
+      h('span', { class: 'choice-title', text: title }),
+      h('span', { class: 'choice-text', text }),
     );
 
   return h(
     'div',
-    { class: 'format' },
-    h('h2', { class: 'section-title', text: '表的样子' }),
-    sheet(
-      '奖品',
-      [
-        { name: '奖品名称', rule: '必填' },
-        { name: '数量', rule: '名额，缺省 1' },
-        { name: '权重', rule: '人抽奖品时用，缺省 1', optional: true },
-        { name: '等级', rule: '只在界面上标一下', optional: true },
-      ],
-      '表名带「奖」就按奖品表读',
-    ),
-    sheet(
-      '名单',
-      [
-        { name: '姓名', rule: '必填' },
-        { name: '部门', rule: '选填' },
-        { name: '工号', rule: '选填，导出结果时带上', optional: true },
-      ],
-      '表名带「名单 / 人员 / 参与人」就按名单表读',
-    ),
-    h('p', {
-      class: 'format-foot',
-      text: '列的顺序随意，认的是表头里的字；表名认不出来时靠表头判断。只支持 .xlsx，读不了的旧格式请另存一次。',
-    }),
-  );
-}
-
-function renderImportReport() {
-  const { prizes, people, problems } = ui.pending;
-  const total = prizes.reduce((sum, prize) => sum + prize.count, 0);
-  return h(
-    'div',
-    { class: 'report' },
-    h('h2', { class: 'section-title', text: '读到的内容' }),
+    {
+      class: 'scrim',
+      onClick: (event) => {
+        if (event.target === event.currentTarget) {
+          closeDialog();
+        }
+      },
+    },
     h(
       'div',
-      { class: 'report-summary' },
-      h('div', { class: 'report-stat' }, h('b', { text: String(prizes.length) }), h('span', { text: '个奖项' })),
-      h('div', { class: 'report-stat' }, h('b', { text: String(total) }), h('span', { text: '个名额' })),
-      h('div', { class: 'report-stat' }, h('b', { text: String(people.length) }), h('span', { text: '位参与人' })),
-    ),
-    problems.length === 0
-      ? h('p', { class: 'report-ok', text: '没有发现问题。' })
-      : h(
-          'ul',
-          { class: 'report-problems' },
-          problems.map((problem) =>
+      { class: 'dialog', role: 'dialog', 'aria-label': '新建抽奖' },
+      h(
+        'header',
+        { class: 'dialog-head' },
+        h('h2', { class: 'dialog-title', text: '新建抽奖' }),
+        h('button', { class: 'icon-button', type: 'button', text: '×', 'aria-label': '关闭', onClick: closeDialog }),
+      ),
+      h(
+        'div',
+        { class: 'dialog-body' },
+        h(
+          'label',
+          { class: 'field' },
+          h('span', { class: 'field-label', text: '名称' }),
+          h('input', {
+            class: 'field-input',
+            type: 'text',
+            value: draft.title,
+            placeholder: '2026 年会',
+            onInput: (event) => {
+              ui.draft = { ...draft, title: event.currentTarget.value };
+            },
+          }),
+        ),
+        h(
+          'div',
+          { class: 'field' },
+          h('span', { class: 'field-label', text: '抽法' }),
+          h(
+            'div',
+            { class: 'choices' },
+            modeCard(MODE.PRIZE, '奖品抽人', '先定一支签，再抽出中奖的人。年会大屏。'),
+            modeCard(MODE.PERSON, '人抽奖品', '每个人上来抽一次，抽到什么由奖池决定。摊位。'),
+          ),
+        ),
+        h(
+          'div',
+          { class: 'field-grid' },
+          h(
+            'label',
+            { class: 'field' },
+            h('span', { class: 'field-label', text: '名单' }),
             h(
-              'li',
-              {},
-              h('span', { class: 'problem-where', text: problem.row > 0 ? `${problem.sheet} 第 ${problem.row} 行` : problem.sheet }),
-              h('span', { class: 'problem-what', text: problem.message }),
+              'select',
+              {
+                class: 'field-select',
+                onChange: (event) => {
+                  const value = event.currentTarget.value;
+                  if (value === '__upload__') {
+                    ui.importTarget = 'draft-roster';
+                    fileEl.click();
+                    return;
+                  }
+                  set({ rosterId: value });
+                },
+              },
+              h('option', { value: '', text: '现场名单（空的）', selected: draft.rosterId === '' }),
+              app.rosters.map((item) =>
+                h('option', {
+                  value: item.id,
+                  text: `${item.name} · ${item.people.length} 人`,
+                  selected: item.id === draft.rosterId,
+                }),
+              ),
+              h('option', { value: '__upload__', text: '上传 xlsx…' }),
+            ),
+          ),
+          h(
+            'label',
+            { class: 'field' },
+            h('span', { class: 'field-label', text: '奖品' }),
+            h(
+              'select',
+              {
+                class: 'field-select',
+                onChange: (event) => {
+                  const value = event.currentTarget.value;
+                  if (value === '__upload__') {
+                    ui.importTarget = 'draft-prize';
+                    fileEl.click();
+                    return;
+                  }
+                  set({ prizeSetId: value });
+                },
+              },
+              h('option', { value: '', text: '现场奖品（空的）', selected: draft.prizeSetId === '' }),
+              app.prizeSets.map((item) =>
+                h('option', {
+                  value: item.id,
+                  text: `${item.name} · ${item.prizes.length} 项`,
+                  selected: item.id === draft.prizeSetId,
+                }),
+              ),
+              h('option', { value: '__upload__', text: '上传 xlsx…' }),
             ),
           ),
         ),
-    h(
-      'div',
-      { class: 'report-actions' },
-      h('button', {
-        class: 'primary',
-        type: 'button',
-        text: '用这份数据',
-        onClick: applyImport,
-      }),
-      h('button', {
-        class: 'ghost',
-        type: 'button',
-        text: '换一份',
-        onClick: () => {
-          ui.pending = null;
-          render();
-        },
-      }),
+        h(
+          'div',
+          { class: 'field-grid' },
+          h(
+            'label',
+            { class: 'field' },
+            h('span', { class: 'field-label', text: '每次抽几人' }),
+            h(
+              'select',
+              {
+                class: 'field-select',
+                onChange: (event) => set({ batch: Number(event.currentTarget.value) }),
+              },
+              [1, 2, 3, 5, 10].map((size) =>
+                h('option', { value: String(size), text: `${size} 人`, selected: draft.batch === size }),
+              ),
+            ),
+          ),
+          h(
+            'label',
+            { class: 'field' },
+            h('span', { class: 'field-label', text: '形态' }),
+            h(
+              'select',
+              {
+                class: 'field-select',
+                onChange: (event) => set({ stage: event.currentTarget.value }),
+              },
+              Object.values(STAGE).map((stage) =>
+                h('option', { value: stage, text: STAGE_LABELS[stage], selected: draft.stage === stage }),
+              ),
+            ),
+          ),
+        ),
+        h(
+          'label',
+          { class: 'check' },
+          h('input', {
+            type: 'checkbox',
+            checked: draft.uniqueWinner,
+            onChange: (event) => set({ uniqueWinner: event.currentTarget.checked }),
+          }),
+          h('span', { text: '已中奖的人不再进池' }),
+        ),
+      ),
+      h(
+        'footer',
+        { class: 'dialog-foot' },
+        h('button', { class: 'ghost', type: 'button', text: '取消', onClick: closeDialog }),
+        h('button', {
+          class: 'primary',
+          type: 'button',
+          text: '创建',
+          onClick: () => {
+            const final = ui.draft ?? draft;
+            const [next, created] = createActivity(app, {
+              title: final.title,
+              mode: final.mode,
+              stage: final.stage,
+              batch: final.batch,
+              uniqueWinner: final.uniqueWinner,
+              rosterId: final.rosterId,
+              prizeSetId: final.prizeSetId,
+            });
+            app = next;
+            ui.activityId = created.id;
+            ui.mode = 'lotteries';
+            ui.draft = null;
+            ui.dialog = null;
+            saveApp(app);
+            render();
+          },
+        }),
+      ),
     ),
   );
 }
 
-async function handleFile(file) {
-  if (!/\.xlsx$/i.test(file.name)) {
-    toast('只支持 .xlsx；.xls 或 .csv 请先在表格软件里另存一份');
-    return;
-  }
-  try {
-    const bytes = new Uint8Array(await file.arrayBuffer());
-    const result = await readLotteryWorkbook(bytes);
-    ui.pending = { ...result, fileName: file.name };
-    render();
-  } catch (error) {
-    toast(error instanceof Error ? error.message : '这份文件读不了');
-  }
-}
-
-function applyImport() {
-  const pending = ui.pending;
-  if (pending === null) {
-    return;
-  }
-  const title = state.title || pending.fileName.replace(/\.xlsx$/i, '');
-  state = { ...replacePools(state, pending), title };
-  saveState(state);
-  ui.selectedPrizeId = availablePrizes(state)[0]?.id ?? null;
-  ui.pending = null;
-  ui.view = 'event';
+function closeDialog() {
+  ui.dialog = null;
+  ui.draft = null;
   render();
-  toast(`已入池：${state.prizes.length} 个奖项、${state.people.length} 人`);
 }
 
-/* ---------- 活动 ---------- */
+/* ---------- 结果弹窗 ---------- */
 
-function renderEvent() {
-  return h(
-    'section',
-    { class: 'event' },
-    renderEventHead(),
-    h(
-      'div',
-      { class: 'event-grid' },
-      renderPrizePanel(),
-      renderPeoplePanel(),
-    ),
-    renderEventFoot(),
-  );
+function openResults() {
+  const item = activity();
+  if (item === null) {
+    return;
+  }
+  if (item.results.length === 0) {
+    toast('还没有开奖记录');
+    return;
+  }
+  ui.dialog = 'results';
+  render();
 }
 
-function renderEventHead() {
-  return h(
-    'div',
-    { class: 'event-head' },
-    h(
-      'label',
-      { class: 'title-field' },
-      h('span', { class: 'field-label', text: '活动名称' }),
-      h('input', {
-        class: 'title-input',
-        type: 'text',
-        value: state.title,
-        placeholder: '给这场抽奖起个名字',
-        onInput: (event) => {
-          state = { ...state, title: event.currentTarget.value };
-          saveState(state);
-          const brand = document.querySelector('.brand-title');
-          if (brand !== null) {
-            brand.textContent = state.title;
-            brand.classList.toggle('empty', state.title === '');
-          }
-        },
-      }),
-    ),
-    h(
-      'label',
-      { class: 'check' },
-      h('input', {
-        type: 'checkbox',
-        checked: state.uniqueWinner,
-        onChange: (event) => {
-          commit({ ...state, uniqueWinner: event.currentTarget.checked });
-        },
-      }),
-      h('span', { text: '已中奖的人不再进池' }),
-    ),
-  );
-}
-
-function renderPrizePanel() {
-  const total = state.prizes.reduce((sum, prize) => sum + prize.count, 0);
-  return h(
-    'section',
-    { class: 'panel panel-prizes' },
-    h(
-      'header',
-      { class: 'panel-head' },
-      h('h2', { class: 'panel-title', text: '奖项' }),
-      h('span', { class: 'panel-count', text: `${state.prizes.length} 项 · ${total} 个名额` }),
-      h('button', {
-        class: 'ghost small',
-        type: 'button',
-        text: '加奖项',
-        onClick: () => {
-          const [next, prize] = addPrize(state, { name: `奖项 ${state.prizes.length + 1}` });
-          state = next;
-          saveState(state);
-          ui.selectedPrizeId = prize.id;
-          render();
-        },
-      }),
-    ),
-    state.prizes.length === 0
-      ? h('p', { class: 'empty', text: '还没有奖项。先导入一份表，或手动加一个。' })
-      : h(
-          'div',
-          { class: 'list-block' },
-          h(
-            'div',
-            { class: 'list-caption prize-caption' },
-            h('span', {}),
-            h('span', { text: '奖品' }),
-            h('span', { text: '进度' }),
-            h('span', { text: '已抽' }),
-            h('span', { text: '名额' }),
-            h('span', {}),
-          ),
-          h(
-            'ol',
-            { class: 'prize-list' },
-            state.prizes.map((prize) => renderPrizeRow(prize)),
-          ),
-        ),
-  );
-}
-
-function renderPrizeRow(prize) {
-  const drawn = prizeDrawn(state, prize.id);
-  const remaining = Math.max(0, prize.count - drawn);
-  const ratio = prize.count === 0 ? 0 : Math.min(1, drawn / prize.count);
-
-  const tally = h('span', { class: 'prize-tally', text: `${drawn}/${prize.count}` });
-  const bar = h('i', { style: `width:${ratio * 100}%` });
-  const selected = ui.selectedPrizeId === prize.id;
-
-  return h(
-    'li',
-    { class: `prize-row${selected ? ' selected' : ''}${remaining === 0 ? ' done' : ''}` },
-    h('button', {
-      class: 'prize-select',
-      type: 'button',
-      title: '设为要抽的奖项',
-      'aria-label': '设为要抽的奖项',
-      text: remaining === 0 ? '满' : '抽',
-      onClick: () => {
-        ui.selectedPrizeId = prize.id;
-        render();
-      },
-    }),
-    h('input', {
-      class: 'prize-name',
-      type: 'text',
-      value: prize.name,
-      'aria-label': '奖品名称',
-      onInput: (event) => {
-        state = updatePrize(state, prize.id, { name: event.currentTarget.value });
-        saveState(state);
-      },
-    }),
-    h('div', { class: 'prize-progress' }, bar),
-    tally,
-    h('input', {
-      class: 'prize-count',
-      type: 'number',
-      min: String(drawn),
-      value: String(prize.count),
-      'aria-label': '名额',
-      onChange: (event) => {
-        state = updatePrize(state, prize.id, { count: Number(event.currentTarget.value) });
-        saveState(state);
-        render();
-      },
-    }),
-    h('button', {
-      class: 'icon-button',
-      type: 'button',
-      text: '×',
-      'aria-label': '删除奖项',
-      onClick: () => {
-        try {
-          state = removePrize(state, prize.id);
-          if (ui.selectedPrizeId === prize.id) {
-            ui.selectedPrizeId = availablePrizes(state)[0]?.id ?? null;
-          }
-          saveState(state);
-          render();
-        } catch (error) {
-          toast(error.message);
-        }
-      },
-    }),
-  );
-}
-
-function renderPeoplePanel() {
-  const query = ui.peopleQuery.trim();
-  const matched = query === ''
-    ? state.people
-    : state.people.filter(
-        (person) =>
-          person.name.includes(query) ||
-          (person.dept ?? '').includes(query) ||
-          (person.employeeId ?? '').includes(query),
-      );
-  const shown = matched.slice(0, 300);
-
-  return h(
-    'section',
-    { class: 'panel panel-people' },
-    h(
-      'header',
-      { class: 'panel-head' },
-      h('h2', { class: 'panel-title', text: '名单' }),
-      h('span', { class: 'panel-count', text: `${state.people.length} 人` }),
-      h('input', {
-        class: 'people-search',
-        type: 'search',
-        placeholder: '找人',
-        value: ui.peopleQuery,
-        onInput: (event) => {
-          ui.peopleQuery = event.currentTarget.value;
-          render();
-          const input = document.querySelector('.people-search');
-          if (input !== null) {
-            input.focus();
-            input.setSelectionRange(input.value.length, input.value.length);
-          }
-        },
-      }),
-      h('button', {
-        class: 'ghost small',
-        type: 'button',
-        text: '加一人',
-        onClick: () => {
-          const [next] = addPerson(state, { name: `参与人 ${state.people.length + 1}` });
-          state = next;
-          saveState(state);
-          render();
-        },
-      }),
-    ),
-    state.people.length === 0
-      ? h('p', { class: 'empty', text: '还没有名单。导入一份表，或手动加一个人。' })
-      : h(
-          'div',
-          { class: 'list-block' },
-          h(
-            'div',
-            { class: 'list-caption person-caption' },
-            h('span', {}),
-            h('span', { text: '姓名' }),
-            h('span', { text: '部门' }),
-            h('span', {}),
-            h('span', {}),
-          ),
-          h(
-            'ol',
-            { class: 'people-list' },
-            shown.map((person, index) => renderPersonRow(person, index)),
-          ),
-        ),
-    matched.length > shown.length
-      ? h('p', { class: 'list-foot', text: `还有 ${matched.length - shown.length} 人，用上面的搜索缩小范围` })
-      : null,
-  );
-}
-
-function renderPersonRow(person, index) {
-  const won = hasWon(state, person.id);
-  const result = state.results.find((item) => item.winners.some((winner) => winner.personId === person.id));
-  return h(
-    'li',
-    { class: `person-row${won ? ' won' : ''}` },
-    h('span', { class: 'person-index', text: String(index + 1).padStart(3, '0') }),
-    h('input', {
-      class: 'person-name',
-      type: 'text',
-      value: person.name,
-      'aria-label': '姓名',
-      onInput: (event) => {
-        state = updatePerson(state, person.id, { name: event.currentTarget.value });
-        saveState(state);
-      },
-    }),
-    h('input', {
-      class: 'person-dept',
-      type: 'text',
-      value: person.dept ?? '',
-      placeholder: '部门',
-      'aria-label': '部门',
-      onInput: (event) => {
-        state = updatePerson(state, person.id, { dept: event.currentTarget.value });
-        saveState(state);
-      },
-    }),
-    won ? h('span', { class: 'person-won', text: result?.prizeName ?? '已中奖' }) : null,
-    h('button', {
-      class: 'icon-button',
-      type: 'button',
-      text: '×',
-      'aria-label': '删除这个人',
-      onClick: () => {
-        try {
-          state = removePerson(state, person.id);
-          saveState(state);
-          render();
-        } catch (error) {
-          toast(error.message);
-        }
-      },
-    }),
-  );
-}
-
-function renderEventFoot() {
-  const info = readiness(state);
-  return h(
-    'footer',
-    { class: 'event-foot' },
-    h(
-      'div',
-      { class: 'foot-text' },
-      h('span', { text: `${info.totalPrizeCount} 个名额，已抽出 ${info.handedOut} 个` }),
-      info.prizes === 0 && state.prizes.length > 0
-        ? h('span', { class: 'foot-warn', text: '所有奖项都抽完了' })
-        : null,
-      info.people === 0 && state.people.length > 0 && state.uniqueWinner
-        ? h('span', { class: 'foot-warn', text: '名单里的人都中过了' })
-        : null,
-    ),
-    h('button', {
-      class: 'primary',
-      type: 'button',
-      text: '拉开舞台',
-      onClick: openStage,
-    }),
-  );
-}
-
-/* ---------- 结果 ---------- */
-
-function renderResults() {
+function renderResultsDialog() {
+  const item = activity();
+  if (item === null) {
+    return h('div');
+  }
   const rows = [];
   let order = 1;
-  for (const result of state.results) {
+  for (const result of item.results) {
     for (const winner of result.winners) {
       rows.push({ order: order++, result, winner });
     }
   }
 
   return h(
-    'section',
-    { class: 'results' },
+    'div',
+    {
+      class: 'scrim',
+      onClick: (event) => {
+        if (event.target === event.currentTarget) {
+          closeDialog();
+        }
+      },
+    },
     h(
-      'header',
-      { class: 'results-head' },
-      h('h2', { class: 'panel-title', text: '开奖记录' }),
-      h('span', { class: 'panel-count', text: `${rows.length} 人` }),
+      'div',
+      { class: 'dialog dialog-wide', role: 'dialog', 'aria-label': '开奖结果' },
+      h(
+        'header',
+        { class: 'dialog-head' },
+        h('h2', { class: 'dialog-title', text: '开奖结果' }),
+        h('span', { class: 'dialog-sub', text: `${item.title} · ${rows.length} 人` }),
+        h('button', { class: 'icon-button', type: 'button', text: '×', 'aria-label': '关闭', onClick: closeDialog }),
+      ),
       h(
         'div',
-        { class: 'results-actions' },
+        { class: 'dialog-body' },
+        h(
+          'div',
+          { class: 'switch', role: 'group', 'aria-label': '排序' },
+          [
+            ['prize', '按奖项'],
+            ['time', '按时间'],
+          ].map(([id, label]) =>
+            h('button', {
+              class: `switch-item${ui.resultsView === id ? ' active' : ''}`,
+              type: 'button',
+              text: label,
+              onClick: () => {
+                ui.resultsView = id;
+                render();
+              },
+            }),
+          ),
+        ),
+        ui.resultsView === 'prize'
+          ? renderResultsByPrize(item, rows)
+          : renderResultsByTime(rows),
+      ),
+      h(
+        'footer',
+        { class: 'dialog-foot' },
+        h('button', {
+          class: 'ghost',
+          type: 'button',
+          text: '清空记录',
+          onClick: () => {
+            if (!window.confirm('清空这场抽奖的全部记录？名单与奖品会留着。')) {
+              return;
+            }
+            app = {
+              ...app,
+              activities: app.activities.map((entry) =>
+                entry.id === item.id ? { ...entry, results: [], excluded: [] } : entry,
+              ),
+            };
+            saveApp(app);
+            render();
+          },
+        }),
         h('button', {
           class: 'ghost',
           type: 'button',
           text: '撤销上一次',
-          disabled: state.results.length === 0,
           onClick: () => {
-            commit(undoLast(state));
+            app = {
+              ...app,
+              activities: app.activities.map((entry) =>
+                entry.id === item.id ? { ...entry, results: entry.results.slice(0, -1) } : entry,
+              ),
+            };
+            saveApp(app);
+            render();
             toast('已撤销最后一次开奖');
           },
         }),
         h('button', {
-          class: 'ghost',
+          class: 'primary',
           type: 'button',
           text: '导出 xlsx',
-          disabled: rows.length === 0,
           onClick: async () => {
-            const bytes = await buildResultWorkbook(state);
-            const stamp = new Date().toISOString().slice(0, 10);
-            downloadBytes(`${state.title || '抽奖'}结果-${stamp}.xlsx`, bytes, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-          },
-        }),
-        h('button', {
-          class: 'ghost danger',
-          type: 'button',
-          text: '清空记录',
-          disabled: state.results.length === 0,
-          onClick: () => {
-            if (!window.confirm('清空所有开奖记录？奖项和名单会留着。')) {
-              return;
-            }
-            commit(resetProgress(state));
+            const bytes = await buildResultWorkbook(item);
+            downloadBytes(
+              `${item.title || '抽奖'}结果-${new Date().toISOString().slice(0, 10)}.xlsx`,
+              bytes,
+              'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            );
           },
         }),
       ),
     ),
-    rows.length === 0
-      ? h(
-          'div',
-          { class: 'results-empty' },
-          h('p', { text: '还没有开奖记录。' }),
-          h('button', { class: 'primary', type: 'button', text: '去舞台', onClick: openStage }),
-        )
-      : h(
-          'table',
-          { class: 'result-table' },
-          h(
-            'thead',
-            {},
-            h(
-              'tr',
-              {},
-              ['#', '奖项', '姓名', '部门', '工号', '时间'].map((label) =>
-                h('th', { text: label }),
-              ),
-            ),
-          ),
-          h(
-            'tbody',
-            {},
-            rows
-              .slice()
-              .reverse()
-              .map((row) =>
-                h(
-                  'tr',
-                  {},
-                  h('td', { class: 'num', text: String(row.order) }),
-                  h('td', { text: row.result.prizeName }),
-                  h('td', { class: 'strong', text: row.winner.name }),
-                  h('td', { class: 'dim', text: row.winner.dept ?? '' }),
-                  h('td', { class: 'dim num', text: row.winner.employeeId ?? '' }),
-                  h('td', { class: 'dim num', text: clockTime(row.result.at) }),
-                ),
-              ),
-          ),
-        ),
-    renderPrizeSummary(),
   );
 }
 
-function renderPrizeSummary() {
-  if (state.prizes.length === 0) {
-    return null;
-  }
+function renderResultsByPrize(item, rows) {
+  const groups = item.prizes
+    .map((prize) => ({ prize, rows: rows.filter((row) => row.result.prizeId === prize.id) }))
+    .filter((group) => group.rows.length > 0);
+
   return h(
     'div',
-    { class: 'summary' },
-    h('h3', { class: 'section-title', text: '奖项进度' }),
-    h(
-      'ul',
-      { class: 'summary-list' },
-      state.prizes.map((prize) => {
-        const drawn = prizeDrawn(state, prize.id);
-        const ratio = prize.count === 0 ? 0 : Math.min(1, drawn / prize.count);
-        return h(
-          'li',
-          { class: 'summary-row' },
-          h('span', { class: 'summary-name', text: prize.name }),
-          h('div', { class: 'prize-progress' }, h('i', { style: `width:${ratio * 100}%` })),
-          h('span', { class: 'summary-tally', text: `${drawn}/${prize.count}` }),
-        );
-      }),
+    { class: 'groups' },
+    groups.map((group) =>
+      h(
+        'section',
+        { class: 'group' },
+        h(
+          'header',
+          { class: 'group-head' },
+          h('h3', { class: 'group-title', text: group.prize.name }),
+          h('span', { class: 'group-count', text: `${group.rows.length} / ${group.prize.count} 个名额` }),
+        ),
+        h(
+          'ol',
+          { class: 'group-rows' },
+          group.rows.map((row) =>
+            h(
+              'li',
+              { class: 'group-row' },
+              h('span', { class: 'row-num', text: String(row.order).padStart(2, '0') }),
+              h('span', { class: 'group-name', text: row.winner.name }),
+              h('span', { class: 'group-dept', text: row.winner.dept ?? '' }),
+              h('span', { class: 'group-employee', text: row.winner.employeeId ?? '' }),
+              h('span', { class: 'group-time', text: clockTime(row.result.at) }),
+            ),
+          ),
+        ),
+      ),
     ),
   );
 }
 
-/* ---------- 舞台 ---------- */
-
-function currentPrize() {
-  const prize = state.prizes.find((item) => item.id === ui.selectedPrizeId);
-  if (prize !== undefined && prizeRemaining(state, prize.id) > 0) {
-    return prize;
-  }
-  return availablePrizes(state)[0] ?? null;
+function renderResultsByTime(rows) {
+  return h(
+    'ol',
+    { class: 'rows-edit' },
+    rows
+      .slice()
+      .reverse()
+      .map((row) =>
+        h(
+          'li',
+          { class: 'edit-row result' },
+          h('span', { class: 'row-num', text: String(row.order).padStart(2, '0') }),
+          h(
+            'span',
+            { class: 'result-main' },
+            h('span', { class: 'result-name', text: row.winner.name }),
+            h('span', { class: 'result-prize', text: row.result.prizeName }),
+          ),
+          h('span', { class: 'result-dept', text: row.winner.dept ?? '' }),
+          h('span', { class: 'row-num', text: clockTime(row.result.at) }),
+        ),
+      ),
+  );
 }
 
-/** 人抽奖品时台上这一位：手动选过就用选的，否则按名单顺序取第一个没中过的。 */
+/* ---------- 抽奖页 ---------- */
+
+function openDraw(rehearsal) {
+  const item = activity();
+  if (item === null) {
+    return;
+  }
+  if (item.people.length === 0) {
+    toast('这份名单是空的，先加人');
+    return;
+  }
+  ui.rehearsal = rehearsal;
+  ui.spinning = false;
+  ui.revealed = false;
+  ui.selectedPrizeId = null;
+  ui.personPickId = null;
+  run = runState(item);
+  ui.drawing = true;
+  render();
+}
+
+function leaveDraw() {
+  if (document.fullscreenElement !== null) {
+    document.exitFullscreen?.();
+  }
+  destroyStage();
+  run = null;
+  ui.drawing = false;
+  ui.spinning = false;
+  ui.revealed = false;
+}
+
+function renderDraw() {
+  if (run === null) {
+    return h('main', { class: 'draw' });
+  }
+  const stageHost = h('div', { class: 'stage', id: 'stage' });
+
+  return h(
+    'main',
+    { class: 'draw', id: 'draw' },
+    h(
+      'header',
+      { class: 'draw-head' },
+      h(
+        'div',
+        { class: 'draw-headline' },
+        h('span', { class: 'draw-kicker', text: ui.rehearsal ? '彩排' : MODE_LABELS[run.mode] }),
+        h('span', { class: 'draw-title', text: run.title }),
+        h('span', { class: 'draw-meta', id: 'draw-meta', text: drawMeta() }),
+      ),
+      h(
+        'div',
+        { class: 'draw-actions' },
+        h('button', {
+          class: 'link',
+          type: 'button',
+          id: 'draw-fullscreen',
+          text: document.fullscreenElement === null ? '全屏' : '退出全屏',
+          onClick: toggleFullscreen,
+        }),
+        h('button', {
+          class: 'link',
+          type: 'button',
+          text: '退出',
+          onClick: () => {
+            leaveDraw();
+            render();
+          },
+        }),
+      ),
+    ),
+    h(
+      'div',
+      { class: 'draw-body' },
+      h(
+        'aside',
+        { class: 'queue' },
+        h(
+          'div',
+          { class: 'queue-head' },
+          h('span', { class: 'queue-label', text: run.mode === MODE.PRIZE ? '签' : '票' }),
+          h('span', {
+            class: 'queue-count',
+            text:
+              run.mode === MODE.PRIZE
+                ? `${availablePrizes(run).length} / ${run.prizes.length}`
+                : `${eligiblePeople(run).length} / ${run.people.length}`,
+          }),
+        ),
+        h('ol', { class: 'queue-list', id: 'queue' }),
+      ),
+      h('div', { class: 'booth' }, stageHost, h('div', { class: 'idle', id: 'idle' })),
+    ),
+    h(
+      'footer',
+      { class: 'draw-foot' },
+      h('div', { class: 'draw-status', id: 'draw-status' }),
+      ui.rehearsal
+        ? h('button', { class: 'link', type: 'button', text: '清空彩排记录', onClick: clearRehearsal })
+        : null,
+      h('button', {
+        class: 'draw-action',
+        type: 'button',
+        id: 'draw-action',
+        text: '开始',
+        onClick: onDrawAction,
+      }),
+      h('div', { class: 'draw-hint', text: '空格 开始 / 停 · ↑↓ 换 · 退格 撤销 · Delete 作废 · Esc 退出' }),
+    ),
+  );
+}
+
+function drawMeta() {
+  const total = run.prizes.reduce((sum, prize) => sum + prize.count, 0);
+  const handed = run.results.reduce((sum, result) => sum + result.winners.length, 0);
+  return `${run.prizes.length} 支签 · ${total} 个名额 · 已抽 ${handed}`;
+}
+
+function currentPrize() {
+  const picked = run.prizes.find((prize) => prize.id === ui.selectedPrizeId);
+  if (picked !== undefined && prizeRemaining(run, picked.id) > 0) {
+    return picked;
+  }
+  return availablePrizes(run)[0] ?? null;
+}
+
 function pickedPerson() {
   if (ui.personPickId !== null) {
-    const picked = state.people.find((person) => person.id === ui.personPickId);
-    if (picked !== undefined && !(state.uniqueWinner && hasWon(state, picked.id))) {
+    const picked = run.people.find((person) => person.id === ui.personPickId);
+    if (picked !== undefined && !(run.uniqueWinner && hasWon(run, picked.id))) {
       return picked;
     }
   }
-  return nextPerson(state);
+  return nextPerson(run);
 }
 
-function openStage() {
-  if (ui.stageOpen) {
-    return;
-  }
-  if (state.people.length === 0) {
-    toast('还没有名单，舞台没法开');
-    ui.view = 'prepare';
-    render();
-    return;
-  }
-  ui.stageOpen = true;
-  ui.spinning = false;
-  stageEl.hidden = false;
-  document.body.classList.add('stage-on');
-  renderStageBody();
-  updateStageChrome();
+function allDrawn() {
+  return availablePrizes(run).length === 0 || eligiblePeople(run).length === 0;
 }
 
-function renderStageBody() {
-  clear(stageEl);
-  const body = h('div', { class: 'stage-body' });
-  stageEl.append(
-    h(
-      'div',
-      { class: 'stage-shell' },
-      h('div', { class: 'stage-spot' }),
-      h(
-        'header',
-        { class: 'stage-top' },
-        h(
-          'div',
-          { class: 'stage-chips', id: 'stage-chips' },
-        ),
-        h(
-          'div',
-          { class: 'stage-tools' },
-          h(
-            'div',
-            { class: 'seg stage-seg', role: 'group', 'aria-label': '抽奖模型' },
-            [MODE.PRIZE, MODE.PERSON].map((mode) =>
-              h('button', {
-                class: `seg-item${state.mode === mode ? ' active' : ''}`,
-                type: 'button',
-                text: MODE_LABELS[mode],
-                onClick: () => {
-                  if (ui.spinning || state.mode === mode) {
-                    return;
-                  }
-                  commit({ ...state, mode });
-                  ui.stage?.reset();
-                  updateStageChrome();
-                },
-              }),
-            ),
-          ),
-          h(
-            'select',
-            {
-              class: 'stage-shape',
-              'aria-label': '舞台形态',
-              onChange: (event) => {
-                if (ui.spinning) {
-                  event.currentTarget.value = state.stage;
-                  return;
-                }
-                commit({ ...state, stage: event.currentTarget.value });
-                renderStageBody();
-              },
-            },
-            Object.values(STAGE).map((stage) =>
-              h('option', { value: stage, text: STAGE_LABELS[stage], selected: state.stage === stage }),
-            ),
-          ),
-          h('button', {
-            class: 'stage-tool',
-            type: 'button',
-            text: '全屏',
-            onClick: async () => {
-              try {
-                if (document.fullscreenElement === null) {
-                  await (stageEl.requestFullscreen?.() ?? Promise.reject(new Error('no fullscreen')));
-                } else {
-                  await document.exitFullscreen?.();
-                }
-              } catch {
-                // 工具箱的 iframe 没给全屏权限；舞台本来就铺满视口，说明一句就够
-                toast('嵌在工具箱里时不让全屏，舞台已经铺满这一屏');
-              }
-            },
-          }),
-          h('button', {
-            class: 'stage-tool',
-            type: 'button',
-            text: '退出',
-            onClick: closeStage,
-          }),
-        ),
-      ),
-      body,
-      h(
-        'footer',
-        { class: 'stage-foot' },
-        h('div', { class: 'stage-status', id: 'stage-status' }),
-        h(
-          'div',
-          { class: 'stage-batch', id: 'stage-batch' },
-        ),
-        h('button', {
-          class: 'stage-action',
-          type: 'button',
-          id: 'stage-action',
-          text: '开抽',
-          onClick: toggleDraw,
-        }),
-        h('div', { class: 'stage-hint', text: '空格 开始 / 停止 · Esc 退出' }),
-      ),
-    ),
-  );
-  if (ui.stage !== null) {
-    ui.stage.destroy();
-  }
-  ui.stage = createStage(state.stage, body);
-  updateStageChrome();
-}
-
-function updateStageChrome() {
-  const chips = document.getElementById('stage-chips');
-  if (chips === null) {
+function paintDraw() {
+  if (run === null) {
     return;
   }
-  clear(chips);
-  if (state.mode === MODE.PRIZE) {
-    for (const prize of state.prizes) {
-      const remaining = prizeRemaining(state, prize.id);
+  const meta = document.getElementById('draw-meta');
+  if (meta !== null) {
+    meta.textContent = drawMeta();
+  }
+  paintQueue();
+  paintIdle();
+  paintFoot();
+}
+
+function paintQueue() {
+  const list = document.getElementById('queue');
+  if (list === null) {
+    return;
+  }
+  clear(list);
+
+  if (run.mode === MODE.PRIZE) {
+    for (const [index, prize] of run.prizes.entries()) {
+      const drawn = prizeDrawn(run, prize.id);
+      const left = Math.max(0, prize.count - drawn);
       const selected = currentPrize()?.id === prize.id;
-      chips.append(
-        h('button', {
-          class: `chip${selected ? ' active' : ''}${remaining === 0 ? ' done' : ''}`,
-          type: 'button',
-          disabled: remaining === 0,
-          onClick: () => {
-            if (ui.spinning) {
-              return;
-            }
-            ui.selectedPrizeId = prize.id;
-            updateStageChrome();
-            if (ui.stage !== null) {
-              ui.stage.reset();
-            }
-          },
-        }, h('span', { class: 'chip-name', text: prize.name }), h('span', { class: 'chip-tally', text: `${prizeDrawn(state, prize.id)}/${prize.count}` })),
-      );
-    }
-  } else {
-    const person = pickedPerson();
-    chips.append(
-      h('div', { class: 'chip chip-person' },
-        h('span', { class: 'chip-name', text: person?.name ?? '名单已抽空' }),
-        h('span', { class: 'chip-tally', text: person?.dept ?? '' }),
-      ),
-      eligiblePeople(state).length > 1
-        ? h(
-            'select',
-            {
-              class: 'stage-person',
-              'aria-label': '换一个人',
-              onChange: (event) => {
-                if (ui.spinning) {
-                  return;
-                }
-                ui.personPickId = event.currentTarget.value || null;
-                updateStageChrome();
-                ui.stage?.reset();
-              },
-            },
-            eligiblePeople(state)
-              .slice(0, 500)
-              .map((item) =>
-                h('option', {
-                  value: item.id,
-                  text: `${item.name}${item.dept ? ` · ${item.dept}` : ''}`,
-                  selected: person?.id === item.id,
-                }),
-              ),
-          )
-        : null,
-    );
-  }
-
-  const status = document.getElementById('stage-status');
-  if (status !== null) {
-    status.textContent = stageStatusText();
-  }
-
-  const batch = document.getElementById('stage-batch');
-  if (batch !== null) {
-    clear(batch);
-    if (state.mode === MODE.PRIZE) {
-      for (const size of [1, 2, 3, 5, 10]) {
-        batch.append(
+      list.append(
+        h(
+          'li',
+          { class: `qrow${selected ? ' selected' : ''}${left === 0 ? ' done' : ''}` },
+          h('span', { class: 'qrow-num', text: String(index + 1).padStart(2, '0') }),
+          h(
+            'span',
+            { class: 'qrow-main' },
+            h('span', { class: 'qrow-name', text: prize.name }),
+            h('span', { class: 'qrow-bar' }, h('i', { style: `width:${prize.count === 0 ? 0 : (drawn / prize.count) * 100}%` })),
+          ),
+          h('span', { class: 'qrow-count', text: `${drawn}/${prize.count}` }),
           h('button', {
-            class: `batch-item${ui.batch === size ? ' active' : ''}`,
+            class: 'qrow-start',
             type: 'button',
-            text: String(size),
+            text: left === 0 ? '满' : ui.spinning && selected ? '停' : '开始',
+            disabled: left === 0 || (ui.spinning && !selected),
             onClick: () => {
-              if (ui.spinning) {
+              if (ui.spinning && selected) {
+                stopDraw();
                 return;
               }
-              ui.batch = size;
-              updateStageChrome();
+              ui.selectedPrizeId = prize.id;
+              ui.personPickId = null;
+              startDraw();
             },
           }),
-        );
-      }
+        ),
+      );
     }
+    return;
   }
 
-  const action = document.getElementById('stage-action');
-  if (action !== null) {
-    const prize = state.mode === MODE.PRIZE ? currentPrize() : null;
-    const canDraw = state.mode === MODE.PRIZE ? prize !== null : availablePrizes(state).length > 0;
-    action.textContent = ui.spinning ? '停' : state.mode === MODE.PRIZE ? '开抽' : '抽一次';
-    action.classList.toggle('running', ui.spinning);
-    action.disabled = !ui.spinning && (!canDraw || eligiblePeople(state).length === 0);
+  const pool = eligiblePeople(run);
+  if (pool.length === 0) {
+    list.append(h('li', { class: 'qrow done' }, h('span', { class: 'qrow-name', text: '票都抽完了' })));
+    return;
+  }
+  const picked = pickedPerson();
+  for (const [index, person] of pool.entries()) {
+    const selected = picked?.id === person.id;
+    list.append(
+      h(
+        'li',
+        { class: `qrow${selected ? ' selected' : ''}` },
+        h('span', { class: 'qrow-num', text: String(index + 1).padStart(2, '0') }),
+        h(
+          'span',
+          { class: 'qrow-main' },
+          h('span', { class: 'qrow-name', text: person.name }),
+          h('span', { class: 'qrow-sub', text: person.dept || '' }),
+        ),
+        h('span', { class: 'qrow-count', text: person.employeeId || '' }),
+        h('button', {
+          class: 'qrow-start',
+          type: 'button',
+          text: ui.spinning && selected ? '停' : '开始',
+          disabled: ui.spinning && !selected,
+          onClick: () => {
+            if (ui.spinning && selected) {
+              stopDraw();
+              return;
+            }
+            ui.personPickId = person.id;
+            startDraw();
+          },
+        }),
+      ),
+    );
   }
 }
 
-function stageStatusText() {
-  if (state.mode === MODE.PRIZE) {
+function paintIdle() {
+  const idle = document.getElementById('idle');
+  if (idle === null) {
+    return;
+  }
+  clear(idle);
+  const showing = !ui.spinning && !ui.revealed;
+  idle.classList.toggle('on', showing);
+  if (!showing) {
+    return;
+  }
+  if (allDrawn()) {
+    idle.append(
+      el('div', 'idle-label', '抽完了'),
+      el('div', 'idle-main', '看结果'),
+      el('div', 'idle-note', `共 ${run.results.reduce((n, r) => n + r.winners.length, 0)} 人中奖`),
+    );
+    return;
+  }
+  if (run.mode === MODE.PRIZE) {
+    const prize = currentPrize();
+    if (prize === null) {
+      return;
+    }
+    idle.append(
+      el('div', 'idle-label', '下一支'),
+      el('div', 'idle-main', prize.name),
+      el('div', 'idle-note', `还剩 ${prizeRemaining(run, prize.id)} 个名额 · 一次抽 ${Math.min(activity()?.batch ?? 1, prizeRemaining(run, prize.id))} 人`),
+    );
+    return;
+  }
+  const person = pickedPerson();
+  if (person === null) {
+    return;
+  }
+  idle.append(
+    el('div', 'idle-label', '请上台'),
+    el('div', 'idle-main', person.name),
+    el('div', 'idle-note', person.dept || '抽一次'),
+  );
+}
+
+function paintFoot() {
+  const status = document.getElementById('draw-status');
+  if (status !== null) {
+    status.textContent = drawStatusText();
+  }
+  const action = document.getElementById('draw-action');
+  if (action === null) {
+    return;
+  }
+  const done = allDrawn();
+  action.textContent = ui.spinning ? '停' : done ? '看结果' : '开始';
+  action.classList.toggle('running', ui.spinning);
+  action.disabled = !ui.spinning && !done && !canDraw();
+}
+
+function canDraw() {
+  return run.mode === MODE.PRIZE ? currentPrize() !== null : availablePrizes(run).length > 0;
+}
+
+function drawStatusText() {
+  if (ui.spinning) {
+    return '抽奖中 · 再按一次停下';
+  }
+  if (allDrawn()) {
+    return '所有签都抽完了';
+  }
+  if (run.mode === MODE.PRIZE) {
     const prize = currentPrize();
     if (prize === null) {
       return '所有奖项都抽完了';
     }
-    const remaining = prizeRemaining(state, prize.id);
-    return `${prize.name} · 还剩 ${remaining} 个名额 · 每次抽 ${Math.min(ui.batch, remaining)} 人`;
+    const left = prizeRemaining(run, prize.id);
+    return `${ui.revealed ? '下一支' : '这一支'}：${prize.name} · 还剩 ${left} 个名额 · 一次抽 ${Math.min(activity()?.batch ?? 1, left)} 人`;
   }
   const person = pickedPerson();
   if (person === null) {
@@ -1104,91 +1591,305 @@ function stageStatusText() {
   return `这一位：${person.name}${person.dept ? ` · ${person.dept}` : ''}`;
 }
 
-function toggleDraw() {
+function onDrawAction() {
   if (ui.spinning) {
     stopDraw();
-  } else {
-    startDraw();
+    return;
   }
+  if (allDrawn()) {
+    leaveDraw();
+    openResults();
+    return;
+  }
+  startDraw();
 }
 
 function startDraw() {
-  if (state.people.length === 0) {
+  if (run.people.length === 0) {
     toast('还没有可抽的人');
     return;
   }
-  if (state.mode === MODE.PRIZE && currentPrize() === null) {
+  if (run.mode === MODE.PRIZE && currentPrize() === null) {
     toast('所有奖项都抽完了');
     return;
   }
-  const labels = eligiblePeople(state).map((person) => person.name);
-  ui.stage.begin({ labels });
+  if (run.mode === MODE.PERSON && pickedPerson() === null) {
+    toast('名单里的人都抽过了');
+    return;
+  }
+  if (ui.stage === null) {
+    return;
+  }
+  ui.revealed = false;
+  ui.stage.begin({ labels: eligiblePeople(run).map((person) => person.name) });
   ui.spinning = true;
-  updateStageChrome();
+  paintDraw();
 }
 
 function stopDraw() {
   let outcome;
   try {
-    outcome = state.mode === MODE.PRIZE
-      ? drawByPrize(state, currentPrize().id, ui.batch)
-      : drawByPerson(state, ui.personPickId ?? undefined);
+    outcome =
+      run.mode === MODE.PRIZE
+        ? drawByPrize(run, currentPrize().id, activity()?.batch ?? 1)
+        : drawByPerson(run, ui.personPickId ?? undefined);
   } catch (error) {
     ui.spinning = false;
-    updateStageChrome();
+    paintDraw();
     toast(error.message);
     return;
   }
-  state = outcome.state;
-  saveState(state);
   ui.spinning = false;
   ui.personPickId = null;
-  if (state.mode === MODE.PRIZE && prizeRemaining(state, outcome.prize.id) === 0) {
-    ui.selectedPrizeId = availablePrizes(state)[0]?.id ?? null;
+  ui.revealed = true;
+  if (run.mode === MODE.PRIZE && prizeRemaining(outcome.state, outcome.prize.id) === 0) {
+    ui.selectedPrizeId = availablePrizes(outcome.state)[0]?.id ?? null;
   }
-  ui.stage.reveal({ winners: outcome.winners, prizeName: outcome.prize.name });
-  updateStageChrome();
+  commitRun(outcome.state);
+  ui.stage?.reveal({ winners: outcome.winners, prizeName: outcome.prize.name });
+  paintDraw();
 }
 
-function closeStage() {
-  if (ui.stage !== null) {
-    ui.stage.destroy();
-    ui.stage = null;
+function stepSelection(direction) {
+  if (ui.spinning || ui.revealed) {
+    return;
   }
-  ui.stageOpen = false;
-  ui.spinning = false;
-  stageEl.hidden = true;
-  clear(stageEl);
-  document.body.classList.remove('stage-on');
-  if (document.fullscreenElement !== null) {
-    document.exitFullscreen?.();
+  if (run.mode === MODE.PRIZE) {
+    const pool = availablePrizes(run);
+    if (pool.length <= 1) {
+      return;
+    }
+    const at = pool.findIndex((prize) => prize.id === currentPrize()?.id);
+    ui.selectedPrizeId = pool[(at + direction + pool.length) % pool.length].id;
+  } else {
+    const pool = eligiblePeople(run);
+    if (pool.length <= 1) {
+      return;
+    }
+    const at = pool.findIndex((person) => person.id === pickedPerson()?.id);
+    ui.personPickId = pool[(at + direction + pool.length) % pool.length].id;
   }
-  render();
+  ui.stage?.reset();
+  paintDraw();
+}
+
+async function toggleFullscreen() {
+  const draw = document.getElementById('draw');
+  try {
+    if (document.fullscreenElement === null) {
+      await (draw.requestFullscreen?.() ?? Promise.reject(new Error('no fullscreen')));
+    } else {
+      await document.exitFullscreen?.();
+    }
+  } catch {
+    toast('这个环境不让全屏；抽奖页本身已经铺满一屏');
+  }
+}
+
+function undoInStage() {
+  if (ui.spinning || run === null) {
+    return;
+  }
+  if (run.results.length === 0) {
+    toast('还没有可以撤销的开奖');
+    return;
+  }
+  const last = run.results.at(-1);
+  ui.revealed = false;
+  ui.stage?.reset();
+  commitRun(undoLast(run));
+  toast(`已撤销：${last.prizeName}`);
+}
+
+function voidLastWinner() {
+  if (ui.spinning || run === null) {
+    return;
+  }
+  const result = run.results.at(-1);
+  if (result === undefined) {
+    toast('还没有可以作废的记录');
+    return;
+  }
+  const winner = result.winners.at(-1);
+  try {
+    const next = voidWinner(run, result.id, winner.personId);
+    ui.revealed = false;
+    ui.stage?.reset();
+    commitRun(next);
+    toast(`${winner.name} 已作废，票移出池`);
+  } catch (error) {
+    toast(error.message);
+  }
+}
+
+function clearRehearsal() {
+  if (run === null || run.results.length === 0) {
+    toast('彩排记录已经是空的');
+    return;
+  }
+  if (!window.confirm('清空这次彩排的开奖记录？名单与奖品会留着。')) {
+    return;
+  }
+  ui.revealed = false;
+  ui.stage?.reset();
+  commitRun({ ...run, results: [], excluded: [] });
+  toast('彩排记录已清空');
+}
+
+/* ---------- 导入 ---------- */
+
+async function downloadTemplate() {
+  const bytes = await buildTemplateWorkbook();
+  downloadBytes('抽奖模板.xlsx', bytes, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+}
+
+async function handleFile(file, target) {
+  if (!/\.xlsx$/i.test(file.name)) {
+    toast('只支持 .xlsx；.xls 或 .csv 请先另存一份');
+    return;
+  }
+  try {
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const result = await readLotteryWorkbook(bytes);
+    const name = file.name.replace(/\.xlsx$/i, '');
+
+    const wantsRoster = target === 'roster' || target === 'roster-append' || target === 'draft-roster';
+    if (wantsRoster) {
+      if (result.people.length === 0) {
+        toast('这份文件里没有名单（需要一张含「姓名」列的表）');
+        return;
+      }
+      if (target === 'roster-append') {
+        const item = roster();
+        if (item === null) {
+          return;
+        }
+        app = updateRoster(app, item.id, { people: [...item.people, ...result.people] });
+        saveApp(app);
+      } else {
+        const [next, created] = addRoster(app, { name, people: result.people });
+        app = next;
+        saveApp(app);
+        if (target === 'draft-roster') {
+          ui.draft = { ...(ui.draft ?? {}), rosterId: created.id };
+        } else {
+          ui.mode = 'rosters';
+          ui.rosterId = created.id;
+        }
+      }
+      toast(`已读入 ${result.people.length} 人`);
+      render();
+      return;
+    }
+
+    if (result.prizes.length === 0) {
+      toast('这份文件里没有奖品（需要一张含「奖品名称」的表）');
+      return;
+    }
+    if (target === 'prize-append') {
+      const item = prizeSet();
+      if (item === null) {
+        return;
+      }
+      app = updatePrizeSet(app, item.id, { prizes: [...item.prizes, ...result.prizes] });
+      saveApp(app);
+    } else {
+      const [next, created] = addPrizeSet(app, { name, prizes: result.prizes });
+      app = next;
+      saveApp(app);
+      if (target === 'draft-prize') {
+        ui.draft = { ...(ui.draft ?? {}), prizeSetId: created.id };
+      } else {
+        ui.mode = 'prizes';
+        ui.prizeSetId = created.id;
+      }
+    }
+    toast(`已读入 ${result.prizes.length} 项奖品`);
+    render();
+  } catch (error) {
+    toast(error instanceof Error ? error.message : '这份文件读不了');
+  }
 }
 
 /* ---------- 事件 ---------- */
 
 fileEl.addEventListener('change', (event) => {
   const file = event.currentTarget.files?.[0];
+  const target =
+    ui.importTarget ??
+    (ui.mode === 'rosters' ? 'roster' : ui.mode === 'prizes' ? 'prize' : null);
   event.currentTarget.value = '';
-  if (file !== undefined) {
-    handleFile(file);
+  ui.importTarget = null;
+  if (file !== undefined && target !== null) {
+    handleFile(file, target);
   }
 });
 
 document.addEventListener('keydown', (event) => {
-  if (event.key === 'Escape' && ui.stageOpen) {
-    closeStage();
+  if (ui.dialog !== null && event.key === 'Escape') {
+    closeDialog();
     return;
   }
-  const typing = ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName ?? '');
-  if (event.code === 'Space' && ui.stageOpen && !typing) {
+  if (!ui.drawing || run === null) {
+    return;
+  }
+  if (['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName ?? '')) {
+    return;
+  }
+  if (event.key === 'Escape') {
+    if (document.fullscreenElement !== null) {
+      document.exitFullscreen?.();
+      return;
+    }
+    leaveDraw();
+    render();
+    return;
+  }
+  if (event.code === 'Space') {
     event.preventDefault();
-    toggleDraw();
+    onDrawAction();
+    return;
+  }
+  if (event.key === 'Backspace') {
+    event.preventDefault();
+    undoInStage();
+    return;
+  }
+  if (event.key === 'Delete') {
+    event.preventDefault();
+    voidLastWinner();
+    return;
+  }
+  if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+    event.preventDefault();
+    stepSelection(event.key === 'ArrowDown' ? 1 : -1);
   }
 });
 
-window.addEventListener('pagehide', () => flushState(state));
-window.addEventListener('beforeunload', () => flushState(state));
+document.addEventListener('fullscreenchange', () => {
+  document.getElementById('draw')?.classList.toggle('is-full', document.fullscreenElement !== null);
+  const button = document.getElementById('draw-fullscreen');
+  if (button !== null) {
+    button.textContent = document.fullscreenElement === null ? '全屏' : '退出全屏';
+  }
+});
+
+window.addEventListener('pagehide', () => flushApp(app));
+window.addEventListener('beforeunload', () => flushApp(app));
+
+/* ---------- 启动 ---------- */
+
+if (ui.activityId === null && app.activities.length > 0) {
+  ui.activityId = app.activities[0].id;
+}
+if (ui.drawing) {
+  const item = activity();
+  if (item === null) {
+    ui.drawing = false;
+  } else {
+    ui.rehearsal = false;
+    run = runState(item);
+  }
+}
 
 render();
