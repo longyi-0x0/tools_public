@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 2,
+  "type": "tool",
+  "id": "lottery",
+  "name": "抽奖台",
+  "description": "导入一份 xlsx 就能开抽：奖品抽人（年会大屏）与人抽奖品（摊位逐个抽）两套方向共用一个奖池，名额与中奖名单实时结算，可撤销、可导出结果。名单与结果只存在本机浏览器里。",
+  "kind": "h5",
+  "entry": "index.html",
+  "capabilities": [],
+  "tags": [
+    "scene"
+  ]
+}
