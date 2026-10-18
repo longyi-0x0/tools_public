@@ -47,8 +47,27 @@ export function createPlate() {
       node.classList.remove('on');
       node.replaceChildren();
     },
-    show({ winners = [], prizeName = '', meta = '' } = {}) {
+    /**
+     * `focus` 决定大字写谁：奖品抽人写中奖的人，人抽奖品写抽到的奖。
+     * 抽什么、写什么必须对得上，否则大屏上会看起来像又抽了一次。
+     */
+    show({ winners = [], prizeName = '', meta = '', focus = 'people' } = {}) {
       node.replaceChildren();
+      if (focus === 'prize') {
+        const person = winners[0];
+        const heading = [person?.name, person?.dept].filter(Boolean).join(' · ');
+        if (heading) {
+          node.append(el('div', 'stage-plate-prize', heading));
+        }
+        const line = el('div', 'stage-winners');
+        line.append(el('span', 'stage-winner', prizeName || '—'));
+        node.append(line);
+        if (meta) {
+          node.append(el('div', 'stage-plate-meta', meta));
+        }
+        node.classList.add('on');
+        return;
+      }
       if (prizeName) {
         node.append(el('div', 'stage-plate-prize', prizeName));
       }

@@ -5,10 +5,12 @@
  * 每帧排一千段文字。真正的抽中结果仍由引擎给，球只是把它指出来。
  */
 
+import { MODE } from '../engine.js';
 import { createCleanup, createPlate, el, mount } from './common.js';
 
 const TWO_PI = Math.PI * 2;
-const MAX_NAMES = 2400;
+const MAX_NAMES = 200;
+const SPEED = 0.5;
 /** 结果牌那一行固定占 96px，球只吃剩下的高度。 */
 const PLATE_RESERVE = 96;
 
@@ -27,10 +29,17 @@ function fibonacciSphere(count) {
 export default {
   id: 'ball',
   label: '球体',
-  hint: '名字在球面上转动',
+  mode: MODE.PRIZE,
   styles: new URL('./ball.css', import.meta.url).href,
+  config: [
+    { key: 'names', label: '名字数量', type: 'range', min: 20, max: 200, step: 20, value: MAX_NAMES },
+    { key: 'speed', label: '旋转速度', type: 'range', min: 0.1, max: 1, step: 0.1, value: SPEED },
+    { key: 'batch', label: '每次抽几人', type: 'range', min: 1, max: 10, step: 1, value: 1 },
+  ],
 
-  create(host) {
+  create(host, config = {}) {
+    const nameBudget = config.names ?? MAX_NAMES;
+    const spin = config.speed ?? SPEED;
     const root = mount(host, 'stage-ball');
     const canvas = el('canvas', 'ball-canvas');
     const plate = createPlate();
@@ -42,7 +51,7 @@ export default {
     let names = [];
     let highlight = new Set();
     let rotation = 0;
-    let speed = 0.0045;
+    let speed = 0.0045 * spin;
     let mode = 'idle';
     let size = 0;
     let width = 0;
@@ -51,7 +60,9 @@ export default {
     function resize() {
       const rect = root.getBoundingClientRect();
       const dpr = Math.min(2, window.devicePixelRatio || 1);
-      const availableHeight = Math.max(140, rect.height - PLATE_RESERVE);
+      // 画布高的时候给结果牌留位置；小画布（预览、窄屏）就让它盖上去
+      const reserve = rect.height >= 420 ? PLATE_RESERVE : 0;
+      const availableHeight = Math.max(120, rect.height - reserve);
       width = rect.width;
       height = availableHeight;
       size = Math.max(120, Math.min(width, availableHeight) * 0.94);
@@ -176,26 +187,26 @@ export default {
     }
 
     function begin({ labels = [] } = {}) {
-      names = labels.slice(0, MAX_NAMES);
+      names = labels.slice(0, nameBudget);
       points = fibonacciSphere(names.length);
       highlight = new Set();
       rotation = Math.random() * TWO_PI;
-      speed = 0.02;
+      speed = 0.02 * spin;
       mode = 'spinning';
       plate.hide();
       draw();
     }
 
-    function reveal({ winners = [], prizeName = '' } = {}) {
+    function reveal({ winners = [], prizeName = '', focus = 'people' } = {}) {
       highlight = new Set();
       for (const winner of winners) {
-        const index = names.indexOf(winner.name);
+        const index = names.indexOf(focus === 'prize' ? prizeName : winner.name);
         if (index !== -1) {
           highlight.add(index);
         }
       }
       mode = 'landing';
-      plate.show({ winners, prizeName });
+      plate.show({ winners, prizeName, focus });
       draw();
     }
 

@@ -5,6 +5,7 @@
  * 转盘停在哪一格，那一格写的就是谁。
  */
 
+import { MODE } from '../engine.js';
 import { createCleanup, createPlate, el, mount, sampleLabels } from './common.js';
 
 const SEGMENTS = 18;
@@ -16,10 +17,16 @@ const LANDING_MS = 2400;
 export default {
   id: 'wheel',
   label: '转盘',
-  hint: '转盘转到某一格',
+  mode: MODE.PERSON,
   styles: new URL('./wheel.css', import.meta.url).href,
+  config: [
+    { key: 'segments', label: '扇区数', type: 'range', min: 8, max: 24, step: 2, value: SEGMENTS },
+    { key: 'landingMs', label: '落定时长', type: 'range', min: 1200, max: 4000, step: 200, value: LANDING_MS },
+  ],
 
-  create(host) {
+  create(host, config = {}) {
+    const segments = config.segments ?? SEGMENTS;
+    const landingMs = config.landingMs ?? LANDING_MS;
     const root = mount(host, 'stage-wheel');
     const canvas = el('canvas', 'wheel-canvas');
     const plate = createPlate();
@@ -37,7 +44,9 @@ export default {
     function resize() {
       const rect = root.getBoundingClientRect();
       const dpr = Math.min(2, window.devicePixelRatio || 1);
-      const availableHeight = Math.max(140, rect.height - PLATE_RESERVE);
+      // 画布高的时候给结果牌留位置；小画布（预览、窄屏）就让它盖上去
+      const reserve = rect.height >= 420 ? PLATE_RESERVE : 0;
+      const availableHeight = Math.max(120, rect.height - reserve);
       size = Math.max(120, Math.min(rect.width, availableHeight));
       canvas.width = Math.round(rect.width * dpr);
       canvas.height = Math.round(availableHeight * dpr);
@@ -85,10 +94,13 @@ export default {
         context.translate(cx, cy);
         context.rotate(start + segment / 2);
         context.fillStyle = 'rgba(242,238,230,.82)';
-        context.font = `${Math.max(11, Math.min(17, radius / 16))}px "Songti SC", "Noto Serif SC", serif`;
+        const fontSize = Math.max(10, Math.min(17, radius / 16));
+        context.font = `${fontSize}px "Songti SC", "Noto Serif SC", serif`;
         context.textAlign = 'right';
         context.textBaseline = 'middle';
-        context.fillText(label.length > 9 ? `${label.slice(0, 8)}…` : label, radius - 18, 0);
+        // 文字从半径外侧往圆心写，圆心附近要留出空地；小盘时按可用长度截断
+        const room = Math.max(3, Math.floor((radius - 26) / fontSize));
+        context.fillText(label.length > room ? `${label.slice(0, Math.max(1, room - 1))}…` : label, radius - 18, 0);
         context.restore();
       });
 
@@ -126,7 +138,7 @@ export default {
       cancel();
       labels = source.length === 0
         ? ['—']
-        : sampleLabels(source, Math.min(SEGMENTS, Math.max(6, source.length)));
+        : sampleLabels(source, Math.min(segments, Math.max(6, source.length)));
       rotation = Math.random() * TWO_PI;
       spinSpeed = 0.42;
       mode = 'spinning';
@@ -134,9 +146,9 @@ export default {
       draw();
     }
 
-    function reveal({ winners = [], prizeName = '' } = {}) {
+    function reveal({ winners = [], prizeName = '', focus = 'people' } = {}) {
       mode = 'landing';
-      const target = winners[0]?.name;
+      const target = focus === 'prize' ? prizeName : winners[0]?.name;
       let index = target === undefined ? 0 : labels.indexOf(target);
       if (index === -1 && target !== undefined) {
         labels[0] = target;
@@ -154,7 +166,7 @@ export default {
       const startedAt = performance.now();
 
       const land = (now) => {
-        const progress = Math.min(1, (now - startedAt) / LANDING_MS);
+        const progress = Math.min(1, (now - startedAt) / landingMs);
         rotation = from + (to - from) * (1 - (1 - progress) ** 3);
         draw();
         if (progress < 1) {
@@ -163,7 +175,7 @@ export default {
         }
         landingFrame = null;
         mode = 'idle';
-        plate.show({ winners, prizeName });
+        plate.show({ winners, prizeName, focus });
       };
       landingFrame = cleanup.frame(land);
     }

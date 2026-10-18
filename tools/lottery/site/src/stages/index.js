@@ -1,22 +1,25 @@
 /**
  * 形态登记处。
  *
- * 一个形态就是一个文件，默认导出 `{ id, label, hint, styles, create }`：
+ * 一个形态就是一个文件，默认导出 `{ id, label, mode, styles, config, create }`：
  *
  * ```js
  * export default {
  *   id: 'my-stage',
  *   label: '我的形态',
- *   hint: '一句话说它怎么动',
+ *   mode: 'prize-person',      // 这个形态怎么抽：奖品抽人 / 人抽奖品
  *   styles: new URL('./my-stage.css', import.meta.url).href,
- *   create(host) {
+ *   config: [
+ *     { key: 'rows', label: '行数', type: 'range', min: 12, max: 40, step: 2, value: 26 },
+ *   ],
+ *   create(host, config) {
  *     // 把画面挂进 host，返回 { begin, reveal, reset, destroy }
  *   },
  * };
  * ```
  *
- * 加新形态只需要两步：在 `stages/` 下新建文件，把它加进下面的数组。
- * 界面的下拉、数据校验、舞台装载都从这里读，不用改别处。
+ * `config` 是这一形态自己的旋钮：主页按它渲染控件，抽奖页把整份配置交给
+ * `create`。加一项配置只改这里，不用在两处各写一遍。
  */
 
 import ball from './ball.js';
@@ -42,9 +45,75 @@ export function stageLabel(id) {
   return stageInfo(id).label;
 }
 
+/** 这一形态怎么抽。抽法由形态决定，不再单独设。 */
+export function stageMode(id) {
+  return stageInfo(id).mode;
+}
+
+/** 这一形态一次抽几个；不带 batch 的形态（如人抽奖品）固定 1。 */
+export function stageBatch(id, config) {
+  const fields = stageFields(id);
+  if (!fields.some((field) => field.key === 'batch')) {
+    return 1;
+  }
+  return normalizeConfig(id, config).batch ?? 1;
+}
+
 /** 合法的形态 id（数据层校验用）。 */
 export function isStageId(id) {
   return BY_ID.has(id);
+}
+
+/** 这一形态有哪些配置项。 */
+export function stageFields(id) {
+  return stageInfo(id).config ?? [];
+}
+
+/** 这一形态的默认配置。 */
+export function stageDefaults(id) {
+  const defaults = {};
+  for (const field of stageFields(id)) {
+    defaults[field.key] = field.value;
+  }
+  return defaults;
+}
+
+function cleanValue(field, value) {
+  if (value === undefined || value === null) {
+    return field.value;
+  }
+  if (field.type === 'switch') {
+    return value === true || value === 'true' || value === 1 || value === '1';
+  }
+  if (field.type === 'select') {
+    const hit = field.options?.find((option) => String(option.value) === String(value));
+    return hit === undefined ? field.value : hit.value;
+  }
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) {
+    return field.value;
+  }
+  return Math.min(field.max, Math.max(field.min, numeric));
+}
+
+/** 把任意来源的配置收成这一形态认的那一份。 */
+export function normalizeConfig(id, raw) {
+  const source = raw !== null && typeof raw === 'object' ? raw : {};
+  const config = {};
+  for (const field of stageFields(id)) {
+    config[field.key] = cleanValue(field, source[field.key]);
+  }
+  return config;
+}
+
+/** 每种形态各存一份配置：切回原形态时还是原来的样子。 */
+export function normalizeStageConfig(raw) {
+  const source = raw !== null && typeof raw === 'object' ? raw : {};
+  const config = {};
+  for (const stage of STAGES) {
+    config[stage.id] = normalizeConfig(stage.id, source[stage.id]);
+  }
+  return config;
 }
 
 /**
@@ -69,6 +138,6 @@ if (typeof document !== 'undefined') {
   loadStyles();
 }
 
-export function createStage(id, host) {
-  return stageInfo(id).create(host);
+export function createStage(id, host, config) {
+  return stageInfo(id).create(host, normalizeConfig(id, config));
 }

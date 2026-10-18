@@ -3,14 +3,21 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="color-scheme" content="light dark" />
 <title>抽奖台</title>
 <link rel="icon" href="data:," />
+<script>
+  // 首屏就把主题定下来，避免先闪一下默认配色
+  try {
+    var theme = localStorage.getItem('lottery.theme.v1');
+    if (theme) document.documentElement.dataset.theme = theme;
+  } catch (error) {}
+</script>
 <link rel="stylesheet" href="./styles.css" />
 </head>
 <body>
 <div id="app" class="app"></div>
 <input id="file" type="file" accept=".xlsx" hidden />
-<input id="package" type="file" accept=".json,application/json" hidden />
 <script type="module" src="./src/main.js"></script>
 </body>
 </html>

@@ -1,16 +1,24 @@
 /**
  * 活动文件：读入一份 xlsx、生成模板、导出结果。
  *
- * 表的结构只有两张：
+ * 表有四张，后两张可选：
  *
+ * - `设置`：键 / 值，记名称、抽法、形态、每次几人、形态配置
  * - `奖品`：奖品名称、数量、权重（可选）、等级（可选）
  * - `名单`：姓名、部门（可选）、工号（可选）
+ * - `开奖记录`：序号、记录、奖项、姓名、部门、工号、开奖时间
  *
  * 表名可以先不较真：先按表名认，认不出来再看表头。列的顺序也不要求，
  * 认的是表头里的字。所有解析都在浏览器里做，文件不上传。
  */
 
+import { MODE, MODE_LABELS } from './engine.js';
+import { DEFAULT_STAGE, STAGES } from './stages/index.js';
 import { date, buildWorkbook, number, parseWorkbook, text } from './xlsx.js';
+
+/** 设置表与开奖记录表：名字认得出就不当奖品 / 名单处理。 */
+const SETTINGS_SHEET = /^(设置|配置|参数)$/;
+const RESULT_SHEET = /^(开奖记录|结果|中奖记录|获奖记录)$/;
 
 const HEADERS = {
   prizeName: ['奖品名称', '奖项名称', '奖品', '奖项', '奖名', '名称'],
@@ -60,6 +68,12 @@ function findColumn(header, candidates) {
 
 /** 一份表像奖品表还是名单表。 */
 function classifySheet(sheet) {
+  if (SETTINGS_SHEET.test(sheet.name.trim())) {
+    return 'settings';
+  }
+  if (RESULT_SHEET.test(sheet.name.trim())) {
+    return 'results';
+  }
   if (PRIZE_SHEET.test(sheet.name) && !PEOPLE_SHEET.test(sheet.name)) {
     return 'prizes';
   }
@@ -183,21 +197,117 @@ function parsePeopleSheet(sheet, problems) {
   return people;
 }
 
+function parseSettingsSheet(sheet) {
+  const settings = {};
+  for (let index = 1; index < sheet.rows.length; index += 1) {
+    const row = sheet.rows[index] ?? [];
+    const key = cellText(row, 0);
+    if (key === '') {
+      continue;
+    }
+    settings[key] = cell(row, 1);
+  }
+  return settings;
+}
+
+function parseResultSheet(sheet) {
+  const header = sheet.rows[0] ?? [];
+  const groupColumn = findColumn(header, ['记录', '批次', '场次']);
+  const prizeColumn = findColumn(header, ['奖项', '奖品', '奖品名称', '奖项名称']);
+  const nameColumn = findColumn(header, HEADERS.personName);
+  const deptColumn = findColumn(header, HEADERS.personDept);
+  const employeeColumn = findColumn(header, HEADERS.personEmployeeId);
+  const timeColumn = findColumn(header, ['开奖时间', '时间', '中奖时间']);
+
+  if (prizeColumn === -1 || nameColumn === -1) {
+    return [];
+  }
+
+  const rows = [];
+  for (let index = 1; index < sheet.rows.length; index += 1) {
+    const row = sheet.rows[index];
+    if (row === undefined || row.every((value) => String(value ?? '').trim() === '')) {
+      continue;
+    }
+    const name = cellText(row, nameColumn);
+    if (name === '') {
+      continue;
+    }
+    const time = timeColumn === -1 ? 0 : Number(cell(row, timeColumn));
+    rows.push({
+      group: groupColumn === -1 ? String(index) : cellText(row, groupColumn),
+      prizeName: cellText(row, prizeColumn),
+      name,
+      dept: deptColumn === -1 ? '' : cellText(row, deptColumn),
+      employeeId: employeeColumn === -1 ? '' : cellText(row, employeeColumn),
+      at: Number.isFinite(time) && time > 0 ? time : Date.now(),
+    });
+  }
+  return rows;
+}
+
+function readMode(value) {
+  const raw = String(value ?? '').trim();
+  if (raw === MODE.PERSON || raw === MODE_LABELS[MODE.PERSON]) {
+    return MODE.PERSON;
+  }
+  return MODE.PRIZE;
+}
+
+function readStage(value) {
+  const raw = String(value ?? '').trim();
+  const byId = STAGES.find((stage) => stage.id === raw);
+  if (byId !== undefined) {
+    return byId.id;
+  }
+  return STAGES.find((stage) => stage.label === raw)?.id ?? DEFAULT_STAGE;
+}
+
+function readBoolean(value, fallback) {
+  const raw = String(value ?? '').trim().toLowerCase();
+  if (['否', 'false', '0', 'no', '关'].includes(raw)) {
+    return false;
+  }
+  if (['是', 'true', '1', 'yes', '开'].includes(raw)) {
+    return true;
+  }
+  return fallback;
+}
+
+function readStageConfig(value) {
+  if (typeof value !== 'string' || value.trim() === '') {
+    return {};
+  }
+  try {
+    const parsed = JSON.parse(value);
+    return parsed !== null && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
 /**
- * 读一份活动文件。
+ * 读一份 xlsx。
  *
- * 返回 `{ prizes, people, problems, sheets }`；`problems` 只是提示，能读出来的
- * 照样入池，界面上把提示列出来，由人决定要不要改表重来。
+ * 认三类表：`奖品` / `名单` 是数据，`设置` 与 `开奖记录` 可选。
+ * 返回 `{ prizes, people, problems, sheets, meta, results }`；`problems` 只是提示，
+ * 能读出来的照样入池，界面上把提示列出来，由人决定要不要改表重来。
  */
 export async function readLotteryWorkbook(bytes) {
   const sheets = await parseWorkbook(bytes);
   const problems = [];
   let prizes = [];
   let people = [];
+  let settings = {};
+  let resultRows = [];
 
   for (const sheet of sheets) {
     const shape = classifySheet(sheet);
-    if (shape === 'prizes') {
+    if (shape === 'settings') {
+      settings = { ...settings, ...parseSettingsSheet(sheet) };
+    } else if (shape === 'results') {
+      resultRows = resultRows.concat(parseResultSheet(sheet));
+    } else if (shape === 'prizes') {
       prizes = prizes.concat(parsePrizeSheet(sheet, problems));
     } else if (shape === 'people') {
       people = people.concat(parsePeopleSheet(sheet, problems));
@@ -225,7 +335,141 @@ export async function readLotteryWorkbook(bytes) {
     });
   }
 
-  return { prizes, people, problems, sheets };
+  prizes = prizes.map((prize, index) => ({ ...prize, id: `a${index + 1}` }));
+  people = people.map((person, index) => ({ ...person, id: `p${index + 1}` }));
+
+  const meta = {
+    title: cellText([settings['名称'], settings['抽奖名称']], 0),
+    mode: readMode(settings['抽法'] ?? settings['模式']),
+    stage: readStage(settings['形态']),
+    batch: Math.max(1, Math.min(50, Math.floor(Number(settings['每次抽几人'] ?? settings['每次']) || 1))),
+    uniqueWinner: readBoolean(settings['不重复中奖'] ?? settings['已中奖的人不再进池'], true),
+    rosterName: cellText([settings['关联名单'], settings['名单']], 0),
+    prizeSetName: cellText([settings['关联奖品'], settings['奖品']], 0),
+    stageConfig: readStageConfig(settings['形态配置']),
+  };
+
+  const results = [];
+  const groups = new Map();
+  for (const row of resultRows) {
+    const prize = prizes.find((item) => item.name === row.prizeName);
+    if (prize === undefined) {
+      problems.push({
+        sheet: '开奖记录',
+        row: 0,
+        message: `「${row.prizeName}」不在奖品表里，这条记录已跳过`,
+      });
+      continue;
+    }
+    let result = groups.get(row.group);
+    if (result === undefined) {
+      result = {
+        id: `r${results.length + 1}`,
+        at: row.at,
+        mode: meta.mode,
+        prizeId: prize.id,
+        prizeName: prize.name,
+        requested: 1,
+        winners: [],
+      };
+      groups.set(row.group, result);
+      results.push(result);
+    }
+    const person = people.find(
+      (item) => item.name === row.name && (row.employeeId === '' || item.employeeId === row.employeeId),
+    );
+    result.winners.push({
+      personId: person?.id ?? '',
+      name: row.name,
+      dept: row.dept,
+      employeeId: row.employeeId,
+    });
+    result.requested = Math.max(result.requested, result.winners.length);
+  }
+
+  return { prizes, people, problems, sheets, meta, results };
+}
+
+/* ---------- 写 ---------- */
+
+const SHEET_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+
+function prizeRows(prizes) {
+  const rows = [['奖品名称', '数量', '权重', '等级'].map(text)];
+  for (const prize of prizes) {
+    rows.push([
+      text(prize.name),
+      number(prize.count),
+      number(prize.weight ?? 1),
+      text(prize.level ?? ''),
+    ]);
+  }
+  return rows;
+}
+
+function peopleRows(people) {
+  const rows = [['姓名', '部门', '工号'].map(text)];
+  for (const person of people) {
+    rows.push([
+      text(person.name),
+      text(person.dept ?? ''),
+      text(person.employeeId ?? ''),
+    ]);
+  }
+  return rows;
+}
+
+function resultRows(results) {
+  const rows = [['序号', '记录', '奖项', '姓名', '部门', '工号', '开奖时间'].map(text)];
+  let order = 1;
+  results.forEach((result, index) => {
+    for (const winner of result.winners) {
+      rows.push([
+        number(order),
+        number(index + 1),
+        text(result.prizeName),
+        text(winner.name),
+        text(winner.dept ?? ''),
+        text(winner.employeeId ?? ''),
+        date(result.at),
+      ]);
+      order += 1;
+    }
+  });
+  return rows;
+}
+
+/** 导出一场抽奖：设置、奖品、名单、开奖记录四张表，导回来就是同一场。 */
+export async function buildLotteryWorkbook(lottery) {
+  const settings = [['键', '值'].map(text)];
+  const put = (key, value, numeric = false) => {
+    settings.push([text(key), numeric ? number(value) : text(value)]);
+  };
+  put('名称', lottery.title);
+  put('抽法', MODE_LABELS[lottery.mode] ?? MODE_LABELS[MODE.PRIZE]);
+  put('形态', lottery.stage);
+  put('每次抽几人', lottery.batch, true);
+  put('不重复中奖', lottery.uniqueWinner ? '是' : '否');
+  put('关联名单', lottery.rosterName ?? '');
+  put('关联奖品', lottery.prizeSetName ?? '');
+  put('形态配置', JSON.stringify(lottery.stageConfig ?? {}));
+
+  return buildWorkbook([
+    { name: '设置', rows: settings },
+    { name: '奖品', rows: prizeRows(lottery.prizes) },
+    { name: '名单', rows: peopleRows(lottery.people) },
+    { name: '开奖记录', rows: resultRows(lottery.results) },
+  ]);
+}
+
+/** 导出名单素材。 */
+export async function buildRosterWorkbook(roster) {
+  return buildWorkbook([{ name: '名单', rows: peopleRows(roster.people) }]);
+}
+
+/** 导出奖品素材。 */
+export async function buildPrizeSetWorkbook(set) {
+  return buildWorkbook([{ name: '奖品', rows: prizeRows(set.prizes) }]);
 }
 
 /** 生成一份可以直接填的活动模板。 */
@@ -254,22 +498,6 @@ export async function buildTemplateWorkbook() {
 
 /** 导出开奖结果。 */
 export async function buildResultWorkbook(state) {
-  const resultRows = [['序号', '奖项', '姓名', '部门', '工号', '开奖时间'].map(text)];
-  let order = 1;
-  for (const result of state.results) {
-    for (const winner of result.winners) {
-      resultRows.push([
-        number(order),
-        text(result.prizeName),
-        text(winner.name),
-        text(winner.dept),
-        text(winner.employeeId),
-        date(result.at),
-      ]);
-      order += 1;
-    }
-  }
-
   const summaryRows = [['奖项', '名额', '已抽', '剩余'].map(text)];
   for (const prize of state.prizes) {
     const drawn = state.results
@@ -284,13 +512,13 @@ export async function buildResultWorkbook(state) {
   }
 
   return buildWorkbook([
-    { name: '结果', rows: resultRows },
+    { name: '结果', rows: resultRows(state.results) },
     { name: '奖项统计', rows: summaryRows },
   ]);
 }
 
 /** 把一段字节存成文件。 */
-export function downloadBytes(fileName, bytes, type) {
+export function downloadBytes(fileName, bytes, type = SHEET_TYPE) {
   const blob = new Blob([bytes], { type });
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
@@ -298,7 +526,6 @@ export function downloadBytes(fileName, bytes, type) {
   link.download = fileName;
   document.body.appendChild(link);
   link.click();
-  link.remove();
-  // 立即释放会让部分浏览器来不及取数据
-  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+  window.setTimeout(() => link.remove(), 0);
+  window.setTimeout(() => URL.revokeObjectURL(url), 4000);
 }

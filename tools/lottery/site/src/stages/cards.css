@@ -13,17 +13,18 @@
 
 .card-board {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
-  grid-template-rows: repeat(2, minmax(0, 1fr));
-  gap: clamp(7px, 1vw, 12px);
-  aspect-ratio: 15 / 7.2;
-  height: min(calc(100% - 104px), 460px);
-  width: auto;
-  max-width: calc(100% - 32px);
+  /* 列数按容器宽度自动收，牌面始终保持竖长，窄预览里字也不会竖着排 */
+  grid-template-columns: repeat(
+    auto-fit,
+    minmax(max(46px, calc(100% / var(--card-columns, 6))), 1fr)
+  );
+  gap: clamp(6px, 1vw, 12px);
+  width: min(calc(100% - 32px), 680px);
   min-width: 0;
+  align-content: center;
 }
 
-.card { position: relative; min-height: 0; perspective: 900px; }
+.card { position: relative; aspect-ratio: 0.74; perspective: 900px; }
 
 .card-inner {
   position: relative;
@@ -74,10 +75,3 @@
   justify-content: center;
 }
 
-@media (max-width: 900px) {
-  .card-board { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-}
-
-@media (max-width: 560px) {
-  .card-board { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-}

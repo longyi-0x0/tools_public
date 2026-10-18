@@ -1,14 +1,14 @@
 /**
- * 存档：名单库、奖品库与抽奖活动都放在本机浏览器里。
+ * 存档：抽奖、名单、奖品都放在本机浏览器里。
  *
- * 旧版只有一场活动的存档（`lottery.state.v1`）会在第一次打开时拆成
- * 一份名单 + 一份奖品 + 一个活动，开奖记录原样保留。
+ * 旧存档会在第一次打开时迁移：`lottery.app.v2`（多活动 + 素材库）与
+ * `lottery.state.v1`（只有一场活动）都认。
  */
 
 import { createApp, migrate } from './data.js';
 
-const KEY = 'lottery.app.v2';
-const LEGACY_KEY = 'lottery.state.v1';
+const KEY = 'lottery.app.v3';
+const LEGACY_KEYS = ['lottery.app.v2', 'lottery.state.v1'];
 
 function readJson(key) {
   try {
@@ -25,9 +25,11 @@ export function loadApp() {
   if (current !== null) {
     return migrate(current);
   }
-  const legacy = readJson(LEGACY_KEY);
-  if (legacy !== null) {
-    return migrate(legacy);
+  for (const key of LEGACY_KEYS) {
+    const legacy = readJson(key);
+    if (legacy !== null) {
+      return migrate(legacy);
+    }
   }
   return createApp();
 }

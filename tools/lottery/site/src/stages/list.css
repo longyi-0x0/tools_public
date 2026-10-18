@@ -30,7 +30,7 @@
   white-space: nowrap;
 }
 
-.running .reel-track { animation: reel 6.5s linear infinite; }
+.running .reel-track { animation: reel var(--reel-duration, 6.5s) linear infinite; }
 
 @keyframes reel { from { transform: translateY(0); } to { transform: translateY(-50%); } }
 

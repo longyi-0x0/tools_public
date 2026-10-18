@@ -280,6 +280,28 @@ export function voidWinner(state, resultId, personId) {
   return { ...state, results, excluded };
 }
 
+/**
+ * 撤销某次开奖里的一个人：只把这一条结果去掉，人不作废、还能再抽。
+ *
+ * 与 `voidWinner` 的区别：作废是「这个人不在场」，会把他移出抽签池；
+ * 撤销是「这次记错了」，他回到池子里。
+ */
+export function undoWinner(state, resultId, personId) {
+  const result = state.results.find((item) => item.id === resultId);
+  if (result === undefined) {
+    throw new DrawError('result-missing', '找不到这次开奖');
+  }
+  const winners = result.winners.filter((winner) => winner.personId !== personId);
+  if (winners.length === result.winners.length) {
+    throw new DrawError('winner-missing', '这次开奖里没有这个人');
+  }
+  const results =
+    winners.length === 0
+      ? state.results.filter((item) => item.id !== resultId)
+      : state.results.map((item) => (item.id === resultId ? { ...item, winners } : item));
+  return { ...state, results };
+}
+
 /** 撤掉最后一次开奖；没有记录时原样返回。 */
 export function undoLast(state) {
   if (state.results.length === 0) {

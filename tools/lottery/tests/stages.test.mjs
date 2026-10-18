@@ -7,8 +7,10 @@ import {
   STAGE_IDS,
   createStage,
   isStageId,
+  stageBatch,
   stageInfo,
   stageLabel,
+  stageMode,
 } from '../site/src/stages/index.js';
 
 test('每种形态都有 id、名字与 create', () => {
@@ -51,4 +53,16 @@ test('createStage 交给对应形态', () => {
       stage.create = original;
     }
   }
+});
+
+test('每种形态自带抽法；一次抽几个是形态内部的配置', () => {
+  for (const stage of STAGES) {
+    assert.ok(stage.mode === 'prize-person' || stage.mode === 'person-prize', `${stage.id} 缺 mode`);
+    const hasBatch = (stage.config ?? []).some((field) => field.key === 'batch');
+    assert.equal(hasBatch, stage.mode === 'prize-person', `${stage.id} 的 batch 配置与抽法不一致`);
+  }
+  assert.equal(stageMode('wheel'), 'person-prize');
+  assert.equal(stageMode('cards'), 'prize-person');
+  assert.equal(stageBatch('wheel', {}), 1);
+  assert.equal(stageBatch('cards', { batch: 3 }), 3);
 });

@@ -18,6 +18,7 @@ import {
   replacePools,
   resetProgress,
   undoLast,
+  undoWinner,
   updatePrize,
   voidWinner,
 } from '../site/src/engine.js';
@@ -231,4 +232,22 @@ test('作废后名额可以重新抽给在场的其他人', () => {
   const again = drawByPrize(next, 'a1', 1, stubRandom([0]));
   assert.notEqual(again.winners[0].personId, gone);
   assert.equal(prizeRemaining(again.state, 'a1'), 0);
+});
+
+test('撤销某人：只去掉这一条，人回到池子', () => {
+  const state = baseState();
+  const { state: drawn, winners } = drawByPrize(state, 'a2', 2, stubRandom([0.1, 0.6]));
+  const resultId = drawn.results[0].id;
+  const back = winners[0].personId;
+
+  const next = undoWinner(drawn, resultId, back);
+  assert.equal(prizeDrawn(next, 'a2'), 1);
+  assert.equal(prizeRemaining(next, 'a2'), 1);
+  assert.deepEqual(next.excluded, []);
+  assert.ok(eligiblePeople(next).some((person) => person.id === back));
+
+  // 撤销掉最后一个人时整条记录消失
+  const emptied = undoWinner(next, resultId, winners[1].personId);
+  assert.equal(emptied.results.length, 0);
+  assert.throws(() => undoWinner(emptied, resultId, back), /找不到这次开奖/);
 });
