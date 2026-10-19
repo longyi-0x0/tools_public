@@ -1,25 +1,191 @@
-/* 转盘：一块 canvas，扇区与指针都画在里面。 */
+/*
+ * 转盘：漆器。深朱与墨红交替，金线只做两圈；轴心一点金。
+ *
+ * 给门店、摊位这类"一个人上来转一次"的场合：左边是人名册，右边是盘子，
+ * 主按钮是压在最底下的一条朱漆。
+ */
 
 .stage-wheel {
+  --lacquer: #110a0b;
+  --gold: #c8a265;
+  --cream: #f7ece1;
   position: relative;
   width: 100%;
   height: 100%;
+  display: grid;
+  grid-template-columns: minmax(15cqh, 21cqw) minmax(0, 1fr);
+  background:
+    radial-gradient(70cqw 70cqh at 62% 40%, #1f1013 0%, #110a0b 60%, #080607 100%);
+  overflow: hidden;
+}
+
+/* ---------- 左：人名册 ---------- */
+
+.wheel-rail {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 3cqh 1.6cqw 2.2cqh 2.2cqw;
+  border-right: 1px solid rgba(200, 162, 101, 0.16);
+}
+
+.wheel-title {
+  font-family: var(--serif);
+  font-size: 2cqh;
+  letter-spacing: 0.14em;
+  color: var(--cream);
+  padding-bottom: 1.4cqh;
+  border-bottom: 1px solid rgba(200, 162, 101, 0.18);
+}
+
+.wheel-rail .picker {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: none;
+  margin-top: 0.6cqh;
+}
+
+.wheel-rail .picker::-webkit-scrollbar { display: none; }
+
+.wheel-rail .pick {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 0.5cqw;
+  padding: 1cqh 0.5cqw;
+  border-bottom: 1px solid rgba(200, 162, 101, 0.1);
+  text-align: left;
+  color: rgba(247, 236, 225, 0.62);
+  transition: color 0.16s ease, background 0.16s ease;
+}
+
+.wheel-rail .pick:hover { color: var(--cream); }
+
+.wheel-rail .pick.on {
+  color: #fff6ea;
+  background: linear-gradient(90deg, rgba(181, 53, 42, 0.34), transparent 82%);
+  box-shadow: inset 2px 0 0 #b5352a;
+}
+
+.wheel-rail .pick-label {
+  font-family: var(--serif);
+  font-size: 2cqh;
+  letter-spacing: 0.06em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wheel-rail .pick-sub {
+  font-size: 1.3cqh;
+  color: rgba(247, 236, 225, 0.4);
+}
+
+.wheel-rail .pick-note {
+  grid-column: 1 / -1;
+  font-family: var(--mono);
+  font-size: 1.2cqh;
+  color: rgba(200, 162, 101, 0.42);
+}
+
+/* ---------- 右下：读数与按钮 ---------- */
+
+.wheel-status {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2cqh;
+  padding: 1.4cqh 0;
+}
+
+.wheel-status .status-eyebrow {
+  font-size: 1.3cqh;
+  letter-spacing: 0.3em;
+  color: rgba(200, 162, 101, 0.6);
+}
+
+.wheel-status .status-main {
+  font-family: var(--serif);
+  font-size: 2.8cqh;
+  color: var(--cream);
+}
+
+.wheel-status .status-note {
+  font-size: 1.3cqh;
+  color: rgba(247, 236, 225, 0.42);
+}
+
+.stage-wheel .action {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  gap: 4px;
+  gap: 0.2cqh;
+  padding: 1.5cqh 0;
+  background: #b5352a;
+  color: #fff5ea;
+  font-family: var(--serif);
+  font-size: 2.2cqh;
+  letter-spacing: 0.3em;
+  text-indent: 0.3em;
+  transition: background 0.16s ease;
 }
 
-.wheel-canvas { display: block; }
+.stage-wheel .action:hover:not(:disabled) { background: #c73f31; }
 
-.stage-wheel .stage-plate {
-  position: static;
-  left: auto;
-  bottom: auto;
-  transform: none;
-  min-height: 84px;
+.stage-wheel .action.running { background: #6d1d16; }
+
+.stage-wheel .action:disabled { opacity: 0.3; }
+
+.stage-wheel .action-hint {
+  font-family: var(--sans);
+  font-size: 1.1cqh;
+  letter-spacing: 0.06em;
+  color: rgba(255, 245, 234, 0.6);
+  text-indent: 0;
+}
+
+.stage-wheel .meta-bar {
   display: flex;
-  flex-direction: column;
-  justify-content: center;
+  gap: 1.2cqw;
+  justify-content: flex-end;
+  padding-top: 1.2cqh;
 }
+
+.stage-wheel .meta-link {
+  font-size: 1.2cqh;
+  color: rgba(247, 236, 225, 0.35);
+}
+
+.stage-wheel .meta-link:hover { color: var(--cream); }
+
+/* ---------- 右：盘子 ---------- */
+
+.wheel-scene {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+}
+
+.wheel-canvas {
+  position: absolute;
+  inset: 0;
+  display: block;
+}
+
+
+
+.wheel-scene .reveal-prize {
+  color: rgba(247, 236, 225, 0.5);
+  letter-spacing: 0.34em;
+}
+
+.wheel-scene .reveal-name {
+  font-size: 6.4cqh;
+  color: #fbeed9;
+}
+
+.wheel-scene .reveal-meta { color: rgba(247, 236, 225, 0.3); }
+
+.wheel-scene .stage-reveal { bottom: 0; padding-bottom: 2.4cqh; }

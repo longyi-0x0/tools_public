@@ -1,0 +1,213 @@
+/*
+ * 摇奖机：玻璃与钢，冷调。给公司年会用 —— 右侧是一块仪表栏，数字用等宽字，
+ * 主按钮是一块金属压板。与其他四种的结构都不同。
+ */
+
+.stage-cage {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(17cqh, 23cqw);
+  background:
+    radial-gradient(80cqw 66cqh at 30% 40%, rgba(58, 96, 126, 0.18) 0%, transparent 62%),
+    linear-gradient(180deg, #0a1017 0%, #070a0e 100%);
+  overflow: hidden;
+}
+
+.cage-scene {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+}
+
+.cage-canvas {
+  position: absolute;
+  inset: 0;
+  display: block;
+}
+
+/* ---------- 右侧仪表栏 ---------- */
+
+.cage-rail {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 3cqh 1.8cqw 2.4cqh 1.6cqw;
+  border-left: 1px solid rgba(150, 190, 215, 0.12);
+  background: linear-gradient(180deg, rgba(12, 20, 28, 0.6), rgba(8, 12, 17, 0.9));
+}
+
+.cage-title {
+  font-size: 1.9cqh;
+  letter-spacing: 0.16em;
+  color: rgba(200, 222, 236, 0.72);
+  padding-bottom: 1.4cqh;
+  border-bottom: 1px solid rgba(150, 190, 215, 0.12);
+}
+
+.cage-rail .picker {
+  display: flex;
+  flex-direction: column;
+  margin-top: 1cqh;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.cage-rail .picker::-webkit-scrollbar { display: none; }
+
+.cage-rail .pick {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 0.4cqw;
+  padding: 1.2cqh 0.6cqw;
+  border-bottom: 1px solid rgba(150, 190, 215, 0.08);
+  text-align: left;
+  color: rgba(206, 224, 236, 0.6);
+  transition: color 0.16s ease, padding-left 0.16s ease;
+}
+
+.cage-rail .pick:hover { color: #e8f2f8; }
+
+.cage-rail .pick.on {
+  color: #f4f9fc;
+  padding-left: 1cqw;
+  box-shadow: inset 2px 0 0 #5fa3c8;
+}
+
+.cage-rail .pick.done { opacity: 0.32; }
+
+.cage-rail .pick-label {
+  font-family: var(--serif);
+  font-size: 1.9cqh;
+  letter-spacing: 0.06em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cage-rail .pick-sub {
+  font-family: var(--mono);
+  font-size: 1.4cqh;
+  font-variant-numeric: tabular-nums;
+}
+
+.cage-rail .pick-note {
+  grid-column: 1 / -1;
+  font-family: var(--mono);
+  font-size: 1.2cqh;
+  color: rgba(150, 190, 215, 0.45);
+}
+
+/* ---------- 读数与按钮 ---------- */
+
+.cage-status {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3cqh;
+  padding: 1.6cqh 0;
+}
+
+.cage-status .status-eyebrow {
+  font-family: var(--mono);
+  font-size: 1.3cqh;
+  letter-spacing: 0.2em;
+  color: rgba(150, 190, 215, 0.55);
+}
+
+.cage-status .status-main {
+  font-family: var(--serif);
+  font-size: 2.6cqh;
+  color: #eaf3f8;
+}
+
+.cage-status .status-note {
+  font-size: 1.3cqh;
+  color: rgba(150, 190, 215, 0.5);
+}
+
+.stage-cage .action {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.3cqh;
+  padding: 1.8cqh 0;
+  border: 1px solid rgba(150, 190, 215, 0.3);
+  background: linear-gradient(180deg, #1e2c37 0%, #131d25 100%);
+  color: #e8f2f8;
+  font-family: var(--mono);
+  font-size: 2cqh;
+  letter-spacing: 0.24em;
+  text-indent: 0.24em;
+  transition: border-color 0.16s ease, background 0.16s ease;
+}
+
+.stage-cage .action:hover:not(:disabled) {
+  border-color: rgba(150, 190, 215, 0.6);
+  background: linear-gradient(180deg, #263A48 0%, #16212a 100%);
+}
+
+.stage-cage .action.running {
+  border-color: #c2604a;
+  background: linear-gradient(180deg, #58251b 0%, #33120d 100%);
+  color: #ffe6dc;
+}
+
+.stage-cage .action:disabled { opacity: 0.28; }
+
+.stage-cage .action-hint {
+  font-family: var(--sans);
+  font-size: 1.1cqh;
+  letter-spacing: 0.06em;
+  color: rgba(150, 190, 215, 0.55);
+  text-indent: 0;
+}
+
+.stage-cage .meta-bar {
+  display: flex;
+  gap: 1.4cqw;
+  justify-content: flex-end;
+  padding-top: 1.4cqh;
+}
+
+.stage-cage .meta-link {
+  font-size: 1.2cqh;
+  letter-spacing: 0.06em;
+  color: rgba(150, 190, 215, 0.4);
+}
+
+.stage-cage .meta-link:hover { color: #dbe9f2; }
+
+
+.cage-scene .stage-reveal {
+  left: 0;
+  right: 0;
+  bottom: 0;
+  align-items: flex-start;
+  text-align: left;
+  padding: 0 0 3.2cqh 3.4cqw;
+}
+
+/* ---------- 揭晓：画面左下 ---------- */
+
+
+
+
+.cage-scene .reveal-prize {
+  color: rgba(196, 216, 230, 0.5);
+  letter-spacing: 0.3em;
+}
+
+.cage-scene .reveal-name {
+  font-size: 5.4cqh;
+  color: #f4f7f9;
+}
+
+.cage-scene .reveal-names[data-count="2"] .reveal-name { font-size: 4.6cqh; }
+.cage-scene .reveal-names[data-count="3"] .reveal-name { font-size: 4cqh; }
+.cage-scene .reveal-names[data-count="4"] .reveal-name { font-size: 3.6cqh; }
+
+.cage-scene .reveal-meta { color: rgba(196, 216, 230, 0.34); }

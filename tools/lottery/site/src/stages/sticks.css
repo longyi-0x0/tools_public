@@ -1,0 +1,322 @@
+/*
+ * 签筒：竹与木，暖调。给庙会、亲子、集市这类场合用。
+ *
+ * 结构也独立：奖项是挂在顶上的一排木牌，筒在中间，按钮横在脚下像一根竹片。
+ */
+
+.stage-sticks {
+  --wood: #241811;
+  --bamboo: #e0caa0;
+  --lacquer: #c0392b;
+  --cream: #f7ead2;
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  background:
+    radial-gradient(76cqw 66cqh at 50% 44%, #2a1c13 0%, #160f0a 58%, #0d0805 100%);
+  overflow: hidden;
+}
+
+/* ---------- 顶上：木牌 ---------- */
+
+.sticks-head {
+  display: flex;
+  align-items: center;
+  gap: 2.4cqw;
+  padding: 2.4cqh 3.4cqw 1.2cqh;
+  min-width: 0;
+}
+
+.sticks-title {
+  font-family: var(--serif);
+  font-size: 2.2cqh;
+  letter-spacing: 0.14em;
+  color: var(--cream);
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+
+.sticks-head .picker {
+  display: flex;
+  gap: 0.7cqw;
+  margin-left: auto;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.sticks-head .picker::-webkit-scrollbar { display: none; }
+
+.sticks-head .pick {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.1cqh;
+  flex: 0 0 auto;
+  padding: 0.7cqh 1.1cqw 0.8cqh;
+  border: 1px solid rgba(224, 202, 160, 0.28);
+  border-radius: 2px 2px 4px 4px;
+  background: linear-gradient(180deg, rgba(224, 202, 160, 0.08), transparent);
+  color: rgba(247, 234, 210, 0.72);
+  text-align: left;
+  white-space: nowrap;
+  transition: background 0.16s ease, color 0.16s ease, border-color 0.16s ease;
+}
+
+.sticks-head .pick:hover { border-color: rgba(224, 202, 160, 0.55); color: var(--cream); }
+
+.sticks-head .pick.on {
+  background: linear-gradient(180deg, rgba(224, 202, 160, 0.24), rgba(224, 202, 160, 0.06));
+  border-color: var(--bamboo);
+  color: #fff8ea;
+}
+
+.sticks-head .pick-label {
+  font-family: var(--serif);
+  font-size: 1.8cqh;
+  letter-spacing: 0.08em;
+}
+
+.sticks-head .pick-sub {
+  font-family: var(--mono);
+  font-size: 1.3cqh;
+  color: rgba(247, 234, 210, 0.45);
+}
+
+.sticks-head .pick-note { display: none; }
+
+/* ---------- 中间：筒与签 ---------- */
+
+.stick-stage {
+  position: relative;
+  min-height: 0;
+  transform-origin: 50% 88%;
+}
+
+.stage-sticks.shaking .stick-stage {
+  animation: sway 0.52s ease-in-out infinite;
+}
+
+@keyframes sway {
+  0%, 100% { transform: rotate(-1.15deg); }
+  50% { transform: rotate(1.15deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stage-sticks.shaking .stick-stage { animation: none; }
+}
+
+.sticks {
+  position: absolute;
+  left: 50%;
+  bottom: 13cqh;
+  width: 30cqh;
+  height: 58cqh;
+  transform: translateX(-50%);
+  z-index: 1;
+}
+
+.stick {
+  position: absolute;
+  left: calc(50% + var(--x, 0cqh));
+  bottom: 0;
+  width: 3cqh;
+  height: var(--h, 96%);
+  transform: translateX(-50%) rotate(var(--tilt, 0deg));
+  transform-origin: 50% 100%;
+  border-radius: 1.6cqh 1.6cqh 0.5cqh 0.5cqh;
+  background: linear-gradient(96deg, #c8ac7c 0%, #e4d0a6 34%, #b99b6c 100%);
+  box-shadow:
+    inset -0.2cqh 0 0 rgba(255, 255, 255, 0.22),
+    inset 0.2cqh 0 0 rgba(86, 58, 28, 0.35),
+    0 0.4cqh 1cqh rgba(0, 0, 0, 0.35);
+  z-index: var(--z, 10);
+  transition: transform 0.72s cubic-bezier(0.2, 0.9, 0.2, 1), opacity 0.5s ease, filter 0.5s ease;
+}
+
+/* 签头一道朱漆 */
+.stick::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2cqh;
+  border-radius: 1.6cqh 1.6cqh 0 0;
+  background: linear-gradient(180deg, var(--lacquer), #8e2a20);
+  opacity: 0.9;
+}
+
+.stick-label {
+  position: absolute;
+  top: 3.2cqh;
+  left: 50%;
+  transform: translateX(-50%);
+  writing-mode: vertical-rl;
+  text-orientation: upright;
+  font-family: var(--serif);
+  font-size: 2.1cqh;
+  line-height: 1.15;
+  letter-spacing: 0.14em;
+  color: #33220f;
+  white-space: nowrap;
+}
+
+.stick.chosen {
+  transform: translateX(-50%) translateY(-13cqh) rotate(calc(var(--tilt, 0deg) * 0.2));
+  z-index: 40;
+  filter: brightness(1.12);
+}
+
+.stick.faded {
+  opacity: 0.3;
+  filter: saturate(0.45);
+}
+
+/* ---------- 筒 ---------- */
+
+.tube {
+  position: absolute;
+  left: 50%;
+  bottom: 9cqh;
+  width: 34cqh;
+  height: 29cqh;
+  transform: translateX(-50%);
+  clip-path: polygon(4% 0, 96% 0, 100% 100%, 0 100%);
+  background:
+    repeating-linear-gradient(92deg, rgba(255, 255, 255, 0.045) 0 0.3cqh, transparent 0.3cqh 2.6cqh),
+    linear-gradient(100deg, #3a2717 0%, #5d3f22 38%, #43290f 72%, #2a1a0c 100%);
+  z-index: 2;
+}
+
+.tube::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.55) 0%, transparent 28%);
+}
+
+.tube-rim {
+  position: absolute;
+  left: 50%;
+  bottom: 36.4cqh;
+  width: 32.6cqh;
+  height: 3.8cqh;
+  transform: translateX(-50%);
+  border-radius: 50%;
+  background: radial-gradient(ellipse at 50% 42%, #0b0703 0 60%, #5a3c1f 62%, #7a552c 100%);
+  box-shadow: 0 0.3cqh 0.8cqh rgba(0, 0, 0, 0.5);
+  z-index: 3;
+}
+
+/* ---------- 脚下：读数与竹片按钮 ---------- */
+
+.sticks-foot {
+  display: flex;
+  align-items: center;
+  gap: 2.4cqw;
+  padding: 1.2cqh 3.4cqw 2.2cqh;
+}
+
+.sticks-status.hide { display: none; }
+
+.sticks-status {
+  display: flex;
+  align-items: baseline;
+  gap: 1.3cqw;
+  min-width: 0;
+}
+
+.sticks-status .status-eyebrow {
+  font-size: 1.4cqh;
+  letter-spacing: 0.28em;
+  color: rgba(224, 202, 160, 0.55);
+}
+
+.sticks-status .status-main {
+  font-family: var(--serif);
+  font-size: 2.8cqh;
+  color: var(--cream);
+}
+
+.sticks-status .status-note {
+  font-size: 1.4cqh;
+  color: rgba(247, 234, 210, 0.45);
+}
+
+.stage-sticks .action {
+  margin-left: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.1cqh;
+  padding: 1.2cqh 4.2cqw;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #d9c39a 0%, #b99b6c 100%);
+  color: #33220f;
+  font-family: var(--serif);
+  font-size: 2.1cqh;
+  letter-spacing: 0.18em;
+  text-indent: 0.18em;
+  box-shadow: inset 0 -0.3cqh 0 rgba(86, 58, 28, 0.35), 0 0.4cqh 1cqh rgba(0, 0, 0, 0.4);
+  transition: transform 0.14s ease, filter 0.14s ease;
+}
+
+.stage-sticks .action:hover:not(:disabled) { filter: brightness(1.08); transform: translateY(-0.2cqh); }
+
+.stage-sticks .action.running { background: linear-gradient(180deg, #c0392b, #8e2a20); color: #fff2e2; }
+
+.stage-sticks .action:disabled { opacity: 0.32; }
+
+.stage-sticks .action-hint {
+  font-family: var(--sans);
+  font-size: 1.1cqh;
+  letter-spacing: 0.06em;
+  opacity: 0.6;
+  text-indent: 0;
+}
+
+.stage-sticks .meta-bar {
+  display: flex;
+  gap: 1.2cqw;
+  margin-left: 1.6cqw;
+}
+
+.stage-sticks .meta-link {
+  font-size: 1.2cqh;
+  color: rgba(224, 202, 160, 0.35);
+}
+
+.stage-sticks .meta-link:hover { color: var(--cream); }
+
+/* ---------- 筒脚下：待机与揭晓 ---------- */
+
+
+
+.sticks-foot .reveal-prize {
+  color: rgba(247, 234, 210, 0.5);
+  letter-spacing: 0.3em;
+}
+
+.sticks-foot .reveal-name {
+  font-size: 4.4cqh;
+  color: #fbeed6;
+}
+
+.sticks-foot .reveal-meta { color: rgba(247, 234, 210, 0.3); }
+
+.sticks-foot .stage-reveal {
+  position: static;
+  display: flex;
+  flex-direction: row;
+  align-items: baseline;
+  gap: 1.4cqw;
+  padding: 0;
+  text-align: left;
+  transform: none;
+  flex: 1;
+}
+
+.sticks-foot .stage-reveal.on { transform: none; }

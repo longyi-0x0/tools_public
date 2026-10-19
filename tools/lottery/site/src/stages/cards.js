@@ -1,23 +1,36 @@
 /**
- * 抽卡：一桌扣着的牌，停下时按结果一张张翻开。
+ * 翻牌：给聚会、门店活动这类场合用。绿绒桌面、暗红牌背、烫金细线。
  *
- * 牌是画面，结果以名单为准：中奖人数多于牌数时，多出来的人只出现在揭晓牌上。
+ * 一屏就是全部：顶部是场次名与奖项筹码，中间一桌扣着的牌，右下角是一张牌形的
+ * 按钮。没有侧栏。
+ *
+ * 逻辑：牌背不写名字；牌数自动抬到"一次抽几人"以上，翻开几张就代表几个人。
  */
 
 import { MODE } from '../engine.js';
-import { createCleanup, createPlate, el, mount, sampleLabels } from './common.js';
+import {
+  createAction,
+  createCleanup,
+  createPicker,
+  createReveal,
+  el,
+  idleCopy,
+  mount,
+  shuffle,
+} from './common.js';
 
-const CARDS = 12;
+const COUNT = 12;
 const COLUMNS = 6;
-const STAGGER = 90;
+const STAGGER = 110;
+const MAX_CARDS = 24;
 
 export default {
   id: 'cards',
-  label: '抽卡',
+  label: '翻牌',
   mode: MODE.PRIZE,
   styles: new URL('./cards.css', import.meta.url).href,
   config: [
-    { key: 'count', label: '卡片数', type: 'range', min: 6, max: 24, step: 2, value: CARDS },
+    { key: 'count', label: '牌数', type: 'range', min: 6, max: MAX_CARDS, step: 2, value: COUNT },
     {
       key: 'columns',
       label: '列数',
@@ -29,78 +42,175 @@ export default {
         { value: 8, label: '8 列' },
       ],
     },
-    { key: 'stagger', label: '翻牌间隔', type: 'range', min: 0, max: 300, step: 10, value: STAGGER },
+    { key: 'stagger', label: '翻牌间隔', type: 'range', min: 0, max: 320, step: 10, value: STAGGER },
     { key: 'batch', label: '每次抽几人', type: 'range', min: 1, max: 10, step: 1, value: 1 },
   ],
 
-  create(host, config = {}) {
-    const count = config.count ?? CARDS;
+  create(host, config = {}, api = {}) {
+    const count = config.count ?? COUNT;
     const columns = config.columns ?? COLUMNS;
     const stagger = config.stagger ?? STAGGER;
     const root = mount(host, 'stage-cards');
+
+    const head = el('header', 'cards-head');
+    const title = el('div', 'cards-title');
+    const picker = createPicker((id) => api.pickPrize?.(id));
+    head.append(title, picker.node);
+
     const board = el('div', 'card-board');
-    board.style.setProperty('--card-columns', String(columns));
-    board.style.setProperty('--card-rows', String(Math.ceil(count / columns)));
-    const plate = createPlate();
-    root.append(board, plate.node);
+
+    const foot = el('footer', 'cards-foot');
+    const status = el('div', 'cards-status');
+    const reveal = createReveal();
+    const action = createAction(() => api.toggle?.());
+    foot.append(status, reveal.node, action.node);
+
+    root.append(head, board, foot);
 
     const cleanup = createCleanup();
     let cards = [];
+    let dealt = 0;
 
-    function begin({ labels = [] } = {}) {
-      cleanup.clearAll();
-      root.classList.remove('stopped');
-      plate.hide();
-      board.replaceChildren();
-      cards = [];
-
-      for (const name of sampleLabels(labels, count)) {
-        const card = el('div', 'card');
-        const inner = el('div', 'card-inner');
-        const back = el('div', 'card-face card-back');
-        back.append(el('span', 'card-label', name));
-        const front = el('div', 'card-face card-front');
-        front.append(el('span', 'card-label', ''));
-        inner.append(back, front);
-        card.append(inner);
-        board.append(card);
-        cards.push({ node: card, front: front.firstChild, back: back.firstChild });
-      }
-
-      cleanup.interval(() => {
-        const card = cards[Math.floor(Math.random() * cards.length)];
-        if (card !== undefined && labels.length > 0) {
-          card.back.textContent = labels[Math.floor(Math.random() * labels.length)] ?? '';
-        }
-      }, Math.max(30, stagger));
+    function addCard() {
+      const card = el('div', 'card');
+      card.style.setProperty('--i', String(cards.length));
+      const inner = el('div', 'card-inner');
+      const back = el('div', 'card-face card-back');
+      const front = el('div', 'card-face card-front');
+      inner.append(back, front);
+      card.append(inner);
+      board.append(card);
+      cards.push({ node: card, front });
     }
 
-    function reveal({ winners = [], prizeName = '', focus = 'people' } = {}) {
-      cleanup.clearAll();
-      root.classList.add('stopped');
-      cards.forEach((card, index) => {
+    function build(total) {
+      if (total === dealt && cards.length === total && total > 0) {
+        return;
+      }
+      dealt = total;
+      board.style.setProperty('--cols', String(columns));
+      board.style.setProperty('--rows', String(Math.max(1, Math.ceil(total / columns))));
+      board.replaceChildren();
+      cards = [];
+      for (let index = 0; index < total; index += 1) {
+        addCard();
+      }
+    }
+
+    function begin({ batch = 1 } = {}) {
+      cleanup.clearTimers();
+      reveal.hide();
+      status.classList.remove('hide');
+      // 牌数不少于这一次可能抽中的人数，否则翻开时会缺牌
+      build(Math.min(MAX_CARDS, Math.max(count, batch)));
+      board.classList.remove('settled');
+      for (const card of cards) {
+        card.node.classList.remove('flipped', 'out');
+        card.front.textContent = '';
+      }
+    }
+
+    function showWinners({ winners = [], prizeName = '' } = {}) {
+      while (cards.length < winners.length) {
+        addCard();
+        dealt = cards.length;
+      }
+      board.style.setProperty('--rows', String(Math.ceil(cards.length / columns)));
+
+      const order = shuffle(cards.map((_, index) => index)).slice(0, winners.length);
+      const flipped = new Set();
+
+      order.forEach((at, index) => {
+        const card = cards[at];
         const winner = winners[index];
-        if (winner === undefined) {
+        if (card === undefined || winner === undefined) {
           return;
         }
-        card.front.textContent = focus === 'prize' ? prizeName : winner.name;
+        flipped.add(at);
+        card.front.textContent = winner.name;
         cleanup.timeout(() => card.node.classList.add('flipped'), index * stagger);
       });
-      plate.show({ winners, prizeName, focus });
+
+      cleanup.timeout(() => {
+        cards.forEach((card, index) => {
+          if (!flipped.has(index)) {
+            card.node.classList.add('out');
+          }
+        });
+        status.classList.add('hide');
+        board.classList.add('settled');
+        reveal.show({ winners, prizeName, compact: true });
+      }, winners.length * stagger + 520);
     }
 
     function reset() {
-      cleanup.clearAll();
-      root.classList.remove('stopped');
-      plate.hide();
-      board.replaceChildren();
-      cards = [];
+      cleanup.clearTimers();
+      reveal.hide();
+      status.classList.remove('hide');
+      board.classList.remove('settled');
+      for (const card of cards) {
+        card.node.classList.remove('flipped', 'out');
+        card.front.textContent = '';
+      }
+    }
+
+    function update(next) {
+      title.textContent = next.title;
+
+      if (next.mode === MODE.PRIZE) {
+        picker.update(
+          next.prizes.map((prize) => ({
+            id: prize.id,
+            label: prize.name,
+            sub: `${prize.drawn}/${prize.count}`,
+            note: prize.remaining > 0 ? `剩 ${prize.remaining}` : '已抽完',
+            active: prize.active,
+            done: prize.remaining === 0,
+          })),
+        );
+      }
+
+      const copy = idleCopy({
+        mode: next.mode,
+        allDrawn: next.allDrawn,
+        handed: next.handed,
+        prizeName: next.prizeName,
+        remaining: next.prizeRemaining,
+        batch: next.batch,
+        personName: next.personName,
+        personDept: next.personDept,
+        prizeCount: next.prizeCount,
+      });
+      status.replaceChildren(
+        el('span', 'status-eyebrow', copy.eyebrow),
+        el('span', 'status-main', copy.main),
+        el('span', 'status-note', copy.note),
+      );
+
+      action.set({
+        text: next.spinning ? '停' : next.allDrawn ? '看结果' : next.batch > 1 ? `翻 ${next.batch} 张` : '翻一张',
+        note: next.spinning ? '再按一次' : next.allDrawn ? `${next.handed} 人已中奖` : `${next.peopleLeft} 人在池`,
+        running: next.spinning,
+        disabled: !next.spinning && !next.allDrawn && !next.canDraw,
+      });
+
+      if (!next.spinning && !next.revealed) {
+        build(Math.min(MAX_CARDS, Math.max(count, next.batch)));
+        board.classList.remove('settled');
+        for (const card of cards) {
+          card.node.classList.remove('flipped', 'out');
+          card.front.textContent = '';
+        }
+        status.classList.remove('hide');
+        reveal.hide();
+      }
     }
 
     return {
       begin,
-      reveal,
+      reveal: showWinners,
       reset,
+      update,
       destroy() {
         cleanup.clearAll();
         host.replaceChildren();

@@ -1460,12 +1460,66 @@ function mountPreview() {
     return;
   }
 
-  const labels = (stageMode(stageId) === MODE.PERSON ? prizes.map((prize) => prize.name) : people.map((person) => person.name));
-  const pool = labels.length > 0 ? labels : ['张三', '李四', '王五', '赵六', '钱七', '孙八'];
+  const mode = stageMode(stageId);
+  const samplePrizes = prizes.length > 0
+    ? prizes
+    : [
+        { id: 'p1', name: '一等奖', count: 1, weight: 1 },
+        { id: 'p2', name: '二等奖', count: 3, weight: 1 },
+        { id: 'p3', name: '阳光普照', count: 8, weight: 1 },
+      ];
+  const samplePeople = people.length > 0
+    ? people
+    : ['张三', '李四', '王五', '赵六', '钱七', '孙八', '周九', '吴十'].map((name, index) => ({
+        id: `t${index}`,
+        name,
+        dept: '演示名单',
+        employeeId: `A${100 + index}`,
+      }));
 
-  // 直接铺在预览框里：形态自己按宿主尺寸排版，和抽奖页里一样
-  ui.preview = createStage(stageId, host, config);
-  ui.preview.begin({ labels: pool });
+  // 直接铺在预览框里：形态自己按宿主尺寸排版，整屏界面与抽奖页里一样
+  ui.preview = createStage(stageId, host, config, {});
+  ui.preview.update(previewView(mode, samplePrizes, samplePeople));
+}
+
+/** 预览用的一份快照：结构与抽奖页交给形态的那份一致。 */
+function previewView(mode, prizes, people) {
+  return {
+    title: '预览',
+    mode,
+    spinning: false,
+    revealed: false,
+    allDrawn: false,
+    canDraw: true,
+    handed: 0,
+    totalSlots: prizes.reduce((sum, prize) => sum + prize.count, 0),
+    batch: 1,
+    prizeName: prizes[0]?.name ?? '',
+    prizeRemaining: prizes[0]?.count ?? 0,
+    personName: people[0]?.name ?? '',
+    personDept: people[0]?.dept ?? '',
+    prizeCount: prizes.length,
+    peopleLeft: people.length,
+    labels: mode === MODE.PERSON ? prizes.map((prize) => prize.name) : people.map((person) => person.name),
+    weights: mode === MODE.PERSON ? prizes.map(() => 1) : [],
+    prizes: prizes.map((prize, index) => ({
+      id: prize.id,
+      name: prize.name,
+      count: prize.count,
+      drawn: 0,
+      remaining: prize.count,
+      active: index === 0,
+    })),
+    people: mode === MODE.PERSON
+      ? people.map((person, index) => ({
+          id: person.id,
+          name: person.name,
+          dept: person.dept ?? '',
+          employeeId: person.employeeId ?? '',
+          picked: index === 0,
+        }))
+      : [],
+  };
 }
 
 function destroyPreview() {

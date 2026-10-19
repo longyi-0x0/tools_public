@@ -12,23 +12,27 @@
  *   config: [
  *     { key: 'rows', label: '行数', type: 'range', min: 12, max: 40, step: 2, value: 26 },
  *   ],
- *   create(host, config) {
- *     // 把画面挂进 host，返回 { begin, reveal, reset, destroy }
+ *   create(host, config, api) {
+ *     // 整屏都归这个形态：场景、列表、按钮都自己画
+ *     // 返回 { begin, reveal, reset, update, destroy }
  *   },
  * };
  * ```
  *
  * `config` 是这一形态自己的旋钮：主页按它渲染控件，抽奖页把整份配置交给
  * `create`。加一项配置只改这里，不用在两处各写一遍。
+ *
+ * 形态之间不共用视觉：接口一样，画面、列表位置、按钮形状各写各的。
  */
 
-import ball from './ball.js';
 import cards from './cards.js';
-import list from './list.js';
+import cage from './cage.js';
+import sticks from './sticks.js';
+import wall from './wall.js';
 import wheel from './wheel.js';
 
-/** 展示顺序就是这里的顺序。 */
-export const STAGES = [list, cards, wheel, ball];
+/** 展示顺序就是这里的顺序。第一项也是认不出旧 id 时的兜底。 */
+export const STAGES = [wall, cards, cage, sticks, wheel];
 
 export const DEFAULT_STAGE = STAGES[0].id;
 
@@ -138,6 +142,6 @@ if (typeof document !== 'undefined') {
   loadStyles();
 }
 
-export function createStage(id, host, config) {
-  return stageInfo(id).create(host, normalizeConfig(id, config));
+export function createStage(id, host, config, api = {}) {
+  return stageInfo(id).create(host, normalizeConfig(id, config), api);
 }

@@ -1,0 +1,250 @@
+/*
+ * 名单墙：纸白 + 墨黑 + 朱红。给班级、学校用，白天开着灯也看得清。
+ *
+ * 与其他四种刻意相反：这是唯一一套亮底，也是唯一一套把列表放在顶部的。
+ */
+
+.stage-wall {
+  --ink: #1b1a17;
+  --paper: #f3f0e7;
+  --accent: #d8442f;
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  background: var(--paper);
+  color: var(--ink);
+  overflow: hidden;
+}
+
+/* ---------- 顶部：场次名 + 奖项 ---------- */
+
+.wall-head {
+  display: flex;
+  align-items: center;
+  gap: 2.4cqw;
+  padding: 2.4cqh 3.4cqw 1.6cqh;
+  border-bottom: 1px solid rgba(27, 26, 23, 0.16);
+  min-width: 0;
+}
+
+.wall-title {
+  font-family: var(--serif);
+  font-size: 2.4cqh;
+  letter-spacing: 0.12em;
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+
+.wall-head .picker {
+  display: flex;
+  gap: 0.7cqw;
+  margin-left: auto;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.wall-head .picker::-webkit-scrollbar { display: none; }
+
+.wall-head .pick {
+  display: flex;
+  align-items: baseline;
+  gap: 0.7cqw;
+  flex: 0 0 auto;
+  padding: 0.8cqh 1.1cqw;
+  border: 1px solid rgba(27, 26, 23, 0.2);
+  background: transparent;
+  color: inherit;
+  white-space: nowrap;
+  transition: background 0.16s ease, color 0.16s ease, opacity 0.16s ease;
+}
+
+.wall-head .pick:hover { border-color: var(--ink); }
+
+.wall-head .pick.on {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--paper);
+}
+
+.wall-head .pick.done { opacity: 0.32; }
+
+.wall-head .pick-label {
+  font-family: var(--serif);
+  font-size: 1.8cqh;
+  letter-spacing: 0.06em;
+}
+
+.wall-head .pick-sub {
+  font-family: var(--mono);
+  font-size: 1.4cqh;
+  opacity: 0.62;
+}
+
+.wall-head .pick-note { display: none; }
+
+/* ---------- 中间：整面名字 ---------- */
+
+.wall-body {
+  position: relative;
+  min-height: 0;
+}
+
+.wall-board {
+  /* 绝对定位给出确定高度，行才敢用 1fr 均分 */
+  position: absolute;
+  inset: 2.2cqh 3.4cqw;
+  display: grid;
+  grid-template-columns: repeat(var(--cols, 8), minmax(0, 1fr));
+  grid-template-rows: repeat(var(--rows, 12), minmax(0, 1fr));
+  min-height: 0;
+  overflow: hidden;
+}
+
+.wall-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--sans);
+  font-size: calc(34cqh / var(--rows, 12));
+  letter-spacing: 0.04em;
+  color: rgba(27, 26, 23, 0.34);
+  white-space: nowrap;
+  transition: color 0.1s linear, background 0.22s ease, transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.wall-cell.hot { color: var(--ink); }
+
+.wall-cell.won {
+  color: #fff8ee;
+  background: var(--accent);
+  font-family: var(--serif);
+  font-size: calc(42cqh / var(--rows, 12));
+  letter-spacing: 0.08em;
+  text-indent: 0.08em;
+  transform: scale(1.02);
+  z-index: 1;
+}
+
+.stage-wall.settled .wall-cell:not(.won) { color: rgba(27, 26, 23, 0.1); }
+
+/* ---------- 底部：状态 + 按钮 ---------- */
+
+.wall-foot {
+  display: flex;
+  align-items: center;
+  gap: 3cqw;
+  padding: 1.8cqh 3.4cqw 2.6cqh;
+  border-top: 1px solid rgba(27, 26, 23, 0.16);
+}
+
+.wall-status {
+  display: flex;
+  align-items: baseline;
+  gap: 1.4cqw;
+  min-width: 0;
+}
+
+.wall-status.hide { display: none; }
+
+.wall-status .status-eyebrow {
+  font-size: 1.5cqh;
+  letter-spacing: 0.28em;
+  color: rgba(27, 26, 23, 0.45);
+}
+
+.wall-status .status-main {
+  font-family: var(--serif);
+  font-size: 3.2cqh;
+  letter-spacing: 0.06em;
+}
+
+.wall-status .status-note {
+  font-size: 1.5cqh;
+  letter-spacing: 0.04em;
+  color: rgba(27, 26, 23, 0.5);
+}
+
+.stage-wall .stage-reveal {
+  position: static;
+  display: flex;
+  flex-direction: row;
+  align-items: baseline;
+  gap: 1.6cqw;
+  padding: 0;
+  text-align: left;
+  transform: none;
+  flex: 1;
+}
+
+.stage-wall .stage-reveal.on { transform: none; }
+
+.stage-wall .reveal-prize {
+  font-size: 1.6cqh;
+  letter-spacing: 0.24em;
+  color: var(--accent);
+}
+
+.stage-wall .reveal-name {
+  font-size: 3.4cqh;
+  color: var(--ink);
+}
+
+.stage-wall .reveal-names { gap: 1.4cqw; }
+
+.stage-wall .reveal-names[data-count="2"] .reveal-name,
+.stage-wall .reveal-names[data-count="3"] .reveal-name,
+.stage-wall .reveal-names[data-count="4"] .reveal-name { font-size: 3.4cqh; }
+
+.stage-wall .reveal-meta {
+  font-size: 1.5cqh;
+  color: rgba(27, 26, 23, 0.45);
+}
+
+.stage-wall .action {
+  margin-left: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.2cqh;
+  padding: 1.5cqh 3.6cqw;
+  background: var(--ink);
+  color: var(--paper);
+  font-family: var(--serif);
+  font-size: 2.2cqh;
+  letter-spacing: 0.2em;
+  text-indent: 0.2em;
+  transition: background 0.16s ease, opacity 0.16s ease;
+}
+
+.stage-wall .action:hover:not(:disabled) { background: #000; }
+
+.stage-wall .action.running { background: var(--accent); }
+
+.stage-wall .action:disabled { opacity: 0.3; }
+
+.stage-wall .action-hint {
+  font-family: var(--sans);
+  font-size: 1.2cqh;
+  letter-spacing: 0.08em;
+  opacity: 0.6;
+  text-indent: 0;
+}
+
+/* 亮底那一套连结果弹窗也一起换：暗色弹窗压在纸上会像另一个应用 */
+.result-scrim.stage-list .result-panel {
+  --panel: #f3f0e7;
+  --panel-ink: #1b1a17;
+  --line: rgba(27, 26, 23, 0.16);
+  --line-soft: rgba(27, 26, 23, 0.08);
+  --muted: rgba(27, 26, 23, 0.55);
+  --dim: rgba(27, 26, 23, 0.38);
+  background: #f3f0e7;
+  color: #1b1a17;
+}
+
+.result-scrim.stage-list {
+  background: rgba(30, 28, 24, 0.42);
+}

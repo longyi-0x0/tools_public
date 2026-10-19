@@ -1171,20 +1171,20 @@ input::placeholder { color: var(--faint); }
 .stage-current:hover { border-color: var(--muted); }
 
 .stage-preview {
-  /* 形态样式用的是暗场那一套变量，这里只给预览区块 */
-  --bg: #0e1310;
-  --bg-2: #121a15;
-  --booth: #0a0f0c;
-  --text: #f2eee6;
-  --muted: rgba(242, 238, 230, 0.56);
-  --dim: rgba(242, 238, 230, 0.3);
-  --line: rgba(242, 238, 230, 0.13);
-  --line-soft: rgba(242, 238, 230, 0.07);
-  --paper: #ede7da;
-  --ink: #141512;
-  --warm: #e2b877;
-  --warm-soft: rgba(226, 184, 119, 0.12);
-  --danger: #c25a4c;
+  /* 形态按容器算尺寸，预览里这一块就是它们的"舞台"，尺寸变量要与 draw.css 一致 */
+  --bg: #0b0b0c;
+  --bg-2: #131315;
+  --booth: #08080a;
+  --text: #f5f1e8;
+  --muted: rgba(245, 241, 232, 0.56);
+  --dim: rgba(245, 241, 232, 0.3);
+  --line: rgba(245, 241, 232, 0.14);
+  --line-soft: rgba(245, 241, 232, 0.07);
+  --paper: #efe9dc;
+  --ink: #111112;
+  --warm: #c8a265;
+  --warm-soft: rgba(200, 162, 101, 0.14);
+  --danger: #c2452f;
   --serif: "Songti SC", "Noto Serif SC", "Source Han Serif SC", "SimSun", Georgia, serif;
   --mono: "SF Mono", ui-monospace, monospace;
 
@@ -1194,18 +1194,10 @@ input::placeholder { color: var(--faint); }
   max-height: 46vh;
   border-radius: 8px;
   overflow: hidden;
-  background: radial-gradient(56% 42% at 50% 0%, rgba(226, 184, 119, 0.14), transparent 72%), #0a0f0c;
-  color: #f2eee6;
-}
-
-/* 预览里没有结果牌要放，别让它占走画布高度（形态自己的样式表后加载，选择器要多一层） */
-.stage-preview .stage-wheel .stage-plate,
-.stage-preview .stage-ball .stage-plate {
-  position: absolute;
-  left: 50%;
-  bottom: 10px;
-  transform: translateX(-50%);
-  min-height: 0;
+  background: #08080a;
+  color: #f5f1e8;
+  container-type: size;
+  container-name: stage;
 }
 
 .stage-tabs {

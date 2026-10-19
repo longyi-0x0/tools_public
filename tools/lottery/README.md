@@ -5,20 +5,20 @@
 - **奖品抽人**：选一个奖项，从没中过的人里抽 N 个。适合年会、晚会，画面是大屏。
 - **人抽奖品**：指定一个人或按名单顺序，按各奖项剩余名额加权抽一个奖。适合摊位、抽奖箱。
 
-主页只管管理，抽奖页是独立入口：左边列表（抽奖 / 名单 / 奖品），右边详情；点“开始抽奖”进入 `draw.html`。
+抽奖页是独立入口，整屏交给形态自己画：列表放哪、按钮什么形状、什么配色，都由形态决定 —— 名单墙给班级用（亮底墨字），摇奖机给公司年会用（玻璃与钢），翻牌给聚会用（绿绒牌桌），转盘给门店用（漆器朱红），签筒给庙会亲子用（竹与木）。
 
 ## 用法
 
 1. **新建**：左上角 `+` 先弹菜单——`从 xlsx 导入` 或 `新建`。抽奖、名单、奖品三类都是这个入口。
 2. **抽奖**：新建时选名称、名单、奖品与形态。名单与奖品会复制到这场抽奖，之后改素材不影响它。
-3. **形态决定怎么抽**：滚动名单 / 抽卡 / 球体是“奖品抽人”，转盘是“人抽奖品”；每次抽几人也属于形态自己的配置。不重复中奖是整场的设置。
+3. **形态决定怎么抽**：名单墙 / 翻牌 / 摇奖机是“奖品抽人”，转盘 / 签筒是“人抽奖品”；每次抽几人也属于形态自己的配置。不重复中奖是整场的设置。
 4. **开始 / 继续 / 重新抽**：主按钮在右侧栏最下方。没有记录时是“开始抽奖”，抽过一半是“继续抽奖”，抽完是“查看结果”；“重新抽奖”清空记录，名单、名额与配置保留。
 5. **结果**：开抽后出现在最上面，一格一个人（姓名 / 奖项 / 时间）。「明细」里同样是卡片，可勾选任意几条一起撤销，或全选撤销；撤销只去掉记录，人回到池子里。
 6. **奖项与参与人**：方格排布，两行以内直接显示，多出来点“展开全部”。点“编辑”可以改名、调名额、补人、删人（名额改不到已经抽出去的数量以下）。
 7. **操作**：右侧「操作」里是一排小按钮——导入、导出、重新抽奖、删除抽奖；主按钮在右下角。
-8. **主题**：左下角标签栏最右边的齿轮打开设置，可在纸白、暖沙、墨绿、靛蓝、石墨之间切换。只有主页换配色，抽奖页始终是暗场；前四套跟随系统深浅，石墨固定为暗。
+8. **主题**：左下角标签栏最右边的齿轮打开设置，可在纸白、暖沙、墨绿、靛蓝、石墨之间切换。主题只作用于主页；抽奖页的配色由形态自带，不跟主题走。
 
-抽奖页占满整屏，键盘：空格开 / 停，↑↓ 换一行，退格撤销，Delete 作废，Esc 只退全屏（右上角“退出”回主页）。状态存在浏览器 localStorage，刷新不丢。
+抽奖页占满整屏，键盘：空格开 / 停，↑↓ 换一个奖项或下一个人，退格撤销，Delete 作废，Esc 只退全屏。全屏与退出在每个形态自己的角落里。状态存在浏览器 localStorage，刷新不丢。
 
 ## 导入导出
 
@@ -56,11 +56,12 @@
 
 ## 加一种抽奖形态
 
-一个形态就是一个文件，默认导出 `{ id, label, mode, styles, config, create }`：
+一个形态就是一个文件，默认导出 `{ id, label, mode, styles, config, create }`。
+形态拿到的是**整屏**：场景、列表、按钮、角落里的全屏与退出，都归它画。
 
 ```js
-// site/src/stages/marquee.js
-import { createPlate, el, mount } from './common.js';
+// site/src/stages/cage.js（节选）
+import { createAction, createCleanup, createPicker, createReveal, mount } from './common.js';
 
 export default {
   id: 'marquee',
@@ -68,37 +69,43 @@ export default {
   mode: 'prize-person',
   styles: new URL('./marquee.css', import.meta.url).href,
   config: [
-    { key: 'rows', label: '行数', type: 'range', min: 12, max: 40, step: 2, value: 26 },
+    { key: 'speed', label: '速度', type: 'range', min: 1, max: 4, step: 1, value: 2 },
+    { key: 'batch', label: '每次抽几人', type: 'range', min: 1, max: 10, step: 1, value: 1 },
   ],
 
-  create(host, config) {
-    // 把画面挂进 host；只用这里拿到的 DOM，不要碰外面的状态
+  create(host, config, api) {
     const root = mount(host, 'stage-marquee');
-    const plate = createPlate();
-    root.append(plate.node);
+    const picker = createPicker((id) => api.pickPrize(id));   // 列表：点谁选谁
+    const action = createAction(() => api.toggle());          // 主按钮：开 / 停
+    const reveal = createReveal();                            // 揭晓：奖项 / 名字 / 附注
+    root.append(picker.node, reveal.node, action.node);
 
     return {
-      begin({ labels }) {},   // 开始转
-      reveal({ winners, prizeName, focus }) { plate.show({ winners, prizeName, focus }); },
-      reset() {},             // 回到待机
-      destroy() { host.replaceChildren(); }, // 清定时器、动画帧、观察者
+      begin({ labels }) {},                       // 开始转
+      reveal({ winners, prizeName, focus }) {},   // 停下，写上结果
+      reset() {},                                 // 撤销后回到待机
+      update(view) {},                            // 每次状态变化都调：列表、计数、按钮都在这儿刷新
+      destroy() {},                               // 清定时器、动画帧、观察者
     };
   },
 };
 ```
 
 然后在 [`site/src/stages/index.js`](./site/src/stages/index.js) 的 `STAGES` 数组里加一行 `import` 与一项。
-下拉选项、配置控件、数据校验、舞台装载都从那个数组读，别的地方不用改。
+列表、配置控件、数据校验、舞台装载都从那个数组读，别的地方不用改。
 
 要点：
 
-- 引擎与界面只通过 `begin` / `reveal` / `reset` / `destroy` 打交道；形态不读 `run`、不抽奖。
-- 揭晓统一用 `createPlate()`；`plate.show({ winners, prizeName, meta, focus })`。`focus: 'prize'` 时大字写抽到的奖（人抽奖品用）。
-- `begin` 收到的 `labels`：奖品抽人时是人名，人抽奖品时是奖项名。
-- 定时器、`requestAnimationFrame`、`ResizeObserver` 一律走 `createCleanup()`，`destroy()` 里 `clearAll()`。
+- 引擎与界面只通过 `begin` / `reveal` / `reset` / `update` / `destroy` 打交道；形态不读存档、不抽奖。
+- `update(view)` 是唯一的数据来源：`prizes` / `people` / `labels` / `weights` / `spinning` / `revealed` / `batch` / `allDrawn` 都在里面，`view` 的形状见 `site/src/draw/main.js` 的 `view()`。
+- `api` 是入口：`toggle()` 开停、`pickPrize(id)` / `pickPerson(id)` 选对象、`undo()` / `voidLast()`、`results()`、`exit()`、`fullscreen()`。
+- `begin` 收到的 `labels`：奖品抽人时是人名，人抽奖品时是奖项名；`weights` 是引擎用的那份权重（`剩余名额 × 单位权重`），扇区与签数照它分才和概率一致。
+- 揭晓写谁看 `focus`：`'people'` 大字写人，`'prize'` 大字写奖。写反了会让人以为又抽了一次。
+- 定时器、`requestAnimationFrame`、`ResizeObserver` 一律走 `createCleanup()`；反复开抽用 `clearTimers()`，`destroy()` 才用 `clearAll()`。
 - `mode` 决定这一形态怎么抽：`prize-person`（先定奖项再抽人）或 `person-prize`（每个人抽一个奖）。
 - `config` 声明这一形态的旋钮（`range` / `select` / `switch`），主页按它渲染，抽奖页把整份配置交给 `create`。`batch`（一次抽几人）只在 `prize-person` 形态里有。
 - 样式放在同目录的 `<id>.css`，通过 `styles` 导出；`stages/index.js` 会在启动时统一挂上。
+- 尺寸一律用容器单位（`cqw` / `cqh`）：舞台是容器，主页预览框也是容器，同一份样式两边都对得上。
 
 ## 目录
 
@@ -108,7 +115,7 @@ export default {
 | `site/index.html` | 主页外壳 |
 | `site/draw.html` | 抽奖页外壳（独立入口） |
 | `site/styles.css` | 主页样式与各套主题的配色变量 |
-| `site/draw.css` | 抽奖页样式（暗场） |
+| `site/draw.css` | 抽奖页外壳：铺满、容器查询、揭晓结构、结果弹窗 |
 | `site/src/main.js` | 主页：列表、详情、弹窗、导入导出 |
 | `site/src/draw/main.js` | 抽奖页：舞台、键盘、结果 |
 | `site/src/data.js` | 抽奖 / 名单 / 奖品三类数据、迁移、命名 |
@@ -117,7 +124,7 @@ export default {
 | `site/src/xlsx.js` | 最小 xlsx 读写（ZIP + OOXML），与 `study-hall` 同源 |
 | `site/src/store.js` | localStorage 存取与旧存档迁移 |
 | `site/src/theme.js` | 主题清单、记忆与切换 |
-| `site/src/stages/` | 形态：一个形态一个文件（js + css + mode + config），登记在 `index.js` |
+| `site/src/stages/` | 形态：一个形态一屏（js + css + mode + config），登记在 `index.js`。`list` 名单墙、`cards` 翻牌、`ball` 摇奖机、`wheel` 转盘、`sticks` 签筒 |
 | `tests/engine.test.mjs` | 引擎单测 |
 | `tests/stages.test.mjs` | 形态登记与配置 |
 | `tests/data.test.mjs` | 数据迁移、同名、抽奖包往返 |

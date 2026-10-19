@@ -1,18 +1,27 @@
 /**
- * 转盘：扇区放候选人名，停下时指针落在结果上。
+ * 转盘：人抽奖品。扇区上写的是奖项，指针停在哪一格，就抽中哪个奖。
  *
- * 扇区只取二十来个名字当画面。揭晓前把结果换进扇区再减速 ——
- * 转盘停在哪一格，那一格写的就是谁。
+ * 逻辑：扇区角度按「剩余名额 × 权重」分，也就是引擎掷骰子用的那份概率；
+ * 指针停的位置由引擎给的结果反推，不会出现指针停在 A 却报 B。
  */
 
 import { MODE } from '../engine.js';
-import { createCleanup, createPlate, el, mount, sampleLabels } from './common.js';
+import {
+  createAction,
+  createCleanup,
+  createMetaBar,
+  createPicker,
+  createReveal,
+  el,
+  idleCopy,
+  mount,
+} from './common.js';
 
-const SEGMENTS = 18;
 const TWO_PI = Math.PI * 2;
-/** 结果牌那一行固定占 96px，转盘只吃剩下的高度。 */
-const PLATE_RESERVE = 96;
 const LANDING_MS = 2400;
+const TURNS = 4;
+/** 窄扇区下限：低于这个角度字排不下，只留一道刻度。 */
+const MIN_DEG = 9;
 
 export default {
   id: 'wheel',
@@ -20,149 +29,244 @@ export default {
   mode: MODE.PERSON,
   styles: new URL('./wheel.css', import.meta.url).href,
   config: [
-    { key: 'segments', label: '扇区数', type: 'range', min: 8, max: 24, step: 2, value: SEGMENTS },
     { key: 'landingMs', label: '落定时长', type: 'range', min: 1200, max: 4000, step: 200, value: LANDING_MS },
+    { key: 'turns', label: '落定圈数', type: 'range', min: 1, max: 7, step: 1, value: TURNS },
   ],
 
-  create(host, config = {}) {
-    const segments = config.segments ?? SEGMENTS;
+  create(host, config = {}, api = {}) {
     const landingMs = config.landingMs ?? LANDING_MS;
+    const turns = config.turns ?? TURNS;
     const root = mount(host, 'stage-wheel');
+
+    const scene = el('div', 'wheel-scene');
     const canvas = el('canvas', 'wheel-canvas');
-    const plate = createPlate();
-    root.append(canvas, plate.node);
+    const reveal = createReveal();
+    scene.append(canvas, reveal.node);
+
+    const rail = el('aside', 'wheel-rail');
+    const title = el('div', 'wheel-title');
+    const picker = createPicker((id) => api.pickPerson?.(id));
+    const status = el('div', 'wheel-status');
+    const action = createAction(() => api.toggle?.());
+    rail.append(title, picker.node, status, action.node, createMetaBar(api));
+
+    root.append(rail, scene);
 
     const context = canvas.getContext('2d');
     const cleanup = createCleanup();
-    let labels = [];
+
+    let width = 0;
+    let height = 0;
+    let radius = 0;
+    let center = { x: 0, y: 0 };
+    let entries = [];
+    let angles = [];
     let rotation = 0;
-    let spinSpeed = 0;
+    let spinRate = 0;
     let mode = 'idle';
+    let landed = -1;
     let landingFrame = null;
-    let size = 0;
+    let idleKey = '';
 
     function resize() {
-      const rect = root.getBoundingClientRect();
+      const rect = scene.getBoundingClientRect();
+      width = Math.max(200, rect.width);
+      height = Math.max(150, rect.height);
       const dpr = Math.min(2, window.devicePixelRatio || 1);
-      // 画布高的时候给结果牌留位置；小画布（预览、窄屏）就让它盖上去
-      const reserve = rect.height >= 420 ? PLATE_RESERVE : 0;
-      const availableHeight = Math.max(120, rect.height - reserve);
-      size = Math.max(120, Math.min(rect.width, availableHeight));
-      canvas.width = Math.round(rect.width * dpr);
-      canvas.height = Math.round(availableHeight * dpr);
-      canvas.style.width = `${rect.width}px`;
-      canvas.style.height = `${availableHeight}px`;
+      canvas.width = Math.round(width * dpr);
+      canvas.height = Math.round(height * dpr);
+      canvas.style.width = `${width}px`;
+      canvas.style.height = `${height}px`;
       context.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+      // 底部留出字幕位，转盘只吃剩下的高度
+      const available = Math.max(120, height * 0.8);
+      radius = Math.max(58, Math.min(width * 0.42, available * 0.46));
+      center = { x: width / 2, y: Math.max(radius + 12, height * 0.4) };
       draw();
     }
 
     const observer = cleanup.observe(new ResizeObserver(resize));
 
+    /** 按权重分角度，窄扇区抬到下限，多出来的从宽扇区里按比例扣。 */
+    function layout(list) {
+      const total = list.reduce((sum, entry) => sum + Math.max(0.0001, entry.weight), 0);
+      const floor = Math.min(MIN_DEG, 360 / Math.max(1, list.length));
+      const scale = (360 - floor * list.length) / (total || 1);
+      angles = list.map((entry) => ((floor + Math.max(0.0001, entry.weight) * scale) * Math.PI) / 180);
+    }
+
     function draw() {
-      if (size === 0) {
+      if (width === 0) {
         return;
       }
-      const width = canvas.clientWidth;
-      const height = canvas.clientHeight;
-      const cx = width / 2;
-      const cy = height / 2 - 6;
-      const radius = size / 2 - 18;
       context.clearRect(0, 0, width, height);
+      const { x: cx, y: cy } = center;
 
-      const glow = context.createRadialGradient(cx, cy, radius * 0.2, cx, cy, radius * 1.18);
-      glow.addColorStop(0, 'rgba(226,184,119,.16)');
-      glow.addColorStop(1, 'rgba(226,184,119,0)');
+      // 外圈柔光
+      const glow = context.createRadialGradient(cx, cy, radius * 0.55, cx, cy, radius * 1.2);
+      glow.addColorStop(0, 'rgba(198, 74, 54, 0.10)');
+      glow.addColorStop(1, 'rgba(198, 74, 54, 0)');
       context.fillStyle = glow;
       context.beginPath();
-      context.arc(cx, cy, radius * 1.18, 0, TWO_PI);
+      context.arc(cx, cy, radius * 1.2, 0, TWO_PI);
       context.fill();
 
-      const segment = TWO_PI / Math.max(1, labels.length);
-      labels.forEach((label, index) => {
-        const start = -Math.PI / 2 + rotation + index * segment;
+      // 扇区
+      let cursor = -Math.PI / 2 + rotation;
+      entries.forEach((entry, index) => {
+        const sweep = angles[index] ?? 0;
         context.beginPath();
         context.moveTo(cx, cy);
-        context.arc(cx, cy, radius, start, start + segment);
+        context.arc(cx, cy, radius, cursor, cursor + sweep);
         context.closePath();
-        context.fillStyle = index % 2 === 0 ? '#14201a' : '#1a2720';
+        if (index === landed) {
+          context.fillStyle = '#b5352a';
+        } else {
+          context.fillStyle = index % 2 === 0 ? '#1c0f11' : '#2a1417';
+        }
         context.fill();
-        context.strokeStyle = 'rgba(242,238,230,.08)';
+        context.strokeStyle = 'rgba(200, 162, 101, 0.22)';
         context.lineWidth = 1;
         context.stroke();
+        cursor += sweep;
+      });
 
+      // 扇区文字
+      cursor = -Math.PI / 2 + rotation;
+      entries.forEach((entry, index) => {
+        const sweep = angles[index] ?? 0;
+        const mid = cursor + sweep / 2;
+        cursor += sweep;
+        if (sweep < (14 * Math.PI) / 180) {
+          return;
+        }
+        const font = Math.max(9, Math.min(radius * 0.082, 30));
         context.save();
         context.translate(cx, cy);
-        context.rotate(start + segment / 2);
-        context.fillStyle = 'rgba(242,238,230,.82)';
-        const fontSize = Math.max(10, Math.min(17, radius / 16));
-        context.font = `${fontSize}px "Songti SC", "Noto Serif SC", serif`;
-        context.textAlign = 'right';
+        context.rotate(mid);
+        // 左半圈把字翻过来，始终从里往外读，不会倒着写
+        const back = Math.cos(mid) < 0;
+        if (back) {
+          context.rotate(Math.PI);
+        }
+        context.textAlign = back ? 'left' : 'right';
         context.textBaseline = 'middle';
-        // 文字从半径外侧往圆心写，圆心附近要留出空地；小盘时按可用长度截断
-        const room = Math.max(3, Math.floor((radius - 26) / fontSize));
-        context.fillText(label.length > room ? `${label.slice(0, Math.max(1, room - 1))}…` : label, radius - 18, 0);
+        context.font = `${index === landed ? 600 : 400} ${font}px "Songti SC", "Noto Serif SC", serif`;
+        context.fillStyle = index === landed ? '#fff4e6' : 'rgba(246, 238, 228, 0.8)';
+        const room = radius * 0.68;
+        let text = entry.name;
+        if (context.measureText(text).width > room) {
+          let cut = text.length;
+          while (cut > 1 && context.measureText(`${text.slice(0, cut)}…`).width > room) {
+            cut -= 1;
+          }
+          text = `${text.slice(0, cut)}…`;
+        }
+        const edge = radius - radius * 0.1;
+        context.fillText(text, back ? -edge : edge, 0);
         context.restore();
       });
 
+      // 外圈金线与指针
       context.beginPath();
       context.arc(cx, cy, radius, 0, TWO_PI);
-      context.strokeStyle = 'rgba(226,184,119,.55)';
+      context.strokeStyle = 'rgba(200, 162, 101, 0.62)';
       context.lineWidth = 2;
       context.stroke();
 
       context.beginPath();
-      context.moveTo(cx, cy - radius - 8);
-      context.lineTo(cx - 9, cy - radius + 12);
-      context.lineTo(cx + 9, cy - radius + 12);
+      context.arc(cx, cy, radius * 0.86, 0, TWO_PI);
+      context.strokeStyle = 'rgba(200, 162, 101, 0.12)';
+      context.lineWidth = 1;
+      context.stroke();
+
+      const pointer = Math.max(10, radius * 0.075);
+      context.beginPath();
+      context.moveTo(cx, cy - radius + pointer * 1.5);
+      context.lineTo(cx - pointer * 0.62, cy - radius - pointer * 0.5);
+      context.lineTo(cx + pointer * 0.62, cy - radius - pointer * 0.5);
       context.closePath();
-      context.fillStyle = '#e2b877';
+      context.fillStyle = '#c8a265';
       context.fill();
+      context.strokeStyle = 'rgba(0, 0, 0, 0.45)';
+      context.lineWidth = 1;
+      context.stroke();
+
+      // 轴心
+      context.beginPath();
+      context.arc(cx, cy, radius * 0.14, 0, TWO_PI);
+      context.fillStyle = '#120a0c';
+      context.fill();
+      context.strokeStyle = 'rgba(200, 162, 101, 0.55)';
+      context.lineWidth = 1.5;
+      context.stroke();
 
       context.beginPath();
-      context.arc(cx, cy, Math.max(10, radius * 0.055), 0, TWO_PI);
-      context.fillStyle = '#0a0f0c';
+      context.arc(cx, cy, radius * 0.035, 0, TWO_PI);
+      context.fillStyle = 'rgba(200, 162, 101, 0.8)';
       context.fill();
-      context.strokeStyle = 'rgba(226,184,119,.7)';
-      context.stroke();
     }
 
     function tick() {
-      if (mode === 'spinning') {
-        rotation += spinSpeed;
+      if (mode === 'spin') {
+        rotation += spinRate;
         draw();
       }
       cleanup.frame(tick);
     }
 
-    function begin({ labels: source = [] } = {}) {
+    function cancel() {
+      if (landingFrame !== null) {
+        cleanup.cancelFrame(landingFrame);
+        landingFrame = null;
+      }
+      mode = 'idle';
+    }
+
+    function begin({ labels = [], weights = [] } = {}) {
       cancel();
-      labels = source.length === 0
-        ? ['—']
-        : sampleLabels(source, Math.min(segments, Math.max(6, source.length)));
+      reveal.hide();
+      landed = -1;
+      const list = labels.filter((label) => String(label).trim() !== '');
+      entries = (list.length > 0 ? list : ['—']).map((name, index) => ({
+        name,
+        weight: Math.max(1, Number(weights[index] ?? 1)),
+      }));
+      layout(entries);
       rotation = Math.random() * TWO_PI;
-      spinSpeed = 0.42;
-      mode = 'spinning';
-      plate.hide();
+      spinRate = 0.28;
+      mode = 'spin';
       draw();
     }
 
-    function reveal({ winners = [], prizeName = '', focus = 'people' } = {}) {
-      mode = 'landing';
-      const target = focus === 'prize' ? prizeName : winners[0]?.name;
-      let index = target === undefined ? 0 : labels.indexOf(target);
-      if (index === -1 && target !== undefined) {
-        labels[0] = target;
+    function showWinners({ winners = [], prizeName = '', focus = 'prize' } = {}) {
+      let index = entries.findIndex((entry) => entry.name === prizeName);
+      if (index === -1) {
+        // 结果里的奖项理论上一定在扇区里；真遇上了就把它补进第一格
+        if (entries.length === 0) {
+          entries = [{ name: prizeName || '—', weight: 1 }];
+          layout(entries);
+        } else {
+          entries[0] = { ...entries[0], name: prizeName || entries[0].name };
+        }
         index = 0;
       }
-      const segment = TWO_PI / Math.max(1, labels.length);
-      const wanted = -((index + 0.5) * segment);
-      const current = rotation % TWO_PI;
-      let delta = (wanted - current) % TWO_PI;
+      landed = index;
+
+      // 扇区中线要对上 12 点的指针
+      let before = 0;
+      for (let step = 0; step < index; step += 1) {
+        before += angles[step] ?? 0;
+      }
+      const wanted = -(before + (angles[index] ?? 0) / 2);
+      const from = rotation;
+      const current = ((from % TWO_PI) + TWO_PI) % TWO_PI;
+      let delta = ((wanted % TWO_PI) + TWO_PI) % TWO_PI - current;
       if (delta < 0) {
         delta += TWO_PI;
       }
-      const from = rotation;
-      const to = rotation + TWO_PI * 3 + delta;
+      const to = from + TWO_PI * Math.max(1, turns) + delta;
       const startedAt = performance.now();
 
       const land = (now) => {
@@ -175,34 +279,86 @@ export default {
         }
         landingFrame = null;
         mode = 'idle';
-        plate.show({ winners, prizeName, focus });
+        draw();
+        reveal.show({ winners, prizeName, focus });
       };
       landingFrame = cleanup.frame(land);
     }
 
-    function cancel() {
-      if (landingFrame !== null) {
-        cleanup.cancelFrame(landingFrame);
-        landingFrame = null;
-      }
-      mode = 'idle';
-    }
-
     function reset() {
       cancel();
-      labels = [];
-      plate.hide();
+      landed = -1;
+      reveal.hide();
+      idleKey = '';
       draw();
     }
 
-    observer.observe(root);
+    function update(next) {
+      title.textContent = next.title;
+
+      if (next.mode === MODE.PERSON) {
+        picker.update(
+          next.people.map((person) => ({
+            id: person.id,
+            label: person.name,
+            sub: person.dept,
+            note: person.employeeId,
+            active: person.picked,
+          })),
+        );
+      }
+
+      const copy = idleCopy({
+        mode: next.mode,
+        allDrawn: next.allDrawn,
+        handed: next.handed,
+        prizeName: next.prizeName,
+        remaining: next.prizeRemaining,
+        batch: next.batch,
+        personName: next.personName,
+        personDept: next.personDept,
+        prizeCount: next.prizeCount,
+      });
+      status.replaceChildren(
+        el('span', 'status-eyebrow', copy.eyebrow),
+        el('span', 'status-main', copy.main),
+        el('span', 'status-note', copy.note),
+      );
+
+      action.set({
+        text: next.spinning ? '停' : next.allDrawn ? '看结果' : '转',
+        note: next.spinning ? '再按一次' : next.allDrawn ? `${next.handed} 人已中奖` : `${next.prizeCount} 个奖项`,
+        running: next.spinning,
+        disabled: !next.spinning && !next.allDrawn && !next.canDraw,
+      });
+
+      const labels = next.labels.filter((label) => String(label).trim() !== '');
+      const weights = Array.isArray(next.weights) ? next.weights : [];
+      const key = next.allDrawn ? 'done' : `${labels.join('|')}#${weights.join(',')}`;
+      if (!next.spinning && !next.revealed && key !== idleKey) {
+        idleKey = key;
+        if (!next.allDrawn) {
+          // 待机也按真实的权重分扇区，免得开抽前后角度忽然变一遍
+          entries = (labels.length > 0 ? labels : ['—']).map((name, index) => ({
+            name,
+            weight: Math.max(1, Number(weights[index] ?? 1)),
+          }));
+          layout(entries);
+          landed = -1;
+          draw();
+        }
+      }
+    }
+
+    observer.observe(scene);
     cleanup.frame(tick);
     resize();
 
     return {
       begin,
-      reveal,
+      reveal: showWinners,
       reset,
+      update,
       destroy() {
         cancel();
         cleanup.clearAll();

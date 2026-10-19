@@ -1,8 +1,13 @@
 /**
  * 抽奖页。
  *
- * 独立入口：只认 URL 上的 `?id=`，自己读存档、跑引擎、把结果写回去。
- * 与主页不共享 DOM、样式或状态；主页退出后回到 `index.html`。
+ * 这一层只管引擎与键盘：读存档、算状态、把快照交给形态、把结果写回去。
+ * 界面全部由形态自己画 —— 每种形态的受众不同，外壳不共用。
+ *
+ * 形态拿到的接口：
+ *   create(host, config, api) -> { begin, reveal, reset, update, destroy }
+ *   api: start / toggle / pickPrize / pickPerson / undo / voidLast / results / exit / fullscreen
+ *   update(view): 每次状态变化都调，形态自己决定列表、按钮、计数长什么样。
  */
 
 import {
@@ -14,6 +19,7 @@ import {
   nextPerson,
   prizeDrawn,
   prizeRemaining,
+  prizeWeight,
   undoLast,
   voidWinner,
 } from '../engine.js';
@@ -39,33 +45,25 @@ const ui = {
   resultsOpen: false,
 };
 
-/** 抽奖页的引擎状态。 */
-
 if (lottery === null) {
   window.location.replace('./index.html');
 } else if (lottery.people.length === 0) {
-  root.append(
-    h(
-      'div',
-      { class: 'result-scrim' },
-      h(
-        'div',
-        { class: 'result-panel' },
-        h('div', { class: 'result-head' }, h('h2', { text: '这份名单还是空的' })),
-        h('div', { class: 'result-body' }, h('p', { text: '回主页加人，或导入一份名单。' })),
-        h(
-          'div',
-          { class: 'result-foot' },
-          h('button', { class: 'link', type: 'button', text: '回主页', onClick: goHome }),
-        ),
-      ),
-    ),
-  );
+  root.append(emptyState());
 } else {
   mount();
 }
 
-/* ---------- 渲染 ---------- */
+/* ---------- 外壳 ---------- */
+
+function emptyState() {
+  return h(
+    'div',
+    { class: 'draw-empty' },
+    h('p', { class: 'draw-empty-title', text: '这份名单还是空的' }),
+    h('p', { class: 'draw-empty-note', text: '回主页加人，或导入一份名单。' }),
+    h('button', { class: 'draw-empty-back', type: 'button', text: '回主页', onClick: goHome }),
+  );
+}
 
 function goHome() {
   window.location.href = './index.html';
@@ -73,75 +71,18 @@ function goHome() {
 
 function mount() {
   clear(root);
-  root.append(...renderShell());
+  root.dataset.stage = lottery.stage;
+  root.dataset.mode = run.mode === MODE.PERSON ? 'person' : 'prize';
   mountStage();
   paint();
 }
 
-function renderShell() {
-  return [
-    h(
-      'header',
-      { class: 'draw-head' },
-      h(
-        'div',
-        { class: 'draw-headline' },
-        h('span', { class: 'draw-title', text: run.title }),
-        h('span', { class: 'draw-meta', id: 'draw-meta' }),
-      ),
-      h(
-        'div',
-        { class: 'draw-actions' },
-        h('button', {
-          class: 'link',
-          type: 'button',
-          id: 'draw-fullscreen',
-          text: '全屏',
-          onClick: toggleFullscreen,
-        }),
-        h('button', { class: 'link', type: 'button', text: '退出', onClick: goHome }),
-      ),
-    ),
-    h(
-      'div',
-      { class: 'draw-body' },
-      h(
-        'aside',
-        { class: 'queue' },
-        h(
-          'div',
-          { class: 'queue-head' },
-          h('span', { class: 'queue-label', text: run.mode === MODE.PRIZE ? '签' : '票' }),
-          h('span', { class: 'queue-count', id: 'queue-count' }),
-        ),
-        h('ol', { class: 'queue-list', id: 'queue' }),
-      ),
-      h('div', { class: 'booth' }, h('div', { class: 'stage', id: 'stage' }), h('div', { class: 'idle', id: 'idle' })),
-    ),
-    h(
-      'footer',
-      { class: 'draw-foot' },
-      h('div', { class: 'draw-status', id: 'draw-status' }),
-      h('button', {
-        class: 'draw-action',
-        type: 'button',
-        id: 'draw-action',
-        text: '开始',
-        onClick: onAction,
-      }),
-      h('div', { class: 'draw-hint', text: '空格 开始 / 停 · ↑↓ 换 · 退格 撤销 · Delete 作废 · Esc 退全屏' }),
-    ),
-  ];
-}
-
 function mountStage() {
   destroyStage();
-  const host = document.getElementById('stage');
-  if (host === null) {
-    return;
-  }
+  const host = el('div', 'stage');
+  root.append(host);
   const config = lottery.stageConfig?.[lottery.stage] ?? {};
-  ui.stage = createStage(lottery.stage, host, config);
+  ui.stage = createStage(lottery.stage, host, config, stageActions());
 }
 
 function destroyStage() {
@@ -151,14 +92,41 @@ function destroyStage() {
   }
 }
 
+/** 交给形态的入口；形态想放哪就放哪，不规定位置。 */
+function stageActions() {
+  return {
+    start: () => onAction(),
+    stop: () => onAction(),
+    toggle: () => onAction(),
+    pickPrize: (id) => {
+      if (ui.spinning) {
+        return;
+      }
+      ui.selectedPrizeId = id;
+      paint();
+    },
+    pickPerson: (id) => {
+      if (ui.spinning) {
+        return;
+      }
+      ui.personPickId = id;
+      paint();
+    },
+    undo: () => undoInStage(),
+    voidLast: () => voidLastWinner(),
+    results: () => {
+      ui.resultsOpen = true;
+      paint();
+    },
+    exit: () => goHome(),
+    fullscreen: () => toggleFullscreen(),
+  };
+}
+
+/* ---------- 状态 ---------- */
+
 function paint() {
-  const meta = document.getElementById('draw-meta');
-  if (meta !== null) {
-    meta.textContent = `${stageLabel(lottery.stage)} · ${run.prizes.length} 个奖项 · ${totalSlots()} 个名额 · 已抽 ${handed()}`;
-  }
-  paintQueue();
-  paintIdle();
-  paintFoot();
+  ui.stage?.update(view());
   paintResults();
 }
 
@@ -170,10 +138,11 @@ function handed() {
   return run.results.reduce((sum, result) => sum + result.winners.length, 0);
 }
 
+/**
+ * 控制区里高亮的永远是"接下来要抽的那个"。
+ * 刚抽完的奖项由揭晓那一行说，不靠高亮再说一遍。
+ */
 function highlightedPrize() {
-  if (ui.revealed) {
-    return run.prizes.find((prize) => prize.id === ui.selectedPrizeId) ?? null;
-  }
   return currentPrize();
 }
 
@@ -203,181 +172,58 @@ function allDrawn() {
   return availablePrizes(run).length === 0 || eligiblePeople(run).length === 0;
 }
 
-function paintQueue() {
-  const list = document.getElementById('queue');
-  const count = document.getElementById('queue-count');
-  if (list === null) {
-    return;
-  }
-  clear(list);
-  if (count !== null) {
-    count.textContent =
-      run.mode === MODE.PRIZE
-        ? `${availablePrizes(run).length} / ${run.prizes.length}`
-        : `${eligiblePeople(run).length} / ${run.people.length}`;
-  }
-
-  if (run.mode === MODE.PRIZE) {
-    const selected = highlightedPrize();
-    for (const [index, prize] of run.prizes.entries()) {
-      const drawn = prizeDrawn(run, prize.id);
-      const left = Math.max(0, prize.count - drawn);
-      const active = selected?.id === prize.id;
-      list.append(
-        h(
-          'li',
-          { class: `qrow${active ? ' selected' : ''}${left === 0 ? ' done' : ''}` },
-          h('span', { class: 'qrow-num', text: String(index + 1).padStart(2, '0') }),
-          h(
-            'span',
-            { class: 'qrow-main' },
-            h('span', { class: 'qrow-name', text: prize.name }),
-            h(
-              'span',
-              { class: 'qrow-bar' },
-              h('i', { style: `width:${prize.count === 0 ? 0 : (drawn / prize.count) * 100}%` }),
-            ),
-          ),
-          h('span', { class: 'qrow-count', text: `${drawn}/${prize.count}` }),
-          h('button', {
-            class: 'qrow-start',
-            type: 'button',
-            text: left === 0 ? '满' : ui.spinning && active ? '停' : '开始',
-            disabled: left === 0 || (ui.spinning && !active),
-            onClick: () => {
-              if (ui.spinning && active) {
-                stopDraw();
-                return;
-              }
-              ui.selectedPrizeId = prize.id;
-              startDraw();
-            },
-          }),
-        ),
-      );
-    }
-    return;
-  }
-
-  const pool = eligiblePeople(run);
-  if (pool.length === 0) {
-    list.append(h('li', { class: 'qrow done' }, h('span', { class: 'qrow-name', text: '票都抽完了' })));
-    return;
-  }
-  const picked = pickedPerson();
-  for (const [index, person] of pool.entries()) {
-    const active = picked?.id === person.id;
-    list.append(
-      h(
-        'li',
-        { class: `qrow${active ? ' selected' : ''}` },
-        h('span', { class: 'qrow-num', text: String(index + 1).padStart(2, '0') }),
-        h(
-          'span',
-          { class: 'qrow-main' },
-          h('span', { class: 'qrow-name', text: person.name }),
-          h('span', { class: 'qrow-sub', text: person.dept || '' }),
-        ),
-        h('span', { class: 'qrow-count', text: person.employeeId || '' }),
-        h('button', {
-          class: 'qrow-start',
-          type: 'button',
-          text: ui.spinning && active ? '停' : '开始',
-          disabled: ui.spinning && !active,
-          onClick: () => {
-            if (ui.spinning && active) {
-              stopDraw();
-              return;
-            }
-            ui.personPickId = person.id;
-            startDraw();
-          },
-        }),
-      ),
-    );
-  }
-}
-
-function paintIdle() {
-  const idle = document.getElementById('idle');
-  if (idle === null) {
-    return;
-  }
-  clear(idle);
-  const showing = !ui.spinning && !ui.revealed && !ui.resultsOpen;
-  idle.classList.toggle('on', showing);
-  if (!showing) {
-    return;
-  }
-  if (allDrawn()) {
-    idle.append(
-      el('div', 'idle-label', '抽完了'),
-      el('div', 'idle-main', '看结果'),
-      el('div', 'idle-note', `共 ${handed()} 人中奖`),
-    );
-    return;
-  }
-  if (run.mode === MODE.PRIZE) {
-    const prize = currentPrize();
-    if (prize === null) {
-      return;
-    }
-    idle.append(
-      el('div', 'idle-label', '下一支'),
-      el('div', 'idle-main', prize.name),
-      el(
-        'div',
-        'idle-note',
-        `还剩 ${prizeRemaining(run, prize.id)} 个名额 · 一次抽 ${Math.min(lottery.batch, prizeRemaining(run, prize.id))} 人`,
-      ),
-    );
-    return;
-  }
-  const person = pickedPerson();
-  if (person === null) {
-    return;
-  }
-  idle.append(
-    el('div', 'idle-label', '请上台'),
-    el('div', 'idle-main', person.name),
-    el('div', 'idle-note', person.dept || '抽一次'),
-  );
-}
-
-function paintFoot() {
-  const status = document.getElementById('draw-status');
-  if (status !== null) {
-    status.textContent = statusText();
-  }
-  const action = document.getElementById('draw-action');
-  if (action === null) {
-    return;
-  }
-  const done = allDrawn();
-  action.textContent = ui.spinning ? '停' : done ? '看结果' : '开始';
-  action.classList.toggle('running', ui.spinning);
-  action.disabled = !ui.spinning && !done && !canDraw();
-}
-
 function canDraw() {
   return run.mode === MODE.PRIZE ? currentPrize() !== null : availablePrizes(run).length > 0;
 }
 
-function statusText() {
-  if (ui.spinning) {
-    return '再按一次停下';
-  }
-  if (allDrawn()) {
-    return `已抽完 · ${handed()} 人中奖`;
-  }
-  if (run.mode === MODE.PERSON && pickedPerson() === null) {
-    return '名单已经抽完';
-  }
-  if (run.mode === MODE.PRIZE && currentPrize() === null) {
-    return '奖项已经抽完';
-  }
-  // 待机时舞台上已经写清楚抽什么，这里不再复述
-  return '';
+/** 一次快照：形态需要什么就从这里拿，不再去碰引擎。 */
+function view() {
+  const prize = run.mode === MODE.PRIZE ? currentPrize() : null;
+  const person = run.mode === MODE.PERSON ? pickedPerson() : null;
+  const pool = run.mode === MODE.PRIZE ? eligiblePeople(run) : availablePrizes(run);
+  const remainingPeople = eligiblePeople(run).length;
+
+  return {
+    title: run.title,
+    mode: run.mode,
+    label: stageLabel(lottery.stage),
+    spinning: ui.spinning,
+    revealed: ui.revealed,
+    allDrawn: allDrawn(),
+    canDraw: canDraw(),
+    handed: handed(),
+    totalSlots: totalSlots(),
+    batch:
+      prize === null
+        ? 1
+        : Math.max(1, Math.min(lottery.batch, prizeRemaining(run, prize.id), remainingPeople)),
+    prizeName: prize?.name ?? '',
+    prizeRemaining: prize === null ? 0 : prizeRemaining(run, prize.id),
+    personName: person?.name ?? '',
+    personDept: person?.dept ?? '',
+    prizeCount: availablePrizes(run).length,
+    peopleLeft: remainingPeople,
+    labels: pool.map((item) => item.name),
+    weights: run.mode === MODE.PERSON ? pool.map((item) => prizeWeight(run, item)) : [],
+    prizes: run.prizes.map((item) => ({
+      id: item.id,
+      name: item.name,
+      count: item.count,
+      drawn: prizeDrawn(run, item.id),
+      remaining: prizeRemaining(run, item.id),
+      active: run.mode === MODE.PRIZE && highlightedPrize()?.id === item.id,
+    })),
+    people: run.mode === MODE.PERSON
+      ? eligiblePeople(run).map((item) => ({
+          id: item.id,
+          name: item.name,
+          dept: item.dept ?? '',
+          employeeId: item.employeeId ?? '',
+          picked: person?.id === item.id,
+        }))
+      : [],
+    lastPrizeName: run.results[run.results.length - 1]?.prizeName ?? '',
+  };
 }
 
 /* ---------- 抽 ---------- */
@@ -414,12 +260,18 @@ function startDraw() {
     }
     ui.personPickId = person.id;
   }
-  const labels =
+
+  const pool = run.mode === MODE.PRIZE ? eligiblePeople(run) : availablePrizes(run);
+  const labels = pool.map((item) => item.name);
+  // 扇区与签筒按真实概率分，权重就是引擎掷骰子用的那一份
+  const weights = run.mode === MODE.PERSON ? pool.map((prize) => prizeWeight(run, prize)) : [];
+  const batch =
     run.mode === MODE.PRIZE
-      ? eligiblePeople(run).map((person) => person.name)
-      : availablePrizes(run).map((prize) => prize.name);
+      ? Math.max(1, Math.min(lottery.batch, prizeRemaining(run, ui.selectedPrizeId), pool.length))
+      : 1;
+
   ui.revealed = false;
-  ui.stage.begin({ labels });
+  ui.stage.begin({ labels, weights, batch });
   ui.spinning = true;
   paint();
 }
@@ -457,28 +309,6 @@ function commit() {
   app = writeRunState(app, lottery.id, run);
   lottery = lotteryById(app, lottery.id) ?? lottery;
   saveApp(app);
-}
-
-function stepSelection(direction) {
-  if (ui.spinning || ui.revealed) {
-    return;
-  }
-  if (run.mode === MODE.PRIZE) {
-    const pool = availablePrizes(run);
-    if (pool.length <= 1) {
-      return;
-    }
-    const at = pool.findIndex((prize) => prize.id === currentPrize()?.id);
-    ui.selectedPrizeId = pool[(at + direction + pool.length) % pool.length].id;
-  } else {
-    const pool = eligiblePeople(run);
-    if (pool.length <= 1) {
-      return;
-    }
-    const at = pool.findIndex((person) => person.id === pickedPerson()?.id);
-    ui.personPickId = pool[(at + direction + pool.length) % pool.length].id;
-  }
-  paint();
 }
 
 function undoInStage() {
@@ -530,12 +360,15 @@ function paintResults() {
   document.body.append(
     h(
       'div',
-      { class: 'result-scrim', onClick: (event) => {
-        if (event.target === event.currentTarget) {
-          ui.resultsOpen = false;
-          paint();
-        }
-      } },
+      {
+        class: `result-scrim stage-${lottery.stage}`,
+        onClick: (event) => {
+          if (event.target === event.currentTarget) {
+            ui.resultsOpen = false;
+            paint();
+          }
+        },
+      },
       h(
         'div',
         { class: 'result-panel', role: 'dialog', 'aria-label': '开奖结果' },
@@ -543,7 +376,7 @@ function paintResults() {
           'div',
           { class: 'result-head' },
           h('h2', { text: '开奖结果' }),
-          h('span', { class: 'draw-meta', text: `${run.title} · ${handed()} 人` }),
+          h('span', { class: 'result-sub', text: `${run.title} · ${handed()} 人` }),
         ),
         h(
           'div',
@@ -568,7 +401,7 @@ function paintResults() {
           'div',
           { class: 'result-foot' },
           h('button', {
-            class: 'link',
+            class: 'result-link',
             type: 'button',
             text: '关闭',
             onClick: () => {
@@ -576,7 +409,7 @@ function paintResults() {
               paint();
             },
           }),
-          h('button', { class: 'link', type: 'button', text: '回主页', onClick: goHome }),
+          h('button', { class: 'result-link', type: 'button', text: '回主页', onClick: goHome }),
         ),
       ),
     ),
@@ -595,10 +428,7 @@ function toggleFullscreen() {
 
 document.addEventListener('fullscreenchange', () => {
   root.classList.toggle('is-full', document.fullscreenElement !== null);
-  const button = document.getElementById('draw-fullscreen');
-  if (button !== null) {
-    button.textContent = document.fullscreenElement === null ? '全屏' : '退出全屏';
-  }
+  paint();
 });
 
 document.addEventListener('keydown', (event) => {
@@ -638,6 +468,28 @@ document.addEventListener('keydown', (event) => {
     stepSelection(event.key === 'ArrowDown' ? 1 : -1);
   }
 });
+
+function stepSelection(direction) {
+  if (ui.spinning || ui.revealed) {
+    return;
+  }
+  if (run.mode === MODE.PRIZE) {
+    const pool = availablePrizes(run);
+    if (pool.length <= 1) {
+      return;
+    }
+    const at = pool.findIndex((prize) => prize.id === currentPrize()?.id);
+    ui.selectedPrizeId = pool[(at + direction + pool.length) % pool.length].id;
+  } else {
+    const pool = eligiblePeople(run);
+    if (pool.length <= 1) {
+      return;
+    }
+    const at = pool.findIndex((person) => person.id === pickedPerson()?.id);
+    ui.personPickId = pool[(at + direction + pool.length) % pool.length].id;
+  }
+  paint();
+}
 
 /* ---------- 启动 ---------- */
 

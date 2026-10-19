@@ -13,7 +13,7 @@ import {
   stageMode,
 } from '../site/src/stages/index.js';
 
-test('每种形态都有 id、名字与 create', () => {
+test('每种形态都有 id、名字、create 与整屏界面', () => {
   for (const stage of STAGES) {
     assert.equal(typeof stage.id, 'string', '缺 id');
     assert.match(stage.id, /^[a-z][a-z0-9-]*$/, `id 形状不对：${stage.id}`);
@@ -21,6 +21,25 @@ test('每种形态都有 id、名字与 create', () => {
     assert.notEqual(stage.label.trim(), '', `${stage.id} 的 label 是空的`);
     assert.equal(typeof stage.create, 'function', `${stage.id} 缺 create`);
     assert.equal(typeof stage.styles, 'string', `${stage.id} 缺 styles`);
+  }
+});
+
+test('createStage 把入口一起交给形态', () => {
+  let received = null;
+  const host = { replaceChildren() {} };
+  const api = { start() {}, pickPrize() {} };
+  for (const stage of STAGES) {
+    const original = stage.create;
+    stage.create = (_host, _config, given) => {
+      received = given;
+      return { begin() {}, reveal() {}, reset() {}, update() {}, destroy() {} };
+    };
+    try {
+      createStage(stage.id, host, {}, api);
+      assert.equal(received, api, `${stage.id} 没拿到入口`);
+    } finally {
+      stage.create = original;
+    }
   }
 });
 
