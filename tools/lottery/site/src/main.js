@@ -350,6 +350,35 @@ function bar(ratio) {
   return h('span', { class: 'bar' }, h('i', { style: `width:${Math.max(0, Math.min(1, ratio)) * 100}%` }));
 }
 
+/**
+ * 空态：一句标题、一句说明，外加几个入口。
+ *
+ * 主行动是实心按钮，其余是描边按钮；没有行动时只留文字。
+ */
+function emptyState(title, text, actions = []) {
+  return h(
+    'div',
+    { class: 'empty' },
+    h('div', { class: 'empty-art' }, docIcon()),
+    h('h2', { class: 'empty-title', text: title }),
+    text ? h('p', { class: 'empty-text', text }) : null,
+    actions.length === 0
+      ? null
+      : h(
+          'div',
+          { class: 'empty-actions' },
+          actions.map((action) =>
+            h('button', {
+              class: `btn ${action.primary ? 'primary' : 'plain'}`,
+              type: 'button',
+              text: action.label,
+              onClick: action.onClick,
+            }),
+          ),
+        ),
+  );
+}
+
 /* ---------- 格子 ---------- */
 
 /**
