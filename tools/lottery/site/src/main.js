@@ -44,6 +44,7 @@ import {
 
 const appEl = document.getElementById('app');
 const fileEl = document.getElementById('file');
+const modalEl = document.getElementById('modal');
 
 let app = loadApp();
 
@@ -123,9 +124,7 @@ function render() {
   destroyPreview();
   clear(appEl);
   appEl.append(renderShell());
-  if (ui.dialog !== null) {
-    appEl.append(renderDialog());
-  }
+  paintDialog();
   syncExpanders();
   if (ui.dialog?.kind === 'stage' || ui.dialog?.kind === 'new') {
     mountPreview();
@@ -323,7 +322,7 @@ function choices(options, value, onChange) {
         class: `choice${String(option.value) === String(value) ? ' active' : ''}`,
         type: 'button',
         text: option.label,
-        onClick: () => onChange(option.value),
+        onClick: (event) => onChange(option.value, event.currentTarget),
       }),
     ),
   );
@@ -1091,7 +1090,7 @@ function closeDialog() {
 function renderDialog() {
   const dialog = ui.dialog;
   if (dialog === null) {
-    return h('div');
+    return null;
   }
   if (dialog.kind === 'addMenu') {
     return renderAddMenu();
@@ -1120,33 +1119,61 @@ function renderDialog() {
   if (dialog.kind === 'prefs') {
     return renderPrefsSheet();
   }
-  return h('div');
+  return null;
 }
 
+/**
+ * 把 `ui.dialog` 画进那一个 `<dialog>` 里。
+ *
+ * 外壳只开一次：重绘只换里面的内容，入场动画不会重播，焦点也留在弹窗里。
+ */
+function paintDialog() {
+  const content = ui.dialog === null ? null : renderDialog();
+  if (content === null) {
+    if (modalEl.open) {
+      modalEl.close();
+    }
+    clear(modalEl);
+    return;
+  }
+
+  const opened = modalEl.open;
+  clear(modalEl);
+  modalEl.append(content);
+
+  const title = modalEl.querySelector('.sheet-title, .action-title');
+  if (title !== null) {
+    title.id = 'modal-title';
+    modalEl.setAttribute('aria-labelledby', 'modal-title');
+    modalEl.removeAttribute('aria-label');
+  }
+
+  if (!opened) {
+    modalEl.showModal();
+    modalEl.classList.add('opening');
+    window.setTimeout(() => modalEl.classList.remove('opening'), 240);
+  }
+}
+
+/**
+ * 一张弹窗。
+ *
+ * 返回的是弹窗内容本身，外层的 `<dialog>` 由 paintDialog 复用：
+ * 每次交互都重建外壳的话，入场动画会跟着重播，看起来就像闪了一下。
+ */
 function sheet({ title, sub, children, footer, wide = false }) {
   return h(
-    'div',
-    {
-      class: 'scrim',
-      onClick: (event) => {
-        if (event.target === event.currentTarget) {
-          closeDialog();
-        }
-      },
-    },
+    'section',
+    { class: `sheet${wide ? ' wide' : ''}` },
     h(
-      'section',
-      { class: `sheet${wide ? ' wide' : ''}`, role: 'dialog', 'aria-label': title },
-      h(
-        'header',
-        { class: 'sheet-head' },
-        h('h2', { class: 'sheet-title', text: title }),
-        sub ? h('span', { class: 'sheet-sub', text: sub }) : null,
-        h('button', { class: 'sheet-close', type: 'button', 'aria-label': '关闭', onClick: closeDialog }, '×'),
-      ),
-      h('div', { class: 'sheet-body' }, children),
-      footer ? h('footer', { class: 'sheet-foot' }, footer) : null,
+      'header',
+      { class: 'sheet-head' },
+      h('h2', { class: 'sheet-title', text: title }),
+      sub ? h('span', { class: 'sheet-sub', text: sub }) : null,
+      h('button', { class: 'sheet-close', type: 'button', 'aria-label': '关闭', onClick: closeDialog }, '×'),
     ),
+    h('div', { class: 'sheet-body' }, children),
+    footer ? h('footer', { class: 'sheet-foot' }, footer) : null,
   );
 }
 
@@ -1154,55 +1181,44 @@ function renderAddMenu() {
   const label = VIEW_LABELS[ui.view];
   const importTarget = ui.view === 'lotteries' ? 'lottery' : ui.view === 'rosters' ? 'roster' : 'prize';
   return h(
-    'div',
-    {
-      class: 'scrim',
-      onClick: (event) => {
-        if (event.target === event.currentTarget) {
-          closeDialog();
-        }
-      },
-    },
+    'section',
+    { class: 'action-sheet' },
+    h('p', { class: 'action-title', text: label }),
     h(
-      'section',
-      { class: 'action-sheet', role: 'dialog', 'aria-label': `新建${label}` },
-      h('p', { class: 'action-title', text: label }),
-      h(
-        'div',
-        { class: 'action-group' },
-        h('button', {
-          class: 'action-item',
-          type: 'button',
-          text: '从 xlsx 导入',
-          onClick: () => pickFile(importTarget),
-        }),
-        h('button', {
-          class: 'action-item',
-          type: 'button',
-          text: '新建',
-          onClick: () => {
-            if (ui.view === 'lotteries') {
-              openNewDialog();
-              return;
-            }
-            ui.dialog = null;
-            if (ui.view === 'rosters') {
-              const [next, created] = addRoster(app, { name: '新名单', people: [] });
-              ui.rosterId = created.id;
-              commit(next);
-              return;
-            }
-            const [next, created] = addPrizeSet(app, { name: '新奖品', prizes: [] });
-            ui.prizeSetId = created.id;
+      'div',
+      { class: 'action-group' },
+      h('button', {
+        class: 'action-item',
+        type: 'button',
+        text: '从 xlsx 导入',
+        onClick: () => pickFile(importTarget),
+      }),
+      h('button', {
+        class: 'action-item',
+        type: 'button',
+        text: '新建',
+        onClick: () => {
+          if (ui.view === 'lotteries') {
+            openNewDialog();
+            return;
+          }
+          ui.dialog = null;
+          if (ui.view === 'rosters') {
+            const [next, created] = addRoster(app, { name: '新名单', people: [] });
+            ui.rosterId = created.id;
             commit(next);
-          },
-        }),
-      ),
-      h(
-        'div',
-        { class: 'action-group' },
-        h('button', { class: 'action-item cancel', type: 'button', text: '取消', onClick: closeDialog }),
-      ),
+            return;
+          }
+          const [next, created] = addPrizeSet(app, { name: '新奖品', prizes: [] });
+          ui.prizeSetId = created.id;
+          commit(next);
+        },
+      }),
+    ),
+    h(
+      'div',
+      { class: 'action-group' },
+      h('button', { class: 'action-item cancel', type: 'button', text: '取消', onClick: closeDialog }),
     ),
   );
 }
@@ -1210,7 +1226,7 @@ function renderAddMenu() {
 function renderPreviewSheet() {
   const pending = ui.pending;
   if (pending === null) {
-    return h('div');
+    return null;
   }
   const { parsed, base, target } = pending;
   const duplicate = duplicateOf(target, base);
@@ -1295,7 +1311,7 @@ function confirmSheet(options) {
 function renderSettingsSheet() {
   const item = lotteryById(app, ui.dialog.lotteryId);
   if (item === null) {
-    return h('div');
+    return null;
   }
   const rail = renderRail(item, lotterySummary(item), lotteryStatus(item), { footer: false });
   return sheet({
@@ -1360,7 +1376,7 @@ function openStageDialog(item) {
 function renderStageSheet() {
   const item = lotteryById(app, ui.dialog.lotteryId);
   if (item === null) {
-    return h('div');
+    return null;
   }
   const stageId = ui.dialog.stage ?? item.stage;
   const stage = stageInfo(stageId);
@@ -1477,18 +1493,13 @@ function renderNewSheet() {
   const draft = ui.draft;
   /** 打字时只改草稿：整页重绘会把输入框连同焦点一起换掉，弹窗动画也会重播。 */
   const patch = (next) => {
-    ui.draft = { ...ui.draft, ...next };
+    Object.assign(ui.draft, next);
   };
   /** 换名单或奖品只影响左边预览，重挂一次就够了。 */
   const refreshPreview = () => {
     destroyPreview();
     mountPreview();
   };
-  const set = (next) => {
-    patch(next);
-    render();
-  };
-
   const roster = app.rosters.find((item) => item.id === draft.rosterId);
   const prizeSet = app.prizeSets.find((item) => item.id === draft.prizeSetId);
 
@@ -1510,7 +1521,13 @@ function renderNewSheet() {
             choices(
               STAGES.map((stage) => ({ value: stage.id, label: stage.label })),
               draft.stage,
-              (value) => set({ stage: value }),
+              (value, button) => {
+                patch({ stage: value });
+                for (const node of button.parentElement.children) {
+                  node.classList.toggle('active', node === button);
+                }
+                refreshPreview();
+              },
             ),
           ),
           h(
@@ -1623,7 +1640,7 @@ function openPools(item, tab) {
 function renderPoolsSheet() {
   const item = lotteryById(app, ui.dialog.lotteryId);
   if (item === null) {
-    return h('div');
+    return null;
   }
   const summary = lotterySummary(item);
   const tab = ui.poolsTab;
@@ -1781,7 +1798,7 @@ function openResults() {
 function renderResultsSheet() {
   const item = lotteryById(app, ui.dialog.lotteryId);
   if (item === null) {
-    return h('div');
+    return null;
   }
   const rows = [];
   let order = 1;
@@ -2252,12 +2269,25 @@ function chevronIcon() {
 function toast(message) {
   document.querySelector('.toast')?.remove();
   const node = el('div', 'toast', message);
-  document.body.append(node);
+  // 弹窗在顶层：提示也挂进 <dialog> 里，不然会被盖住
+  (modalEl.open ? modalEl : document.body).append(node);
   window.setTimeout(() => node.classList.add('leaving'), 2200);
   window.setTimeout(() => node.remove(), 2800);
 }
 
 /* ---------- 事件 ---------- */
+
+// 点弹窗外的空白处关掉；Esc 由浏览器的 cancel 事件给出
+modalEl.addEventListener('click', (event) => {
+  if (event.target === modalEl) {
+    closeDialog();
+  }
+});
+
+modalEl.addEventListener('cancel', (event) => {
+  event.preventDefault();
+  closeDialog();
+});
 
 fileEl.addEventListener('change', (event) => {
   const file = event.currentTarget.files?.[0];

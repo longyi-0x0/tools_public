@@ -689,17 +689,34 @@ input::placeholder { color: var(--faint); }
 
 /* ---------- 弹窗 ---------- */
 
-.scrim {
+/* 用原生 <dialog>：渲染在顶层，焦点圈在弹窗里，Esc 与「外部不可点」都由浏览器管 */
+.modal {
   position: fixed;
   inset: 0;
-  z-index: 60;
+  width: 100%;
+  max-width: 100%;
+  height: 100%;
+  max-height: 100%;
+  margin: 0;
+  padding: 24px 16px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  overflow-y: auto;
+}
+
+.modal[open] {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 24px 16px;
-  background: rgba(0, 0, 0, 0.35);
-  animation: fade 0.2s var(--ease);
 }
+
+.modal::backdrop { background: rgba(0, 0, 0, 0.35); }
+
+/* 入场动画只挂在「刚打开」那一下：换内容重绘时不会再播，所以不闪 */
+.modal.opening { animation: fade 0.2s var(--ease); }
+.modal.opening .sheet { animation: rise 0.22s var(--ease); }
+.modal.opening .action-sheet { animation: rise 0.2s var(--ease); }
 
 @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
 
@@ -711,7 +728,6 @@ input::placeholder { color: var(--faint); }
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: 10px;
-  animation: rise 0.22s var(--ease);
   overflow: hidden;
 }
 
@@ -809,7 +825,6 @@ input::placeholder { color: var(--faint); }
   display: flex;
   flex-direction: column;
   gap: 10px;
-  animation: rise 0.2s var(--ease);
 }
 
 .action-title {
