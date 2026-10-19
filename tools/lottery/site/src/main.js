@@ -340,9 +340,16 @@ function toggle(label, checked, onChange) {
       type: 'button',
       text: checked ? '开' : '关',
       'aria-pressed': checked ? 'true' : 'false',
-      onClick: () => onChange(!checked),
+      onClick: (event) => onChange(!checked, event.currentTarget),
     }),
   );
+}
+
+/** 不重绘时把开关的样子改到位，和 toggle() 建出来的一致。 */
+function paintToggle(button, checked) {
+  button.classList.toggle('on', checked);
+  button.textContent = checked ? '开' : '关';
+  button.setAttribute('aria-pressed', checked ? 'true' : 'false');
 }
 
 /** 一条细进度。 */
@@ -745,6 +752,7 @@ function renderConfigField(item, field, value) {
       ),
     );
   }
+  const valueEl = h('span', { class: 'field-value', text: String(value) });
   return h(
     'div',
     { class: 'field' },
@@ -757,18 +765,27 @@ function renderConfigField(item, field, value) {
       step: String(field.step),
       value: String(value),
       'aria-label': field.label,
-      onInput: (event) => writeStageConfig(item, field.key, Number(event.currentTarget.value), field.stageId ?? item.stage),
+      // 拖动时只存不重绘，否则每次 input 都会把手柄连同焦点一起换掉
+      onInput: (event) => {
+        const next = Number(event.currentTarget.value);
+        valueEl.textContent = String(next);
+        writeStageConfig(item, field.key, next, field.stageId ?? item.stage, { rerender: false });
+      },
     }),
-    h('span', { class: 'field-value', text: String(value) }),
+    valueEl,
   );
 }
 
-function writeStageConfig(item, key, value, stageId = item.stage) {
-  commit(
-    updateLottery(app, item.id, {
-      stageConfig: { [stageId]: { [key]: value } },
-    }),
-  );
+function writeStageConfig(item, key, value, stageId = item.stage, { rerender = true } = {}) {
+  const next = updateLottery(app, item.id, {
+    stageConfig: { [stageId]: { [key]: value } },
+  });
+  if (rerender) {
+    commit(next);
+    return;
+  }
+  app = next;
+  saveApp(app);
 }
 
 /* ---------- 名单详情 ---------- */
@@ -821,7 +838,7 @@ function renderRosterPage() {
                     onInput: (event) =>
                       writeRosterPeople(item, item.people.map((p) =>
                         p.id === person.id ? { ...p, name: event.currentTarget.value } : p,
-                      )),
+                      ), { rerender: false }),
                   }),
                   h('input', {
                     class: 'edit-input muted',
@@ -832,7 +849,7 @@ function renderRosterPage() {
                     onInput: (event) =>
                       writeRosterPeople(item, item.people.map((p) =>
                         p.id === person.id ? { ...p, dept: event.currentTarget.value } : p,
-                      )),
+                      ), { rerender: false }),
                   }),
                   h('input', {
                     class: 'edit-input muted narrow',
@@ -843,7 +860,7 @@ function renderRosterPage() {
                     onInput: (event) =>
                       writeRosterPeople(item, item.people.map((p) =>
                         p.id === person.id ? { ...p, employeeId: event.currentTarget.value } : p,
-                      )),
+                      ), { rerender: false }),
                   }),
                   h('button', {
                     class: 'edit-remove',
@@ -906,8 +923,25 @@ function renderRosterPage() {
   );
 }
 
-function writeRosterPeople(item, people) {
-  commit(updateRoster(app, item.id, { people: cleanPeople(people) }));
+function writeRosterPeople(item, people, { rerender = true } = {}) {
+  const next = updateRoster(app, item.id, { people: cleanPeople(people) });
+  const after = next.rosters.find((entry) => entry.id === item.id)?.people.length ?? 0;
+  saveRows(next, rerender, after === item.people.length);
+}
+
+/**
+ * 存一行。
+ *
+ * 输入框传 `rerender: false`：整页重绘会把输入框连同焦点一起换掉。
+ * 行数变了（名字被清空，整行会消失）时仍然重绘。
+ */
+function saveRows(next, rerender, rowsSame) {
+  if (rerender || !rowsSame) {
+    commit(next);
+    return;
+  }
+  app = next;
+  saveApp(app);
 }
 
 /* ---------- 奖品详情 ---------- */
@@ -962,7 +996,7 @@ function renderPrizeSetPage() {
                     onInput: (event) =>
                       writePrizeSetPrizes(item, item.prizes.map((p) =>
                         p.id === prize.id ? { ...p, name: event.currentTarget.value } : p,
-                      )),
+                      ), { rerender: false }),
                   }),
                   h('input', {
                     class: 'edit-input number',
@@ -1038,8 +1072,10 @@ function renderPrizeSetPage() {
   );
 }
 
-function writePrizeSetPrizes(item, prizes) {
-  commit(updatePrizeSet(app, item.id, { prizes: cleanPrizes(prizes) }));
+function writePrizeSetPrizes(item, prizes, { rerender = true } = {}) {
+  const next = updatePrizeSet(app, item.id, { prizes: cleanPrizes(prizes) });
+  const after = next.prizeSets.find((entry) => entry.id === item.id)?.prizes.length ?? 0;
+  saveRows(next, rerender, after === item.prizes.length);
 }
 
 /* ---------- 弹窗 ---------- */
@@ -1439,8 +1475,17 @@ function openNewDialog() {
 
 function renderNewSheet() {
   const draft = ui.draft;
-  const set = (patch) => {
-    ui.draft = { ...ui.draft, ...patch };
+  /** 打字时只改草稿：整页重绘会把输入框连同焦点一起换掉，弹窗动画也会重播。 */
+  const patch = (next) => {
+    ui.draft = { ...ui.draft, ...next };
+  };
+  /** 换名单或奖品只影响左边预览，重挂一次就够了。 */
+  const refreshPreview = () => {
+    destroyPreview();
+    mountPreview();
+  };
+  const set = (next) => {
+    patch(next);
     render();
   };
 
@@ -1478,7 +1523,7 @@ function renderNewSheet() {
               value: draft.title,
               placeholder: '2026 年会',
               'aria-label': '名称',
-              onInput: (event) => set({ title: event.currentTarget.value }),
+              onInput: (event) => patch({ title: event.currentTarget.value }),
             }),
           ),
           h(
@@ -1490,7 +1535,10 @@ function renderNewSheet() {
               {
                 class: 'field-select',
                 'aria-label': '名单',
-                onChange: (event) => set({ rosterId: event.currentTarget.value }),
+                onChange: (event) => {
+                  patch({ rosterId: event.currentTarget.value });
+                  refreshPreview();
+                },
               },
               h('option', { value: '', text: '现场名单', selected: draft.rosterId === '' }),
               app.rosters.map((item) =>
@@ -1511,7 +1559,10 @@ function renderNewSheet() {
               {
                 class: 'field-select',
                 'aria-label': '奖品',
-                onChange: (event) => set({ prizeSetId: event.currentTarget.value }),
+                onChange: (event) => {
+                  patch({ prizeSetId: event.currentTarget.value });
+                  refreshPreview();
+                },
               },
               h('option', { value: '', text: '现场奖品', selected: draft.prizeSetId === '' }),
               app.prizeSets.map((item) =>
@@ -1523,7 +1574,10 @@ function renderNewSheet() {
               ),
             ),
           ),
-          toggle('不重复中奖', draft.uniqueWinner, (checked) => set({ uniqueWinner: checked })),
+          toggle('不重复中奖', draft.uniqueWinner, (checked, button) => {
+            patch({ uniqueWinner: checked });
+            paintToggle(button, checked);
+          }),
           h(
             'div',
             { class: 'form-actions' },
@@ -1606,7 +1660,7 @@ function renderPoolsSheet() {
                   onInput: (event) =>
                     writeLotteryPeople(item, item.people.map((p) =>
                       p.id === person.id ? { ...p, name: event.currentTarget.value } : p,
-                    )),
+                    ), { rerender: false }),
                 }),
                 h('input', {
                   class: 'edit-input muted',
@@ -1617,7 +1671,7 @@ function renderPoolsSheet() {
                   onInput: (event) =>
                     writeLotteryPeople(item, item.people.map((p) =>
                       p.id === person.id ? { ...p, dept: event.currentTarget.value } : p,
-                    )),
+                    ), { rerender: false }),
                 }),
                 h('button', {
                   class: 'edit-remove',
@@ -1647,7 +1701,7 @@ function renderPoolsSheet() {
                   onInput: (event) =>
                     writeLotteryPrizes(item, item.prizes.map((p) =>
                       p.id === prize.id ? { ...p, name: event.currentTarget.value } : p,
-                    )),
+                    ), { rerender: false }),
                 }),
                 h('span', { class: 'edit-progress', text: `${drawn} / ${prize.count}` }),
                 h('input', {
@@ -1698,12 +1752,16 @@ function renderPoolsSheet() {
   });
 }
 
-function writeLotteryPeople(item, people) {
-  commit(patchLotteryPools(app, item.id, { people: cleanPeople(people) }));
+function writeLotteryPeople(item, people, { rerender = true } = {}) {
+  const next = patchLotteryPools(app, item.id, { people: cleanPeople(people) });
+  const after = next.lotteries.find((entry) => entry.id === item.id)?.people.length ?? 0;
+  saveRows(next, rerender, after === item.people.length);
 }
 
-function writeLotteryPrizes(item, prizes) {
-  commit(patchLotteryPools(app, item.id, { prizes: cleanPrizes(prizes) }));
+function writeLotteryPrizes(item, prizes, { rerender = true } = {}) {
+  const next = patchLotteryPools(app, item.id, { prizes: cleanPrizes(prizes) });
+  const after = next.lotteries.find((entry) => entry.id === item.id)?.prizes.length ?? 0;
+  saveRows(next, rerender, after === item.prizes.length);
 }
 
 /* ---------- 结果 ---------- */

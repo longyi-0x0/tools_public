@@ -254,7 +254,8 @@ input::placeholder { color: var(--faint); }
 
 .side-item.active { color: var(--text); font-weight: 550; background: var(--fill); }
 
-.side-empty { margin: 0; padding: 6px 24px; font-size: 13px; color: var(--faint); }
+/* 空态也占住列表的位置，底栏才不会跟着文字跑到上面 */
+.side-empty { margin: 0; padding: 6px 24px; font-size: 13px; color: var(--faint); flex: 1; min-height: 0; }
 
 .tabbar {
   display: flex;
