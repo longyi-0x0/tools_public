@@ -727,6 +727,12 @@ function statusText(_item, status, summary) {
 }
 
 function renderConfigField(item, field, value) {
+  // 开关型配置（音效这类）：以前落到下面的滑杆分支，会显示成一根写着 false 的滑杆
+  if (field.type === 'switch') {
+    return toggle(field.label, value !== false, (checked) =>
+      writeStageConfig(item, field.key, checked, field.stageId ?? item.stage),
+    );
+  }
   if (field.type === 'select') {
     return h(
       'div',

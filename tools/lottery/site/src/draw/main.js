@@ -263,7 +263,7 @@ function startDraw() {
 
   const pool = run.mode === MODE.PRIZE ? eligiblePeople(run) : availablePrizes(run);
   const labels = pool.map((item) => item.name);
-  // 扇区与签筒按真实概率分，权重就是引擎掷骰子用的那一份
+  // 权重就是引擎掷骰子用的那一份，形态拿它按真实概率摆各项
   const weights = run.mode === MODE.PERSON ? pool.map((prize) => prizeWeight(run, prize)) : [];
   const batch =
     run.mode === MODE.PRIZE

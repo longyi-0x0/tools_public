@@ -61,8 +61,9 @@ test('v2 存档迁移成 v3：活动变抽奖，素材库保留', () => {
   assert.equal(app.prizeSets.length, 1);
   assert.equal(app.lastLotteryId, 'g1');
   assert.equal(app.lotteries[0].title, '年会');
-  assert.equal(app.lotteries[0].stage, 'cards');
-  assert.equal(app.lotteries[0].stageConfig.cards.count, 12);
+  // v2 时的 cards 已经不在册，按兜底落到默认形态
+  assert.equal(app.lotteries[0].stage, 'wheel');
+  assert.equal(app.lotteries[0].stageConfig.wheel.skin, 'red-gold');
   assert.equal(app.lotteries[0].results.length, 1);
 });
 
@@ -73,12 +74,14 @@ test('同名按文件系统习惯往后排', () => {
 });
 
 test('形态配置按声明收口', () => {
-  const config = normalizeConfig('cards', { count: 999, columns: 6, stagger: -20, 多余: 1 });
-  assert.equal(config.count, 24);
-  assert.equal(config.columns, 6);
-  assert.equal(config.stagger, 0);
+  const config = normalizeConfig('wheel', { duration: -20, sound: 'yes', skin: 'mint', 多余: 1 });
+  assert.equal(config.duration, 2);
+  assert.equal(config.sound, false);
+  assert.equal(config.skin, 'mint');
   assert.equal('多余' in config, false);
-  assert.deepEqual(normalizeConfig('wheel', {}), stageDefaults('wheel'));
+  // 认不出的样式退回默认那一套，盘面不会因为没有配色而空着
+  assert.equal(normalizeConfig('wheel', { skin: 'nope' }).skin, 'red-gold');
+  assert.deepEqual(normalizeConfig('slot', {}), stageDefaults('slot'));
 });
 
 test('新建、进度与重新抽奖', () => {
@@ -132,8 +135,8 @@ test('抽奖包导出再导入：人数、奖项、进度、形态配置都回�
   const [next, lottery] = createLottery(app, {
     title: '年会',
     mode: MODE.PRIZE,
-    stage: 'cards',
-    stageConfig: { cards: { count: 8, columns: 4, stagger: 60, batch: 2 } },
+    stage: 'wheel',
+    stageConfig: { wheel: { skin: 'ink-gold', duration: 3.5, sound: false } },
     rosterId: app.rosters[0].id,
     prizeSetId: app.prizeSets[0].id,
   });
@@ -158,10 +161,11 @@ test('抽奖包导出再导入：人数、奖项、进度、形态配置都回�
   const parsed = await readLotteryWorkbook(bytes);
 
   assert.equal(parsed.meta.title, '年会');
-  assert.equal(parsed.meta.mode, MODE.PRIZE);
-  assert.equal(parsed.meta.stage, 'cards');
-  assert.equal(parsed.meta.stageConfig.cards.count, 8);
-  assert.equal(parsed.meta.batch, 2);
+  assert.equal(parsed.meta.mode, MODE.PERSON);
+  assert.equal(parsed.meta.stage, 'wheel');
+  assert.equal(parsed.meta.stageConfig.wheel.skin, 'ink-gold');
+  // 三种形态都是「人抽奖品」，一次一人一奖，没有 batch
+  assert.equal(parsed.meta.batch, 1);
   assert.equal(parsed.people.length, 1);
   assert.equal(parsed.prizes.length, 1);
   assert.equal(parsed.prizes[0].count, 2);

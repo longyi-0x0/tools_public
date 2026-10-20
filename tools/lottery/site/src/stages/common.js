@@ -89,7 +89,11 @@ export function createReveal() {
             names.append(el('span', 'reveal-name', winner.name));
           }
         }
-        meta.textContent = [...new Set(winners.map((winner) => winner.dept).filter(Boolean))].join(' / ');
+        const depts = [...new Set(winners.map((winner) => winner.dept).filter(Boolean))];
+        // 多人同部门时写部门，多人跨部门时写人数 —— 并排列两个部门会被读成
+        // 「这些人都属于这两个部门」，反而说不清
+        meta.textContent =
+          winners.length > 1 && depts.length > 1 ? `${winners.length} 人` : depts.join(' / ');
       }
 
       names.dataset.count = String(Math.min(4, Math.max(1, names.childElementCount)));
@@ -233,6 +237,93 @@ export function createCleanup() {
         observer.disconnect();
       }
       observers.clear();
+    },
+  };
+}
+
+/**
+ * 四节拍进度：把「转多久」映射成「走了多少」。
+ *
+ * 前 12% 蓄势（只走 6%），中间飞转，最后 30% 的时间只走 20% 的路 ——
+ * 于是越接近终点间隔越长，形成「咔…咔…咔…」的悬念。终点严格等于 1。
+ */
+export function spinProgress(t) {
+  if (t < 0.12) {
+    const u = t / 0.12;
+    return 0.06 * u * u;
+  }
+  if (t < 0.7) {
+    const u = (t - 0.12) / 0.58;
+    return 0.06 + 0.74 * u;
+  }
+  const u = (t - 0.7) / 0.3;
+  return 0.8 + 0.2 * (1 - Math.pow(1 - u, 3));
+}
+
+/** 瞬时速度（步/秒）：把瞬时进度换算成翻页该用多长，越接近终点翻得越慢。 */
+export function spinSpeed(t, totalSteps, totalMs) {
+  const h = 1e-4;
+  const a = spinProgress(Math.max(0, t - h));
+  const b = spinProgress(Math.min(1, t + h));
+  return ((b - a) / (2 * h)) * totalSteps / (totalMs / 1000);
+}
+
+/**
+ * 音效：翻页滴答 / 锁定咔哒 / 中奖金色和弦。
+ *
+ * 全部现场合成，不引外部资源；没有音频设备或没被允许出声时一律静默，
+ * 不向形态抛错 —— 声音只是气氛，抽不出奖才是问题。
+ */
+export function createAudio(enabled = true) {
+  let ctx = null;
+  let on = enabled === true;
+
+  function tone(freq, dur, gain, type) {
+    if (!on) {
+      return;
+    }
+    try {
+      if (ctx === null) {
+        const Ctor = window.AudioContext ?? window.webkitAudioContext;
+        if (Ctor === undefined) {
+          on = false;
+          return;
+        }
+        ctx = new Ctor();
+      }
+      if (ctx.state === 'suspended') {
+        ctx.resume();
+      }
+      const osc = ctx.createOscillator();
+      const amp = ctx.createGain();
+      osc.type = type;
+      osc.frequency.value = freq;
+      amp.gain.setValueAtTime(0, ctx.currentTime);
+      amp.gain.linearRampToValueAtTime(gain, ctx.currentTime + 0.008);
+      amp.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + dur);
+      osc.connect(amp).connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + dur + 0.02);
+    } catch (error) {
+      on = false;
+    }
+  }
+
+  return {
+    tick() {
+      tone(1180 + Math.random() * 160, 0.05, 0.04, 'square');
+    },
+    lock() {
+      tone(320, 0.09, 0.08, 'triangle');
+      tone(160, 0.13, 0.05, 'sine');
+    },
+    win() {
+      [523.25, 659.25, 783.99, 1046.5].forEach((freq, index) => {
+        window.setTimeout(() => tone(freq, 0.5, 0.06, 'triangle'), index * 85);
+      });
+    },
+    set(next) {
+      on = next === true;
     },
   };
 }

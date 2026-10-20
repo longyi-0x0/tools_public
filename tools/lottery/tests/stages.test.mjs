@@ -7,6 +7,7 @@ import {
   STAGE_IDS,
   createStage,
   isStageId,
+  normalizeConfig,
   stageBatch,
   stageInfo,
   stageLabel,
@@ -80,8 +81,28 @@ test('每种形态自带抽法；一次抽几个是形态内部的配置', () =>
     const hasBatch = (stage.config ?? []).some((field) => field.key === 'batch');
     assert.equal(hasBatch, stage.mode === 'prize-person', `${stage.id} 的 batch 配置与抽法不一致`);
   }
-  assert.equal(stageMode('wheel'), 'person-prize');
-  assert.equal(stageMode('cards'), 'prize-person');
-  assert.equal(stageBatch('wheel', {}), 1);
-  assert.equal(stageBatch('cards', { batch: 3 }), 3);
+  // 转盘 / 九宫格 / 老虎机都是「上台一个人 → 抽一个奖」
+  for (const id of ['wheel', 'grid', 'slot']) {
+    assert.equal(stageMode(id), 'person-prize');
+    assert.equal(stageBatch(id, {}), 1);
+  }
+});
+
+test('每种形态都能选样式，默认那一套在选项里', () => {
+  for (const stage of STAGES) {
+    const field = (stage.config ?? []).find((item) => item.key === 'skin');
+    assert.ok(field !== undefined, `${stage.id} 没有样式可选`);
+    assert.equal(field.type, 'select', `${stage.id} 的样式不是下拉`);
+    assert.ok(field.options.length > 1, `${stage.id} 只有一套样式`);
+    assert.ok(
+      field.options.some((option) => option.value === field.value),
+      `${stage.id} 的默认样式不在选项里`,
+    );
+    assert.equal(normalizeConfig(stage.id, {}).skin, field.value, `${stage.id} 取不到默认样式`);
+    assert.equal(
+      normalizeConfig(stage.id, { skin: '不存在的样式' }).skin,
+      field.value,
+      `${stage.id} 认不出的样式没退回默认`,
+    );
+  }
 });
