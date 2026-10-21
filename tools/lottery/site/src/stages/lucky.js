@@ -41,8 +41,11 @@ const RESIZE_WAIT = 340;
  *
  * 实例没有 destroy（库没给），重建靠换 token：旧的回调与观察者随实例一起被丢掉，
  * `mine === token` 之外的异步 init 一律不再生效。
+ *
+ * 回调挂在 data 上跟着实例走：库认 `start`（点盘面按钮，仅待机时触发）与
+ * `end`（停稳后触发）。老虎机没有盘面按钮，`onStart` 传了也不会被叫。
  */
-function createMachine(host, kind, build, onEnd) {
+function createMachine(host, kind, build, { onStart, onEnd } = {}) {
   const Ctor = CTORS[kind];
   const cleanup = createCleanup();
   let labels = [];
@@ -72,6 +75,13 @@ function createMachine(host, kind, build, onEnd) {
     }
     host.replaceChildren();
     const data = build({ labels, weights, w: box.w, h: box.h });
+    // 回调是这台机器的：每次重建都要重新挂上，旧实例的回调随旧实例一起作废
+    if (onStart !== undefined) {
+      data.start = onStart;
+    }
+    if (onEnd !== undefined) {
+      data.end = onEnd;
+    }
     const next = new Ctor(host, data);
     instance = next;
     spinning = false;
@@ -142,7 +152,13 @@ function createMachine(host, kind, build, onEnd) {
  * 把一种 lucky-canvas 玩法包装成形态。
  *
  * 三种形态的外壳是一个模子：顶栏活动名与当前对象、中间整块画布、底栏状态 +
- * 揭晓 + 主按钮。区别只在 `kind`、`skins` 与 `build`，所以外壳在这里写一遍。
+ * 揭晓。开抽的按钮不放底栏，放在机器自己身上：
+ *
+ * - 转盘 / 九宫格：盘面中央按钮就是开关（库的 start 回调，仅待机时生效）；
+ *   转起来之后点盘面任意处停下（库在转动中不理会盘面点击，由外壳接住）。
+ * - 老虎机：库没有盘面按钮，按钮贴在机身下方（`lucky-trigger`）。
+ *
+ * 区别只在 `kind`、`skins` 与 `build`，所以外壳在这里写一遍。
  */
 export function defineLuckyStage({ id, label, kind, skins = [], build, styles, hint = '' }) {
   return {
@@ -169,6 +185,8 @@ export function defineLuckyStage({ id, label, kind, skins = [], build, styles, h
       const cleanup = createCleanup();
       const root = mount(host, `stage-${id}`);
       root.dataset.skin = skin.id;
+      // 老虎机没有盘面按钮，开关贴在机身上；转盘与九宫格点盘面中央的按钮
+      const trigger = kind === 'slot' ? 'button' : 'canvas';
 
       const head = el('header', 'lucky-head');
       const title = el('div', 'lucky-title');
@@ -183,11 +201,17 @@ export function defineLuckyStage({ id, label, kind, skins = [], build, styles, h
         body.append(note);
       }
 
+      const action = createAction(() => api.toggle?.());
+      if (trigger === 'button') {
+        const holder = el('div', 'lucky-trigger');
+        holder.append(action.node);
+        body.append(holder);
+      }
+
       const foot = el('footer', 'lucky-foot');
       const status = el('div', 'lucky-status');
       const reveal = createReveal();
-      const action = createAction(() => api.toggle?.());
-      foot.append(status, reveal.node, action.node);
+      foot.append(status, reveal.node);
 
       root.append(head, body, foot, createMetaBar(api));
 
@@ -195,22 +219,43 @@ export function defineLuckyStage({ id, label, kind, skins = [], build, styles, h
       let pending = null;
       let autoTimer = 0;
       let ticker = 0;
+      // 引擎视角的转动中：停下的请求已经发出、机器还在减速的那一段也算
+      let engineSpinning = false;
 
       const machine = createMachine(
         board,
         kind,
         (box) => build({ ...box, skin, labels: box.labels.length > 0 ? box.labels : SAMPLE_LABELS }),
-        () => {
-          machine.settled();
-          window.clearInterval(ticker);
-          if (pending !== null) {
-            audio.lock();
-            reveal.show(pending);
-            audio.win();
-            pending = null;
-          }
+        {
+          onStart:
+            trigger === 'canvas'
+              ? () => {
+                  api.toggle?.();
+                }
+              : undefined,
+          onEnd: () => {
+            machine.settled();
+            window.clearInterval(ticker);
+            if (pending !== null) {
+              audio.lock();
+              reveal.show(pending);
+              audio.win();
+              pending = null;
+            }
+          },
         },
       );
+
+      // 转动中点盘面任意处停：用捕获阶段抢在 canvas 之前，待机时不动，
+      // 免得和盘面中央的「抽奖」按钮各触发一次
+      function onBoardClick(event) {
+        if (!engineSpinning) {
+          return;
+        }
+        event.stopPropagation();
+        api.toggle?.();
+      }
+      board.addEventListener('click', onBoardClick, true);
 
       /** 池子变了就按新池子重画盘面；转着与揭晓后都不动它。 */
       function reload(pool, weights = []) {
@@ -266,6 +311,8 @@ export function defineLuckyStage({ id, label, kind, skins = [], build, styles, h
       }
 
       function update(next) {
+        engineSpinning = next.spinning === true;
+        board.classList.toggle('spinning', engineSpinning);
         title.textContent = next.title;
         // 揭晓后引擎已经推进到下一个人，顶栏再写就与底栏的中奖人并列了
         sub.textContent =
@@ -288,16 +335,19 @@ export function defineLuckyStage({ id, label, kind, skins = [], build, styles, h
           el('span', 'status-note', copy.note),
         );
 
-        action.set({
-          text: next.spinning ? '停' : next.allDrawn ? '看结果' : '抽一个奖',
-          note: next.spinning
-            ? '再按一次'
-            : next.allDrawn
-              ? `${next.handed} 人已中奖`
-              : `${next.prizeCount} 个奖项在池`,
-          running: next.spinning,
-          disabled: !next.spinning && !next.allDrawn && !next.canDraw,
-        });
+        // 机身按钮只有老虎机用；盘面按钮的字画在 canvas 里，不在这里更新
+        if (trigger === 'button') {
+          action.set({
+            text: next.spinning ? '停' : next.allDrawn ? '看结果' : '抽一个奖',
+            note: next.spinning
+              ? '再按一次'
+              : next.allDrawn
+                ? `${next.handed} 人已中奖`
+                : `${next.prizeCount} 个奖项在池`,
+            running: next.spinning,
+            disabled: !next.spinning && !next.allDrawn && !next.canDraw,
+          });
+        }
 
         if (!next.spinning && !next.revealed) {
           root.classList.remove('settled');
@@ -316,6 +366,7 @@ export function defineLuckyStage({ id, label, kind, skins = [], build, styles, h
         update,
         destroy() {
           clearAuto();
+          board.removeEventListener('click', onBoardClick, true);
           cleanup.clearAll();
           machine.destroy();
           host.replaceChildren();

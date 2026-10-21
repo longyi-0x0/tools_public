@@ -57,6 +57,8 @@ function build({ labels, w, h, skin }) {
   const cellWidth = (Math.min(w, h * 1.6) - padding * 2 - colSpacing * (COLS - 1)) / COLS;
   const type = Math.round(Math.max(12, Math.min(32, cellWidth * 0.2)));
   const radius = Math.round(cellWidth * 0.12);
+  // 库画字从格子顶部起算（格子高 ≈ 窗口高 - 上下边距），文字写在格子正中
+  const textTop = Math.round(h / 2 - padding * 0.6 - type * 0.66);
 
   return {
     blocks: Array.from({ length: COLS }, (_, col) => ({
@@ -73,6 +75,7 @@ function build({ labels, w, h, skin }) {
       fonts: [
         {
           text,
+          top: `${textTop}px`,
           fontSize: `${type}px`,
           fontColor: skin.ink,
           fontWeight: '700',
@@ -113,5 +116,5 @@ export default defineLuckyStage({
   styles: new URL('./slot.css', import.meta.url).href,
   skins: SKINS,
   build,
-  hint: '三列停下时对齐同一个奖项；中奖概率按剩余名额加权。',
+  hint: '点下方按钮开抽、再点停下。三列停下时对齐同一个奖项；中奖概率按剩余名额加权。',
 });

@@ -201,5 +201,5 @@ export default defineLuckyStage({
   styles: new URL('./grid.css', import.meta.url).href,
   skins: SKINS,
   build,
-  hint: '格数跟着奖项数走，最多 28 个奖项；中奖概率按剩余名额加权。',
+  hint: '点中间开抽，转动中点盘面停下。格数跟着奖项数走，最多 28 个奖项；中奖概率按剩余名额加权。',
 });

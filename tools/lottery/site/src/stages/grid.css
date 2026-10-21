@@ -121,6 +121,7 @@
 .stage-grid .lucky-board {
   width: min(68cqh, 80cqw);
   aspect-ratio: 1;
+  cursor: pointer;
   filter: drop-shadow(0 18px 46px rgba(0, 0, 0, 0.5));
 }
 .stage-grid .lucky-note {
@@ -146,7 +147,7 @@
   flex-direction: column;
   gap: 0.2cqh;
   min-width: 0;
-  max-width: 26cqw;
+  max-width: 34cqw;
 }
 .stage-grid .lucky-status.hide {
   display: none;
@@ -199,47 +200,7 @@
   min-height: 0;
 }
 
-.stage-grid .action {
-  flex: 0 0 auto;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.2cqh;
-  padding: 1.5cqh 3.4cqw;
-  border: 1px solid var(--gold);
-  border-radius: 2px;
-  background: transparent;
-  color: var(--gold);
-  font: inherit;
-  cursor: pointer;
-  transition: background-color 0.16s cubic-bezier(0.16, 1, 0.3, 1), color 0.16s cubic-bezier(0.16, 1, 0.3, 1),
-    transform 0.16s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.16s linear;
-}
-.stage-grid .action:hover {
-  background: color-mix(in srgb, var(--gold) 16%, transparent);
-}
-.stage-grid .action:active {
-  transform: translateY(1px);
-}
-.stage-grid .action:disabled {
-  opacity: 0.36;
-  cursor: default;
-  transform: none;
-}
-.stage-grid .action.running {
-  background: var(--gold);
-  color: var(--on-gold);
-}
-.stage-grid .action-label {
-  font-size: clamp(14px, 1.9cqh, 20px);
-  font-weight: 700;
-  letter-spacing: 0.14em;
-}
-.stage-grid .action-hint {
-  font-size: clamp(10px, 1.3cqh, 13px);
-  letter-spacing: 0.08em;
-  opacity: 0.72;
-}
+/* 开抽的按钮在盘面中央（canvas 画的），底栏只放状态与揭晓 */
 
 .stage-grid .meta-bar {
   position: absolute;

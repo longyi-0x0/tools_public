@@ -135,5 +135,5 @@ export default defineLuckyStage({
   styles: new URL('./wheel.css', import.meta.url).href,
   skins: SKINS,
   build,
-  hint: '扇区等分；真正中奖概率按各奖项剩余名额加权，由抽奖引擎决定。',
+  hint: '点盘面中央开抽，转动中点盘面停下。扇区等分；真正中奖概率按各奖项剩余名额加权。',
 });
