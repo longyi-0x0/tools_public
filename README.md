@@ -42,11 +42,19 @@
 本仓独立发布，只写 `releases/tools_public/`；不读另一个仓，也不生成总清单。
 
 ```text
-push main → GitHub Actions
-  node scripts/build-release.mjs          组装 .release/（catalog.json + tools/…）
-  tcb hosting deploy .release releases/tools_public/<sha>-s5
-  POST <toolbox_service>/ops/releases { source: "tools_public", release: "<sha>-s5" }
+git tag v0.1.0 && git push origin v0.1.0
+  ↓ GitHub Actions（只有 tag 触发，分支推送不发布）
+  node scripts/build-release.mjs          组装 .release/
+  tcb hosting deploy .release releases/tools_public/v0.1.0-s5
+  POST <toolbox_service>/ops/releases { source: "tools_public", release: "v0.1.0-s5" }
 ```
+
+**版本就是 tag**。本仓没有一个像 `package.json` 那样的单点版本文件：一次发布代表
+「这批工具的快照」，所以版本记在仓上，不逐个工具记。目录名带 `-s5` 是清单形状版本，
+形状一变目录名跟着变，免得长缓存的旧清单在客户端留很久。
+
+tag 必须打在 `main` 上、形如 `vX.Y.Z`；流水线第一个 job 校验这两条，不满足直接失败。
+清单里的 `sources[]` 仍记着具体提交，「v0.1.0 对应哪个 commit」随时查得到。
 
 仓库设置里需要：
 

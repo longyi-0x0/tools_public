@@ -1,9 +1,19 @@
-name: release
+name: 发布
 
 # 本仓独立发布：只写 releases/tools_public/。不 checkout 另一个仓，不生成总清单。
+#
+# 只有一件事能发版：**推一个 vX.Y.Z 的 tag**。分支推送不发布。
+# 版本号就是 tag 本身——本仓没有 package.json 那样的单点版本文件，
+# 一次发布代表「这批工具的快照」，所以版本记在仓上，而不是逐个工具上。
+#
+# 版本目录名 = `<tag>-s5`（s5 是清单形状版本；形状一变目录名跟着变，
+# 免得长缓存的旧清单在客户端留很久）。
+#
+# 分支保护：tag 必须打在 main 上，打在侧分支的会在校验阶段被拒。
+
 on:
   push:
-    branches: [main]
+    tags: ['v*']
   workflow_dispatch:
 
 permissions:
@@ -14,11 +24,53 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  guard:
+    name: 校验版本与分支
+    runs-on: ubuntu-latest
+    outputs:
+      release: ${{ steps.check.outputs.release }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 校验 tag 与分支
+        id: check
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+
+          if [[ "$GITHUB_EVENT_NAME" != "push" ]]; then
+            # 手动触发：只在 main 上，发一个按提交号命名的临时版本。
+            if [[ "$TAG" != "main" ]]; then
+              echo "::error::手动触发只能选 main，现在是 ${TAG}"
+              exit 1
+            fi
+            echo "release=${GITHUB_SHA}-s5" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::tag 必须是 vX.Y.Z，现在是 ${TAG}"
+            exit 1
+          fi
+
+          git fetch --no-tags origin main:refs/remotes/origin/main
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" refs/remotes/origin/main; then
+            echo "::error::tag 必须打在 main 上，${GITHUB_SHA} 不在 main 里"
+            exit 1
+          fi
+
+          echo "release=${TAG}-s5" >> "$GITHUB_OUTPUT"
+
   release:
+    name: 发布 tools_public
+    needs: guard
     runs-on: ubuntu-latest
     env:
       TOOLBOX_SOURCE: tools_public
-      TOOLBOX_RELEASE: ${{ github.sha }}-s5
+      TOOLBOX_RELEASE: ${{ needs.guard.outputs.release }}
       TOOLBOX_TOOLS_BASE: ${{ vars.TOOLBOX_TOOLS_BASE || 'https://toolbox.longyi.cloud/' }}
       RELEASE_STAGE: .release
       CLOUDBASE_ENV_ID: ${{ vars.CLOUDBASE_ENV_ID }}
