@@ -1,0 +1,57 @@
+name: release
+
+# 本仓独立发布：只写 releases/tools_public/。不 checkout 另一个仓，不生成总清单。
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-tools-public
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      TOOLBOX_SOURCE: tools_public
+      TOOLBOX_RELEASE: ${{ github.sha }}-s5
+      TOOLBOX_TOOLS_BASE: ${{ vars.TOOLBOX_TOOLS_BASE || 'https://toolbox.longyi.cloud/' }}
+      RELEASE_STAGE: .release
+      CLOUDBASE_ENV_ID: ${{ vars.CLOUDBASE_ENV_ID }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: 组装版本目录与清单
+        run: node scripts/build-release.mjs
+
+      - name: 登录 CloudBase
+        env:
+          CLOUDBASE_APIKEY: ${{ secrets.CLOUDBASE_APIKEY }}
+        run: >-
+          npx -y -p @cloudbase/cli@3.8.7 tcb login
+          --cloudbase-api-key "$CLOUDBASE_APIKEY" -e "$CLOUDBASE_ENV_ID"
+
+      - name: 上传本源版本目录
+        run: >-
+          npx -y -p @cloudbase/cli@3.8.7 tcb hosting deploy
+          "$RELEASE_STAGE" "releases/$TOOLBOX_SOURCE/$TOOLBOX_RELEASE"
+          -e "$CLOUDBASE_ENV_ID"
+
+      - name: 切本源指针
+        env:
+          TOOLBOX_SERVICE_URL: ${{ vars.TOOLBOX_SERVICE_URL }}
+          TOOLBOX_RELEASE_TOKEN: ${{ secrets.TOOLBOX_RELEASE_TOKEN }}
+        run: |
+          set -euo pipefail
+          curl -fsS -X POST "$TOOLBOX_SERVICE_URL/ops/releases" \
+            -H "content-type: application/json" \
+            -H "x-internal-token: $TOOLBOX_RELEASE_TOKEN" \
+            -d "{\"source\":\"$TOOLBOX_SOURCE\",\"release\":\"$TOOLBOX_RELEASE\"}"

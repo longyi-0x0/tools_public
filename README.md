@@ -36,3 +36,27 @@
 `test` 下工具只验证发布链路，不是日常使用工具。
 
 发布器按工具箱清单契约校验字段与入口；契约见仓库文档 `docs/containers/toolbox_app/附录/01-工具清单.md`。
+
+## 发布
+
+本仓独立发布，只写 `releases/tools_public/`；不读另一个仓，也不生成总清单。
+
+```text
+push main → GitHub Actions
+  node scripts/build-release.mjs          组装 .release/（catalog.json + tools/…）
+  tcb hosting deploy .release releases/tools_public/<sha>-s5
+  POST <toolbox_service>/ops/releases { source: "tools_public", release: "<sha>-s5" }
+```
+
+仓库设置里需要：
+
+| 类型 | 名称 | 用途 |
+| --- | --- | --- |
+| variable | `CLOUDBASE_ENV_ID` | 目标 CloudBase 环境 |
+| variable | `TOOLBOX_SERVICE_URL` | 指向 `toolbox_service` 的 HTTP 访问地址 |
+| variable | `TOOLBOX_TOOLS_BASE` | 可选，H5 装载基址，默认 `https://toolbox.longyi.cloud/` |
+| secret | `CLOUDBASE_APIKEY` | 环境 API Key，供 `tcb login` 与静态托管上传 |
+| secret | `TOOLBOX_RELEASE_TOKEN` | **本仓专用**发布令牌；切不了私有仓的指针 |
+
+清单契约（`schemaVersion: 5`）见主仓 `src/tcb/toolbox_service/README.md`。工具 id 与另一个仓
+全局唯一，重名会由服务端拒绝切指针。

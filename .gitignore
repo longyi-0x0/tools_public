@@ -21,3 +21,5 @@ cloudbase-framework/
 
 node_modules/
 dist/
+# 发布脚本的暂存目录
+.release/
