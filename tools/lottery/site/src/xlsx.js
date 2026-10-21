@@ -308,7 +308,7 @@ const RELS_XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`;
 
 /** 工作表名的禁用字符：Excel 不允许这几个，也不允许超过 31 字。 */
-function safeSheetName(name) {
+export function safeSheetName(name) {
   return name.replace(/[\\/?*[\]:]/g, '·').slice(0, 31);
 }
 

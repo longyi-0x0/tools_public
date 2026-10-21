@@ -4,26 +4,30 @@
  * 这一层只管引擎与键盘：读存档、算状态、把快照交给形态、把结果写回去。
  * 界面全部由形态自己画 —— 每种形态的受众不同，外壳不共用。
  *
+ * 抽法决定转哪个池、大字写谁；形态只按 `view` 与 `reveal` 画，不猜玩法。
+ *
  * 形态拿到的接口：
  *   create(host, config, api) -> { begin, reveal, reset, update, destroy }
- *   api: start / toggle / pickPrize / pickPerson / undo / voidLast / results / exit / fullscreen
- *   update(view): 每次状态变化都调，形态自己决定列表、按钮、计数长什么样。
+ *   api: start / toggle / pickSlot / undo / voidLast / results / exit / fullscreen
+ *   update(view): 每次状态变化都调
+ *
+ * 固定槽（`source: 'fixed'`）由主持人先定。以前只能按 ↑↓ 换，投屏和触屏没法用；
+ * 现在快照里带一份 `fixed`，形态自己画成侧栏，点了走 `api.pickSlot`。
  */
 
 import {
-  MODE,
-  availablePrizes,
-  drawByPerson,
-  drawByPrize,
-  eligiblePeople,
-  nextPerson,
-  prizeDrawn,
-  prizeRemaining,
-  prizeWeight,
+  asEntry,
+  canDraw as engineCanDraw,
+  drawOnce,
+  eligible,
+  entryWeight,
+  remaining,
+  slotPool as engineSlotPool,
   undoLast,
-  voidWinner,
+  voidPick,
 } from '../engine.js';
 import { lotteryById, runState, writeRunState } from '../data.js';
+import { protocolInfo, slotOf, spinSlot } from '../protocols.js';
 import { loadApp, saveApp, flushApp } from '../store.js';
 import { createStage, stageLabel } from '../stages/index.js';
 import { clear, el, h } from '../dom.js';
@@ -39,28 +43,80 @@ let run = lottery === null ? null : runState(lottery);
 const ui = {
   spinning: false,
   revealed: false,
-  selectedPrizeId: null,
-  personPickId: null,
+  /** 主持人点下的固定槽：`{ prize: 'a2', person: null }`。 */
+  fixed: { prize: null, person: null },
   stage: null,
   resultsOpen: false,
 };
 
 if (lottery === null) {
   window.location.replace('./index.html');
-} else if (lottery.people.length === 0) {
+} else if (missingPools().length > 0) {
   root.append(emptyState());
 } else {
   mount();
 }
 
+/* ---------- 抽法的几个位置 ---------- */
+
+function protocol() {
+  return protocolInfo(lottery.protocol);
+}
+
+function spinDef() {
+  return spinSlot(lottery.protocol);
+}
+
+/** 盘面转的那个池。 */
+function spinPool() {
+  return poolAt(spinDef().key);
+}
+
+/** 某个槽绑的池；没绑就是 null。 */
+function poolAt(slotKey) {
+  return engineSlotPool(run, slotKey);
+}
+
+function fixedSlot() {
+  return protocol().slots.find((slot) => slot.source === 'fixed') ?? null;
+}
+
+/** 抽法里那个「事先定好的」槽，待机文案按它说话。 */
+function anchorKey() {
+  return fixedSlot()?.key ?? protocol().slots[0].key;
+}
+
+/** 某个槽当前指着谁：主持人点过的优先，其次池里第一个还能抽的。 */
+function pickedIn(slotKey, selectedId) {
+  if (slotOf(lottery.protocol, slotKey) === null) {
+    return null;
+  }
+  const list = eligible(run, poolAt(slotKey));
+  return list.find((entry) => entry.id === selectedId) ?? list[0] ?? null;
+}
+
+function currentOf(slotKey) {
+  if (slotOf(lottery.protocol, slotKey) === null) {
+    return null;
+  }
+  return pickedIn(slotKey, ui.fixed[slotKey] ?? null);
+}
+
+function missingPools() {
+  return protocol().slots
+    .filter((slot) => poolAt(slot.key) === null)
+    .map((slot) => slot.label);
+}
+
 /* ---------- 外壳 ---------- */
 
 function emptyState() {
+  const missing = missingPools().join('、');
   return h(
     'div',
     { class: 'draw-empty' },
-    h('p', { class: 'draw-empty-title', text: '这份名单还是空的' }),
-    h('p', { class: 'draw-empty-note', text: '回主页加人，或导入一份名单。' }),
+    h('p', { class: 'draw-empty-title', text: `这场抽奖还没有给「${missing}」选池` }),
+    h('p', { class: 'draw-empty-note', text: '回主页在「绑定」里选一个池。' }),
     h('button', { class: 'draw-empty-back', type: 'button', text: '回主页', onClick: goHome }),
   );
 }
@@ -72,7 +128,7 @@ function goHome() {
 function mount() {
   clear(root);
   root.dataset.stage = lottery.stage;
-  root.dataset.mode = run.mode === MODE.PERSON ? 'person' : 'prize';
+  root.dataset.focus = protocol().focus;
   mountStage();
   paint();
 }
@@ -98,18 +154,15 @@ function stageActions() {
     start: () => onAction(),
     stop: () => onAction(),
     toggle: () => onAction(),
-    pickPrize: (id) => {
-      if (ui.spinning) {
+    /** 主持人点固定槽里的某一条；传 null 就是「不指定，让引擎自己挑第一个」。 */
+    pickSlot: (key, id) => {
+      if (ui.spinning || ui.revealed) {
         return;
       }
-      ui.selectedPrizeId = id;
-      paint();
-    },
-    pickPerson: (id) => {
-      if (ui.spinning) {
+      if (ui.fixed[key] === undefined) {
         return;
       }
-      ui.personPickId = id;
+      ui.fixed[key] = id;
       paint();
     },
     undo: () => undoInStage(),
@@ -130,99 +183,122 @@ function paint() {
   paintResults();
 }
 
-function totalSlots() {
-  return run.prizes.reduce((sum, prize) => sum + prize.count, 0);
+/** 已经抽出去几条 —— 数焦点槽，先定的那个槽不算进度。 */
+function handed() {
+  const focus = protocol().focus;
+  let total = 0;
+  for (const result of run.results) {
+    const hits = result.picks.filter((pick) => pick.slot === focus);
+    total += hits.length > 0 ? hits.length : result.picks.length;
+  }
+  return total;
 }
 
-function handed() {
-  return run.results.reduce((sum, result) => sum + result.winners.length, 0);
+/** 这一抽最多抽几个：名额、池子余量、抽法本身三者取小。 */
+function batchSize(candidates) {
+  return Math.max(1, Math.min(lottery.batch || 1, candidates.length || 1));
+}
+
+/** 某个固定槽当前指着哪一条（供侧栏高亮）。 */
+function activeIdOf(slotKey) {
+  return pickedIn(slotKey, ui.fixed[slotKey] ?? null)?.id ?? null;
+}
+
+/** 固定槽的侧栏数据：形态自己决定摆在左、右还是底下。 */
+function fixedPanels() {
+  return protocol()
+    .slots.filter((slot) => slot.source === 'fixed')
+    .map((slot) => {
+      const pool = poolAt(slot.key);
+      const active = activeIdOf(slot.key);
+      return {
+        key: slot.key,
+        label: slot.label,
+        poolName: pool?.name ?? '',
+        items: pool === null
+          ? []
+          : eligible(run, pool).map((entry) => {
+              const left = remaining(run, pool.id, entry.id);
+              return {
+                id: entry.id,
+                name: entry.name,
+                sub: [
+                  entry.meta?.dept,
+                  entry.meta?.employeeId,
+                  entry.meta?.level,
+                  left === Infinity ? '不限量' : `剩 ${left}`,
+                ]
+                  .filter(Boolean)
+                  .join(' · '),
+                active: entry.id === active,
+              };
+            }),
+      };
+    });
 }
 
 /**
- * 控制区里高亮的永远是"接下来要抽的那个"。
- * 刚抽完的奖项由揭晓那一行说，不靠高亮再说一遍。
+ * 一次快照：形态需要什么就从这里拿，不再去碰引擎。
+ *
+ * 只有两个角色：`anchor` 是事先定好的那个槽（先选奖项 / 先指定上台的人），
+ * `focus` 是抽出来的那个槽。两边都按槽取，不问池是什么种类。
  */
-function highlightedPrize() {
-  return currentPrize();
-}
-
-function currentPrize() {
-  const picked = run.prizes.find((prize) => prize.id === ui.selectedPrizeId);
-  if (picked !== undefined && prizeRemaining(run, picked.id) > 0) {
-    return picked;
-  }
-  return availablePrizes(run)[0] ?? null;
-}
-
-function pickedPerson() {
-  if (ui.personPickId !== null) {
-    const picked = run.people.find((person) => person.id === ui.personPickId);
-    if (picked !== undefined && !(run.uniqueWinner && hasWon(run, picked.id))) {
-      return picked;
-    }
-  }
-  return nextPerson(run);
-}
-
-function hasWon(state, personId) {
-  return state.results.some((result) => result.winners.some((winner) => winner.personId === personId));
-}
-
-function allDrawn() {
-  return availablePrizes(run).length === 0 || eligiblePeople(run).length === 0;
-}
-
-function canDraw() {
-  return run.mode === MODE.PRIZE ? currentPrize() !== null : availablePrizes(run).length > 0;
-}
-
-/** 一次快照：形态需要什么就从这里拿，不再去碰引擎。 */
 function view() {
-  const prize = run.mode === MODE.PRIZE ? currentPrize() : null;
-  const person = run.mode === MODE.PERSON ? pickedPerson() : null;
-  const pool = run.mode === MODE.PRIZE ? eligiblePeople(run) : availablePrizes(run);
-  const remainingPeople = eligiblePeople(run).length;
+  const def = protocol();
+  const anchorSlot = fixedSlot();
+  const focusSlot = slotOf(lottery.protocol, def.focus);
+  const pool = spinPool();
+  const candidates = eligible(run, pool);
+
+  const anchorPool = anchorSlot === null ? null : poolAt(anchorSlot.key);
+  const anchorEntry = anchorSlot === null ? null : currentOf(anchorSlot.key);
+  const anchorLeft =
+    anchorEntry === null || anchorPool === null
+      ? null
+      : remaining(run, anchorPool.id, anchorEntry.id);
+  const batch = batchSize(candidates);
+  const anchorNote = [
+    anchorEntry?.meta?.dept,
+    anchorEntry?.meta?.employeeId,
+    anchorEntry?.meta?.level,
+    anchorLeft !== null && anchorLeft > 1 ? `还剩 ${anchorLeft} 个名额` : '',
+    batch > 1 ? `一次抽 ${batch} 个` : '',
+  ]
+    .filter(Boolean)
+    .join(' · ');
+
+  const focusPool = focusSlot === null ? null : poolAt(focusSlot.key);
 
   return {
     title: run.title,
-    mode: run.mode,
     label: stageLabel(lottery.stage),
+    protocol: def.id,
+    /** 揭晓大字写哪个槽。 */
+    focus: def.focus,
+    /** 待机时已经定好的那个槽。 */
+    anchor: anchorKey(),
+    anchorLabel: anchorSlot?.label ?? '',
+    anchorName: anchorEntry?.name ?? '',
+    anchorNote,
+    focusLabel: focusSlot?.label ?? '',
+    focusLeft:
+      focusPool === null
+        ? 0
+        : focusPool.entries.reduce(
+            (sum, entry) => sum + remaining(run, focusPool.id, entry.id),
+            0,
+          ),
+    focusCount: focusPool === null ? 0 : eligible(run, focusPool).length,
     spinning: ui.spinning,
     revealed: ui.revealed,
-    allDrawn: allDrawn(),
-    canDraw: canDraw(),
+    allDrawn: !engineCanDraw(run),
+    canDraw: engineCanDraw(run),
     handed: handed(),
-    totalSlots: totalSlots(),
-    batch:
-      prize === null
-        ? 1
-        : Math.max(1, Math.min(lottery.batch, prizeRemaining(run, prize.id), remainingPeople)),
-    prizeName: prize?.name ?? '',
-    prizeRemaining: prize === null ? 0 : prizeRemaining(run, prize.id),
-    personName: person?.name ?? '',
-    personDept: person?.dept ?? '',
-    prizeCount: availablePrizes(run).length,
-    peopleLeft: remainingPeople,
-    labels: pool.map((item) => item.name),
-    weights: run.mode === MODE.PERSON ? pool.map((item) => prizeWeight(run, item)) : [],
-    prizes: run.prizes.map((item) => ({
-      id: item.id,
-      name: item.name,
-      count: item.count,
-      drawn: prizeDrawn(run, item.id),
-      remaining: prizeRemaining(run, item.id),
-      active: run.mode === MODE.PRIZE && highlightedPrize()?.id === item.id,
-    })),
-    people: run.mode === MODE.PERSON
-      ? eligiblePeople(run).map((item) => ({
-          id: item.id,
-          name: item.name,
-          dept: item.dept ?? '',
-          employeeId: item.employeeId ?? '',
-          picked: person?.id === item.id,
-        }))
-      : [],
-    lastPrizeName: run.results[run.results.length - 1]?.prizeName ?? '',
+    batch,
+    labels: candidates.map((entry) => entry.name),
+    weights: candidates.map((entry) => entryWeight(run, pool.id, entry)),
+    /** 主持人先定的那些槽；形态据此画侧栏，空数组就是不画。 */
+    fixed: fixedPanels(),
   };
 }
 
@@ -233,7 +309,7 @@ function onAction() {
     stopDraw();
     return;
   }
-  if (allDrawn()) {
+  if (!engineCanDraw(run)) {
     ui.resultsOpen = true;
     paint();
     return;
@@ -245,62 +321,67 @@ function startDraw() {
   if (ui.stage === null) {
     return;
   }
-  if (run.mode === MODE.PRIZE) {
-    const prize = currentPrize();
-    if (prize === null) {
-      toast('奖项已经抽完');
-      return;
-    }
-    ui.selectedPrizeId = prize.id;
-  } else {
-    const person = pickedPerson();
-    if (person === null) {
-      toast('名单已经抽完');
-      return;
-    }
-    ui.personPickId = person.id;
+  const pool = spinPool();
+  const candidates = eligible(run, pool);
+  if (candidates.length === 0) {
+    toast('这个池子已经抽完了');
+    return;
   }
 
-  const pool = run.mode === MODE.PRIZE ? eligiblePeople(run) : availablePrizes(run);
-  const labels = pool.map((item) => item.name);
-  // 权重就是引擎掷骰子用的那一份，形态拿它按真实概率摆各项
-  const weights = run.mode === MODE.PERSON ? pool.map((prize) => prizeWeight(run, prize)) : [];
-  const batch =
-    run.mode === MODE.PRIZE
-      ? Math.max(1, Math.min(lottery.batch, prizeRemaining(run, ui.selectedPrizeId), pool.length))
-      : 1;
-
   ui.revealed = false;
-  ui.stage.begin({ labels, weights, batch });
+  ui.stage.begin({
+    labels: candidates.map((entry) => entry.name),
+    weights: candidates.map((entry) => entryWeight(run, pool.id, entry)),
+    batch: batchSize(candidates),
+  });
   ui.spinning = true;
   paint();
 }
 
+/** 主持人先定下的那些槽。没定的交给引擎自己挑。 */
+function fixedValues() {
+  const fixed = {};
+  for (const slot of protocol().slots) {
+    if (slot.source !== 'fixed') {
+      continue;
+    }
+    const entry = pickedIn(slot.key, ui.fixed[slot.key] ?? null);
+    if (entry !== null) {
+      fixed[slot.key] = entry.id;
+    }
+  }
+  return fixed;
+}
+
 function stopDraw() {
+  const candidates = eligible(run, spinPool());
   let outcome;
   try {
-    outcome =
-      run.mode === MODE.PRIZE
-        ? drawByPrize(run, currentPrize().id, lottery.batch)
-        : drawByPerson(run, pickedPerson()?.id);
+    outcome = drawOnce(run, { fixed: fixedValues(), batch: batchSize(candidates) });
   } catch (error) {
     ui.spinning = false;
     paint();
     toast(error instanceof Error ? error.message : '这一抽没成');
     return;
   }
+
   run = outcome.state;
   ui.spinning = false;
   ui.revealed = true;
-  ui.personPickId = null;
-  if (run.mode === MODE.PRIZE) {
-    ui.selectedPrizeId = outcome.prize.id;
-  }
+  // 这一抽用掉了某个固定项，下一抽从剩下的重新开始
+  ui.fixed = { prize: null, person: null };
   commit();
+
+  const focusKey = protocol().focus;
+  const anchorSlot = fixedSlot();
+  const anchorPick =
+    anchorSlot === null ? null : outcome.picks.find((pick) => pick.slot === anchorSlot.key) ?? null;
+  const focusPicks = outcome.picks.filter((pick) => pick.slot === focusKey);
+  // 盘面转的是焦点槽的池，所以停在这一抽抽中的那一格；锚只进小字
   ui.stage?.reveal({
-    winners: outcome.winners,
-    prizeName: outcome.prize.name,
-    focus: run.mode === MODE.PERSON ? 'prize' : 'people',
+    winners: (focusPicks.length > 0 ? focusPicks : outcome.picks).map(asEntry),
+    focusName: focusPicks[0]?.name ?? '',
+    anchorName: anchorPick?.name ?? '',
   });
   paint();
 }
@@ -317,7 +398,7 @@ function undoInStage() {
   }
   run = undoLast(run);
   ui.revealed = false;
-  ui.selectedPrizeId = null;
+  ui.fixed = { prize: null, person: null };
   ui.stage?.reset();
   commit();
   paint();
@@ -332,13 +413,15 @@ function voidLastWinner() {
   if (last === undefined) {
     return;
   }
-  const winner = last.winners[last.winners.length - 1];
-  run = voidWinner(run, last.id, winner.personId);
+  const lastFocus = protocol().focus;
+  const heads = last.picks.filter((item) => item.slot === lastFocus);
+  const pick = heads.pop() ?? last.picks[last.picks.length - 1];
+  run = voidPick(run, last.id, pick.poolId, pick.entryId);
   ui.revealed = false;
   ui.stage?.reset();
   commit();
   paint();
-  toast(`已作废 ${winner.name}`);
+  toast(`已作废 ${pick.name}`);
 }
 
 /* ---------- 结果 ---------- */
@@ -348,14 +431,22 @@ function paintResults() {
   if (!ui.resultsOpen) {
     return;
   }
-  const groups = run.prizes
-    .map((prize) => ({
-      prize,
-      rows: run.results.flatMap((result) =>
-        result.prizeId === prize.id ? result.winners.map((winner) => ({ winner, at: result.at })) : [],
-      ),
-    }))
-    .filter((group) => group.rows.length > 0);
+  // 按锚槽分组（奖品抽人 → 按奖项，人抽奖品 → 按上台的人）；行是抽出来的那些
+  const anchorSlot = fixedSlot();
+  const focusKey = protocol().focus;
+  const groups = new Map();
+  for (const result of run.results) {
+    const anchorPick =
+      anchorSlot === null ? null : result.picks.find((pick) => pick.slot === anchorSlot.key) ?? null;
+    const focusPicks = result.picks.filter((pick) => pick.slot === focusKey);
+    const key = anchorPick?.name ?? '';
+    if (!groups.has(key)) {
+      groups.set(key, []);
+    }
+    for (const pick of (focusPicks.length > 0 ? focusPicks : [anchorPick]).filter(Boolean)) {
+      groups.get(key).push({ pick, at: result.at });
+    }
+  }
 
   document.body.append(
     h(
@@ -376,22 +467,30 @@ function paintResults() {
           'div',
           { class: 'result-head' },
           h('h2', { text: '开奖结果' }),
-          h('span', { class: 'result-sub', text: `${run.title} · ${handed()} 人` }),
+          h('span', {
+            class: 'result-sub',
+            text: `${run.title} · ${handed()} 个${slotOf(lottery.protocol, focusKey)?.label ?? ''}`,
+          }),
         ),
         h(
           'div',
           { class: 'result-body' },
-          groups.map((group) =>
+          [...groups].map(([title, rows]) =>
             h(
               'div',
               { class: 'result-group' },
-              h('h3', { text: `${group.prize.name} · ${group.rows.length} / ${group.prize.count}` }),
-              group.rows.map((row) =>
+              h('h3', { text: `${title === '' ? '未分组' : title} · ${rows.length}` }),
+              rows.map((row) =>
                 h(
                   'div',
                   { class: 'result-row' },
-                  h('span', { class: 'who', text: row.winner.name }),
-                  h('span', { class: 'meta', text: [row.winner.dept, row.winner.employeeId].filter(Boolean).join(' · ') }),
+                  h('span', { class: 'who', text: row.pick.name }),
+                  h('span', {
+                    class: 'meta',
+                    text: [row.pick.meta?.dept, row.pick.meta?.employeeId, row.pick.meta?.level]
+                      .filter(Boolean)
+                      .join(' · '),
+                  }),
                 ),
               ),
             ),
@@ -469,25 +568,23 @@ document.addEventListener('keydown', (event) => {
   }
 });
 
+/** ↑↓ 在「事先定好的」那个槽里换人 / 换奖。 */
 function stepSelection(direction) {
   if (ui.spinning || ui.revealed) {
     return;
   }
-  if (run.mode === MODE.PRIZE) {
-    const pool = availablePrizes(run);
-    if (pool.length <= 1) {
-      return;
-    }
-    const at = pool.findIndex((prize) => prize.id === currentPrize()?.id);
-    ui.selectedPrizeId = pool[(at + direction + pool.length) % pool.length].id;
-  } else {
-    const pool = eligiblePeople(run);
-    if (pool.length <= 1) {
-      return;
-    }
-    const at = pool.findIndex((person) => person.id === pickedPerson()?.id);
-    ui.personPickId = pool[(at + direction + pool.length) % pool.length].id;
+  const slot = fixedSlot();
+  if (slot === null) {
+    return;
   }
+  const list = eligible(run, poolAt(slot.key));
+  if (list.length <= 1) {
+    return;
+  }
+  const current = pickedIn(slot.key, ui.fixed[slot.key] ?? null);
+  const at = list.findIndex((entry) => entry.id === current?.id);
+  const next = list[(at + direction + list.length) % list.length];
+  ui.fixed[slot.key] = next.id;
   paint();
 }
 

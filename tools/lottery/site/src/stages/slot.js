@@ -113,8 +113,12 @@ export default defineLuckyStage({
   id: 'slot',
   label: '老虎机',
   kind: 'slot',
+  // 三列滚轮停在同一格，一次只转一个池；揭晓那一行才写人
+  capabilities: { spin: 1, slots: 2, winners: 'many', labels: 24 },
   styles: new URL('./slot.css', import.meta.url).href,
   skins: SKINS,
   build,
+  // 机身是一横条，左右都没地方，塞在机身与按钮之间
+  picker: 'bottom',
   hint: '点下方按钮开抽、再点停下。三列停下时对齐同一个奖项；中奖概率按剩余名额加权。',
 });

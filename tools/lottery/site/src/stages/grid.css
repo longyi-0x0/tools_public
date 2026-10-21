@@ -223,6 +223,22 @@
   color: var(--paper);
 }
 
+/* 固定槽侧栏：九宫格比转盘窄，右边还留着一条，竖排贴右 */
+.stage-grid .slot-picker {
+  right: 1.8cqw;
+  width: min(17cqw, 208px);
+}
+
+.stage-grid .slot-picker .picker-title { color: var(--gold); }
+
+.stage-grid .slot-picker .pick { color: var(--paper-3); }
+
+.stage-grid .slot-picker .pick.on {
+  color: var(--paper);
+  border-left-color: var(--gold);
+  background: rgba(232, 181, 81, 0.14);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .stage-grid .stage-reveal {
     transition-duration: 0.01ms !important;

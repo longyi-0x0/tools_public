@@ -1,43 +1,62 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
+import { cleanPool } from '../site/src/pools.js';
 import {
-  MODE,
-  addPerson,
-  addPrize,
-  availablePrizes,
+  addEntry,
+  canDraw,
   createState,
-  drawByPerson,
-  drawByPrize,
-  eligiblePeople,
-  hasWon,
-  prizeDrawn,
-  prizeRemaining,
-  removePerson,
-  removePrize,
-  replacePools,
+  drawnCount,
+  drawOnce,
+  eligible,
+  readiness,
+  remaining,
+  removeEntry,
   resetProgress,
   undoLast,
-  undoWinner,
-  updatePrize,
-  voidWinner,
+  undoPick,
+  updateEntry,
+  voidPick,
 } from '../site/src/engine.js';
 
-function baseState() {
-  return replacePools(createState(), {
-    prizes: [
-      { name: '一等奖', count: 1 },
-      { name: '二等奖', count: 2 },
-      { name: '三等奖', count: 3 },
-    ],
-    people: [
-      { name: '张三', dept: '研发' },
-      { name: '李四', dept: '市场' },
-      { name: '王五', dept: '设计' },
-      { name: '赵六', dept: '研发' },
-      { name: '钱七', dept: '运营' },
-    ],
-  });
+function pools() {
+  return [
+    cleanPool(
+      {
+        id: 'people',
+        name: '名单',
+        kind: 'people',
+        entries: [
+          { name: '张三', meta: { dept: '研发' } },
+          { name: '李四', meta: { dept: '市场' } },
+          { name: '王五', meta: { dept: '设计' } },
+          { name: '赵六', meta: { dept: '研发' } },
+          { name: '钱七', meta: { dept: '运营' } },
+        ],
+      },
+      0,
+    ),
+    cleanPool(
+      {
+        id: 'prizes',
+        name: '奖品',
+        kind: 'prizes',
+        entries: [
+          { name: '一等奖', capacity: 1 },
+          { name: '二等奖', capacity: 2 },
+          { name: '三等奖', capacity: 3 },
+        ],
+      },
+      1,
+    ),
+  ];
+}
+
+/** 槽 → 池的绑定。新路径全都靠它，测试夹具也要显式给，不然测不到绑定本身。 */
+const BINDINGS = { person: 'people', prize: 'prizes' };
+
+function baseState(overrides = {}) {
+  return createState({ protocol: 'prize-person', pools: pools(), slots: BINDINGS, ...overrides });
 }
 
 /** 依次给出固定的随机数，用尽后回到 0。 */
@@ -50,204 +69,246 @@ function stubRandom(values) {
   };
 }
 
-test('导入后名额与人数来自池', () => {
+test('奖品抽人：一条结果里既有奖项也有人', () => {
   const state = baseState();
-  assert.equal(state.prizes.length, 3);
-  assert.equal(state.people.length, 5);
-  assert.equal(prizeRemaining(state, 'a1'), 1);
-  assert.equal(eligiblePeople(state).length, 5);
-});
+  const { state: next, picks } = drawOnce(state, { fixed: { prize: 'a1' }, random: () => 0 });
 
-test('奖品抽人按人数抽且不重复', () => {
-  const state = baseState();
-  const { state: next, winners } = drawByPrize(state, 'a3', 3, stubRandom([0.1, 0.4, 0.7]));
-  assert.equal(winners.length, 3);
-  assert.deepEqual(
-    winners.map((winner) => winner.name),
-    ['张三', '王五', '钱七'],
-  );
-  assert.equal(new Set(winners.map((winner) => winner.personId)).size, 3);
-  assert.equal(prizeRemaining(next, 'a3'), 0);
+  assert.equal(picks.length, 2);
+  assert.equal(picks[0].slot, 'prize');
+  assert.equal(picks[0].entryId, 'a1');
+  assert.equal(picks[1].slot, 'person');
   assert.equal(next.results.length, 1);
+  assert.equal(remaining(next, 'prizes', 'a1'), 0);
 });
 
-test('奖品抽人不会超出剩余名额，也不会让中过的人再中', () => {
+test('一次抽多人：抽到的互不重复，各占一个名额', () => {
   const state = baseState();
-  const first = drawByPrize(state, 'a1', 3, stubRandom([0]));
-  assert.equal(first.winners.length, 1);
-  assert.equal(prizeRemaining(first.state, 'a1'), 0);
-
-  assert.throws(() => drawByPrize(first.state, 'a1', 1), /名额已经抽完/);
-
-  const won = first.winners[0].personId;
-  const second = drawByPrize(first.state, 'a2', 4, stubRandom([0]));
-  assert.equal(second.winners.length, 2);
-  assert.ok(second.winners.every((winner) => winner.personId !== won));
-});
-
-test('撤销把名额与人一起还回去', () => {
-  const state = baseState();
-  const { state: drawn } = drawByPrize(state, 'a2', 2, stubRandom([0.2, 0.8]));
-  assert.equal(prizeDrawn(drawn, 'a2'), 2);
-
-  const undone = undoLast(drawn);
-  assert.equal(prizeDrawn(undone, 'a2'), 0);
-  assert.equal(prizeRemaining(undone, 'a2'), 2);
-  for (const result of drawn.results) {
-    for (const winner of result.winners) {
-      assert.equal(hasWon(undone, winner.personId), false);
-    }
+  const { state: next, picks } = drawOnce(state, {
+    fixed: { prize: 'a3' },
+    batch: 3,
+    random: stubRandom([0.1, 0.4, 0.7]),
+  });
+  const people = picks.filter((pick) => pick.slot === 'person');
+  assert.equal(people.length, 3);
+  assert.equal(new Set(people.map((pick) => pick.entryId)).size, 3);
+  for (const pick of people) {
+    assert.equal(remaining(next, 'people', pick.entryId), 0);
   }
-  assert.equal(undoLast(undoLast(undone)), undone);
 });
 
-test('人抽奖品按剩余名额加权，抽空的奖项不再出现', () => {
-  const state = replacePools(createState(), {
-    prizes: [{ name: '大奖', count: 1 }],
-    people: [{ name: '张三' }, { name: '李四' }],
-  });
-  const first = drawByPerson(state, 'p1', stubRandom([0.99]));
-  assert.equal(first.prize.name, '大奖');
-  assert.equal(prizeRemaining(first.state, 'a1'), 0);
-  assert.equal(availablePrizes(first.state).length, 0);
-  assert.throws(() => drawByPerson(first.state, 'p2'), /全部抽完/);
+test('名额抽完就不再进池', () => {
+  let state = baseState({ excluded: [] });
+  state = drawOnce(state, { fixed: { prize: 'a1' } }).state;
+  assert.equal(canDraw(state), true);
+  assert.equal(eligible(state, state.pools[1]).some((entry) => entry.id === 'a1'), false);
+  assert.throws(
+    () => drawOnce(state, { fixed: { prize: 'a1' } }),
+    /名额已经抽完/,
+  );
 });
 
-test('权重改变命中概率的方向', () => {
-  const state = replacePools(createState(), {
-    prizes: [
-      { name: '常见', count: 100, weight: 1 },
-      { name: '稀有', count: 1, weight: 100 },
+test('人抽奖品：按剩余名额加权，抽完的奖项不再出现', () => {
+  let state = baseState({ protocol: 'person-prize' });
+  const seen = new Set();
+  // 人各抽一次（每人容量 1），奖项名额 1 + 2 + 3 = 6，五抽必然先耗尽小名额
+  for (const personId of ['p1', 'p2', 'p3', 'p4', 'p5']) {
+    const outcome = drawOnce(state, { fixed: { person: personId }, random: () => 0 });
+    state = outcome.state;
+    seen.add(outcome.picks.find((pick) => pick.slot === 'prize').entryId);
+  }
+  assert.equal(remaining(state, 'prizes', 'a1'), 0);
+  assert.equal(seen.has('a1'), true);
+});
+
+test('不限量：capacity 为 null 时永远抽得动', () => {
+  const state = createState({
+    protocol: 'person-prize',
+    slots: BINDINGS,
+    pools: [
+      cleanPool(
+        {
+          id: 'people',
+          name: '名单',
+          kind: 'people',
+          entries: [{ name: '张三', capacity: null }],
+        },
+        0,
+      ),
+      cleanPool(
+        {
+          id: 'prizes',
+          name: '奖品',
+          kind: 'prizes',
+          entries: [{ name: '谢谢参与', capacity: null }],
+        },
+        1,
+      ),
     ],
-    people: [{ name: '张三' }],
   });
-  // 总权重 100×1 + 1×100 = 200；0.4 落在「常见」那一段
-  const common = drawByPerson(state, 'p1', stubRandom([0.4]));
-  assert.equal(common.prize.name, '常见');
-  // 0.9 落在「稀有」那一段
-  const rare = drawByPerson(state, 'p1', stubRandom([0.9]));
-  assert.equal(rare.prize.name, '稀有');
+  let next = state;
+  for (let index = 0; index < 4; index += 1) {
+    next = drawOnce(next, { fixed: { person: 'p1' }, random: () => 0 }).state;
+  }
+  assert.equal(remaining(next, 'prizes', 'a1'), Infinity);
+  assert.equal(canDraw(next), true);
 });
 
-test('同一个人的第二抽会被拦下，关掉唯一中奖后放行', () => {
-  const state = replacePools(createState(), {
-    prizes: [{ name: '奖品', count: 3 }],
-    people: [{ name: '张三' }],
-  });
-  const first = drawByPerson(state, 'p1', stubRandom([0]));
-  assert.throws(() => drawByPerson(first.state, 'p1'), /已经中过/);
+test('撤销一条：名额与池子跟着回去', () => {
+  const first = drawOnce(baseState(), { fixed: { prize: 'a1' } });
+  const result = first.result;
+  const personPick = result.picks.find((pick) => pick.slot === 'person');
+  const next = undoPick(first.state, result.id, personPick.poolId, personPick.entryId);
 
-  const repeated = drawByPerson({ ...first.state, uniqueWinner: false }, 'p1', stubRandom([0]));
-  assert.equal(repeated.winners.length, 1);
+  assert.equal(remaining(next, 'people', personPick.entryId), 1);
+  assert.equal(eligible(next, next.pools[0]).some((entry) => entry.id === personPick.entryId), true);
 });
 
-test('名单抽空后不再有可抽的人', () => {
-  const state = replacePools(createState(), {
-    prizes: [{ name: '奖品', count: 10 }],
-    people: [{ name: '甲' }, { name: '乙' }],
-  });
-  const one = drawByPrize(state, 'a1', 2, stubRandom([0.5]));
-  assert.equal(one.winners.length, 2);
-  assert.equal(eligiblePeople(one.state).length, 0);
-  assert.throws(() => drawByPrize(one.state, 'a1', 1), /没有可抽的人/);
+test('作废一条：人不算中奖，且不再进池', () => {
+  const first = drawOnce(baseState(), { fixed: { prize: 'a1' } });
+  const result = first.result;
+  const personPick = result.picks.find((pick) => pick.slot === 'person');
+  const next = voidPick(first.state, result.id, personPick.poolId, personPick.entryId);
+
+  assert.deepEqual(next.excluded, [`${personPick.poolId}/${personPick.entryId}`]);
+  assert.equal(eligible(next, next.pools[0]).some((entry) => entry.id === personPick.entryId), false);
 });
 
-test('奖项数量不能改到低于已抽数量', () => {
-  const state = baseState();
-  const { state: drawn } = drawByPrize(state, 'a2', 2, stubRandom([0]));
-  const next = updatePrize(drawn, 'a2', { count: 1 });
-  assert.equal(next.prizes.find((prize) => prize.id === 'a2').count, 2);
-  const raised = updatePrize(next, 'a2', { count: 5 });
-  assert.equal(raised.prizes.find((prize) => prize.id === 'a2').count, 5);
-});
-
-test('抽过的奖项与中过的人不能删', () => {
-  const state = baseState();
-  const { state: drawn, winners } = drawByPrize(state, 'a2', 1, stubRandom([0]));
-  assert.throws(() => removePrize(drawn, 'a2'), /已经抽出过结果/);
-  assert.throws(() => removePerson(drawn, winners[0].personId), /已经中过奖/);
-  assert.equal(removePrize(state, 'a2').prizes.length, 2);
-});
-
-test('新增奖项与参与人沿用递增 id', () => {
-  const state = baseState();
-  const [withPrize, prize] = addPrize(state, { name: '特等奖', count: 1 });
-  assert.equal(prize.id, 'a4');
-  const [withPerson, person] = addPerson(withPrize, { name: '孙八' });
-  assert.equal(person.id, 'p6');
-  assert.equal(withPerson.people.length, 6);
-});
-
-test('清空记录不碰奖项与名单', () => {
-  const state = baseState();
-  const { state: drawn } = drawByPrize(state, 'a1', 1, stubRandom([0]));
-  const cleared = resetProgress(drawn);
-  assert.equal(cleared.results.length, 0);
-  assert.equal(cleared.prizes.length, 3);
-  assert.equal(cleared.people.length, 5);
-});
-
-test('两种方向都记下用了哪个模型', () => {
-  const prizeState = baseState();
-  const a = drawByPrize(prizeState, 'a1', 1, stubRandom([0]));
-  assert.equal(a.state.results[0].mode, MODE.PRIZE);
-
-  const personState = replacePools(createState(), {
-    prizes: [{ name: '奖品', count: 1 }],
-    people: [{ name: '甲' }],
-  });
-  const b = drawByPerson(personState, 'p1', stubRandom([0]));
-  assert.equal(b.state.results[0].mode, MODE.PERSON);
-});
-
-test('作废：不计中奖、名额还回去、票移出池', () => {
-  const state = baseState();
-  const { state: drawn, winners } = drawByPrize(state, 'a2', 2, stubRandom([0.1, 0.6]));
-  const resultId = drawn.results[0].id;
-  const gone = winners[0].personId;
-
-  const next = voidWinner(drawn, resultId, gone);
-  assert.equal(prizeDrawn(next, 'a2'), 1);
-  assert.equal(prizeRemaining(next, 'a2'), 1);
-  assert.deepEqual(next.excluded, [gone]);
-  assert.ok(eligiblePeople(next).every((person) => person.id !== gone));
-  assert.equal(next.results[0].winners.length, 1);
-});
-
-test('作废到一条记录空了就删掉这条', () => {
-  const state = baseState();
-  const { state: drawn, winners } = drawByPrize(state, 'a1', 1, stubRandom([0]));
-  const next = voidWinner(drawn, drawn.results[0].id, winners[0].personId);
+test('撤销上一次：记录少一条，条目回到池里', () => {
+  const first = drawOnce(baseState(), { fixed: { prize: 'a1' } });
+  const next = undoLast(first.state);
   assert.equal(next.results.length, 0);
-  assert.equal(prizeDrawn(next, 'a1'), 0);
-  assert.equal(prizeRemaining(next, 'a1'), 1);
-  assert.throws(() => voidWinner(next, 'r9', 'p1'), /找不到这次开奖/);
+  assert.equal(drawnCount(next, 'prizes', 'a1'), 0);
 });
 
-test('作废后名额可以重新抽给在场的其他人', () => {
-  const state = baseState();
-  const { state: drawn, winners } = drawByPrize(state, 'a1', 1, stubRandom([0]));
-  const gone = winners[0].personId;
-  const next = voidWinner(drawn, drawn.results[0].id, gone);
-  const again = drawByPrize(next, 'a1', 1, stubRandom([0]));
-  assert.notEqual(again.winners[0].personId, gone);
-  assert.equal(prizeRemaining(again.state, 'a1'), 0);
+test('清空记录：池与名额不动', () => {
+  const first = drawOnce(baseState(), { fixed: { prize: 'a1' } });
+  const next = resetProgress(first.state);
+  assert.equal(next.results.length, 0);
+  assert.equal(next.pools[1].entries.length, 3);
 });
 
-test('撤销某人：只去掉这一条，人回到池子', () => {
+test('改条目：名额不会低于已抽出数量', () => {
+  const first = drawOnce(baseState(), { fixed: { prize: 'a1' } });
+  const next = updateEntry(first.state, 'prizes', 'a1', { capacity: 0 });
+  assert.equal(remaining(next, 'prizes', 'a1'), 0);
+  assert.equal(next.pools[1].entries[0].capacity, 1);
+});
+
+test('删条目：抽出过的删不掉，没抽过的可以', () => {
+  const first = drawOnce(baseState(), { fixed: { prize: 'a1' } });
+  assert.throws(() => removeEntry(first.state, 'prizes', 'a1'), /已经抽出过结果/);
+  const next = removeEntry(first.state, 'prizes', 'a3');
+  assert.equal(next.pools[1].entries.length, 2);
+});
+
+test('加条目：id 往后接着排', () => {
   const state = baseState();
-  const { state: drawn, winners } = drawByPrize(state, 'a2', 2, stubRandom([0.1, 0.6]));
-  const resultId = drawn.results[0].id;
-  const back = winners[0].personId;
+  const [next, entry] = addEntry(state, 'people', { name: '孙八' });
+  assert.equal(entry.id, 'p6');
+  assert.equal(next.pools[0].entries.length, 6);
+});
 
-  const next = undoWinner(drawn, resultId, back);
-  assert.equal(prizeDrawn(next, 'a2'), 1);
-  assert.equal(prizeRemaining(next, 'a2'), 1);
-  assert.deepEqual(next.excluded, []);
-  assert.ok(eligiblePeople(next).some((person) => person.id === back));
+test('槽没有绑定：抽不动，报 slot-unbound', () => {
+  const state = createState({
+    protocol: 'prize-person',
+    pools: pools(),
+    slots: { prize: null, person: null },
+  });
+  assert.equal(canDraw(state), false);
+  assert.throws(
+    () => drawOnce(state, {}),
+    (error) => error.code === 'slot-unbound' && /还没有给「奖项」选池/.test(error.message),
+  );
+});
 
-  // 撤销掉最后一个人时整条记录消失
-  const emptied = undoWinner(next, resultId, winners[1].personId);
-  assert.equal(emptied.results.length, 0);
-  assert.throws(() => undoWinner(emptied, resultId, back), /找不到这次开奖/);
+test('没选池：不按种类兜底，直接抽不动', () => {
+  const state = createState({ protocol: 'prize-person', pools: pools() });
+  const report = readiness(state);
+  assert.equal(report.canDraw, false);
+  assert.deepEqual(
+    report.slots.map((slot) => slot.poolId),
+    [null, null],
+  );
+});
+
+test('池的种类不参与：同一个池填两个槽也照抽', () => {
+  const state = createState({
+    protocol: 'prize-person',
+    slots: { prize: 'p', person: 'p' },
+    pools: [cleanPool({ id: 'p', name: '一张表', kind: 'people', entries: [{ name: '甲', capacity: null }] }, 0)],
+  });
+  const { picks } = drawOnce(state, { fixed: { prize: 'p1' }, random: () => 0 });
+  assert.deepEqual(
+    picks.map((pick) => [pick.slot, pick.poolId]),
+    [
+      ['prize', 'p'],
+      ['person', 'p'],
+    ],
+  );
+});
+
+test('作废只作用那一格：别的池里的同名条目还在', () => {
+  const state = createState({
+    protocol: 'prize-person',
+    slots: { prize: 'a', person: 'b' },
+    pools: [
+      cleanPool({ id: 'a', name: 'A', kind: 'prizes', entries: [{ name: '奖' }] }, 0),
+      cleanPool({ id: 'b', name: 'B', kind: 'people', entries: [{ id: 'p1', name: '甲' }] }, 1),
+    ],
+    results: [
+      {
+        id: 'r1',
+        at: 1,
+        protocol: 'prize-person',
+        picks: [
+          { slot: 'prize', poolId: 'a', entryId: 'a1', name: '奖', meta: {} },
+          { slot: 'person', poolId: 'b', entryId: 'p1', name: '甲', meta: {} },
+        ],
+      },
+    ],
+  });
+  const next = voidPick(state, 'r1', 'b', 'p1');
+  assert.deepEqual(next.excluded, ['b/p1']);
+  assert.equal(eligible(next, next.pools[1]).length, 0, '被作废的那格不再进池');
+});
+
+test('两个同 kind 的池互不顶替：绑哪个就抽哪个', () => {
+  const state = createState({
+    protocol: 'prize-person',
+    slots: { prize: 'prizes', person: 'pb' },
+    pools: [
+      cleanPool({ id: 'pa', name: '研发', kind: 'people', entries: [{ name: '张三' }] }, 0),
+      cleanPool({ id: 'pb', name: '市场', kind: 'people', entries: [{ name: '李四' }] }, 1),
+      ...pools().slice(1),
+    ],
+  });
+  const { picks } = drawOnce(state, { fixed: { prize: 'a1' }, random: () => 0 });
+  const person = picks.find((pick) => pick.slot === 'person');
+  assert.equal(person.poolId, 'pb');
+  assert.equal(person.name, '李四');
+});
+
+test('readiness 报出绑定与来源', () => {
+  const report = readiness(baseState());
+  assert.equal(report.canDraw, true);
+  assert.deepEqual(
+    report.slots.map((slot) => slot.key),
+    ['prize', 'person'],
+  );
+  assert.equal(report.slots[1].entries, 5);
+  assert.deepEqual(
+    report.slots.map((slot) => [slot.source, slot.bound]),
+    [
+      ['fixed', 'prizes'],
+      ['draw', 'people'],
+    ],
+  );
+  assert.equal(report.slots[1].poolName, '名单');
+});
+
+test('fixed 槽可以指定抽哪一条', () => {
+  const state = baseState();
+  const { picks } = drawOnce(state, { fixed: { prize: 'a2' }, random: () => 0 });
+  assert.equal(picks[0].entryId, 'a2');
+  assert.equal(picks[0].name, '二等奖');
 });

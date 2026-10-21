@@ -117,6 +117,115 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   min-height: 1.7cqh;
 }
 
+/* ---------- 固定槽侧栏 ---------- */
+/*
+ * 结构与默认摆位。DOM 由 lucky.js 统一建（三个形态共用一个壳），具体贴在
+ * 左边、右边还是机身下方由 `data-side` 决定，配色与微调交给各形态的样式表。
+ *
+ * z-index 必须是 2：揭晓是 3、结果弹窗 40、提示 90 —— 侧栏不能压住揭晓。
+ */
+
+.slot-picker {
+  position: absolute;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 1.4cqh;
+  padding: 1.4cqh 1.2cqw;
+  max-height: 64cqh;
+  /* 一层薄底：侧栏可能压在盘面边缘上，没有它白字会糊成一团 */
+  background: rgba(0, 0, 0, 0.22);
+  border-radius: 3px;
+}
+
+.slot-picker[hidden] { display: none; }
+
+.slot-picker[data-side="rail-left"] {
+  left: 2.4cqw;
+  top: 50%;
+  width: min(19cqw, 240px);
+  transform: translateY(-50%);
+}
+
+.slot-picker[data-side="rail-right"] {
+  right: 2.4cqw;
+  top: 50%;
+  width: min(19cqw, 240px);
+  transform: translateY(-50%);
+}
+
+.slot-picker[data-side="bottom"] {
+  left: 50%;
+  bottom: 13cqh;
+  width: min(72cqw, 720px);
+  max-height: 20cqh;
+  transform: translateX(-50%);
+}
+
+.picker {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6cqh;
+  min-height: 0;
+}
+
+.picker-title {
+  margin: 0;
+  font-size: 1.3cqh;
+  letter-spacing: 0.22em;
+  color: var(--dim);
+}
+
+.picker-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+.slot-picker[data-side="bottom"] .picker-list {
+  flex-direction: row;
+  flex-wrap: wrap;
+}
+
+.pick {
+  display: flex;
+  align-items: baseline;
+  gap: 0.8cqw;
+  padding: 0.7cqh 0.8cqw;
+  text-align: left;
+  border-left: 2px solid transparent;
+  color: var(--muted);
+  font-size: 1.5cqh;
+  transition: color 0.18s ease, border-color 0.18s ease, background 0.18s ease;
+}
+
+.pick:hover { color: var(--text); }
+
+.pick.on {
+  color: var(--text);
+  border-left-color: var(--accent);
+  background: rgba(200, 162, 101, 0.12);
+}
+
+.pick.off { opacity: 0.35; }
+
+.pick-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pick-sub,
+.pick-note {
+  font-family: var(--mono);
+  font-size: 1.1cqh;
+  color: var(--dim);
+}
+
 /* ---------- 空名单 ---------- */
 
 .draw-empty {

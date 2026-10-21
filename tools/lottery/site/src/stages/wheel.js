@@ -132,8 +132,12 @@ export default defineLuckyStage({
   id: 'wheel',
   label: '大转盘',
   kind: 'wheel',
+  // 一整圈扇区，一次只转一个池；扇区太多字就挤不下，十六个是上限
+  capabilities: { spin: 1, slots: 2, winners: 'many', labels: 16 },
   styles: new URL('./wheel.css', import.meta.url).href,
   skins: SKINS,
   build,
+  // 转盘占满中间，侧栏只能贴左边
+  picker: 'rail-left',
   hint: '点盘面中央开抽，转动中点盘面停下。扇区等分；真正中奖概率按各奖项剩余名额加权。',
 });

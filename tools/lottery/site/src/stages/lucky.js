@@ -17,12 +17,12 @@
  */
 
 import { LuckyGrid, LuckyWheel, SlotMachine } from '../../vendor/lucky-canvas.esm.js';
-import { MODE } from '../engine.js';
 import {
   createAction,
   createAudio,
   createCleanup,
   createMetaBar,
+  createPicker,
   createReveal,
   el,
   idleCopy,
@@ -159,12 +159,16 @@ function createMachine(host, kind, build, { onStart, onEnd } = {}) {
  * - 老虎机：库没有盘面按钮，按钮贴在机身下方（`lucky-trigger`）。
  *
  * 区别只在 `kind`、`skins` 与 `build`，所以外壳在这里写一遍。
+ *
+ * `picker` 是固定槽侧栏的摆位：DOM 是同一个 `.slot-picker`，写在 `data-side` 上，
+ * 真正的左右上下由各形态自己的样式表决定；传 `false` 就不画。
  */
-export function defineLuckyStage({ id, label, kind, skins = [], build, styles, hint = '' }) {
+export function defineLuckyStage({ id, label, kind, skins = [], build, styles, hint = '', capabilities, picker = 'rail-left' }) {
   return {
     id,
     label,
-    mode: MODE.PERSON,
+    version: 1,
+    capabilities,
     styles,
     config: [
       {
@@ -213,7 +217,21 @@ export function defineLuckyStage({ id, label, kind, skins = [], build, styles, h
       const reveal = createReveal();
       foot.append(status, reveal.node);
 
+      /**
+       * 固定槽的侧栏。挂在 root 上、不塞进 head / body / foot ——
+       * 那些是 flex 容器，而且 ResizeObserver 盯着 body 的外层，塞进去会连带
+       * 触发 rebuild，点一下选项盘面就白一下。
+       */
+      const pickerHost = picker === false ? null : el('div', 'slot-picker');
+      if (pickerHost !== null) {
+        pickerHost.dataset.side = picker;
+        pickerHost.hidden = true;
+      }
+
       root.append(head, body, foot, createMetaBar(api));
+      if (pickerHost !== null) {
+        root.append(pickerHost);
+      }
 
       let labels = SAMPLE_LABELS.slice();
       let pending = null;
@@ -293,10 +311,12 @@ export function defineLuckyStage({ id, label, kind, skins = [], build, styles, h
         autoTimer = window.setTimeout(() => api.toggle?.(), hold);
       }
 
-      function revealWinners({ winners = [], prizeName = '' } = {}) {
+      function revealWinners({ winners = [], focusName = '', anchorName = '' } = {}) {
         clearAuto();
-        const at = Math.max(0, labels.indexOf(prizeName));
-        pending = { winners, prizeName, focus: 'prize' };
+        // 盘面转的是「抽的那个槽」的池，所以停在抽中的那一格；先定的那个槽
+        // 只进小字。以前拿锚的名字去 indexOf，永远 -1、永远停在第 0 格。
+        const at = Math.max(0, labels.indexOf(focusName));
+        pending = { winners, anchorName };
         machine.stop(kind === 'slot' ? [at, at, at] : at);
         // 揭晓等机器停下（end 回调）再出，免得指针还在转就把名字亮出来
       }
@@ -310,24 +330,53 @@ export function defineLuckyStage({ id, label, kind, skins = [], build, styles, h
         machine.rebuild();
       }
 
+      /** 侧栏按 `view.fixed` 增删同步；槽没了就把那一块拆掉。 */
+      const pickers = new Map();
+
+      function syncPickers(list = []) {
+        if (pickerHost === null) {
+          return;
+        }
+        const seen = new Set();
+        for (const panel of list) {
+          seen.add(panel.key);
+          let picker = pickers.get(panel.key);
+          if (picker === undefined) {
+            picker = createPicker((id) => api.pickSlot?.(panel.key, id));
+            pickers.set(panel.key, picker);
+            pickerHost.append(picker.node);
+          }
+          picker.update(panel.items ?? [], panel.label ?? '');
+        }
+        for (const [key, picker] of [...pickers]) {
+          if (!seen.has(key)) {
+            picker.node.remove();
+            pickers.delete(key);
+          }
+        }
+        pickerHost.hidden = pickers.size === 0;
+      }
+
       function update(next) {
         engineSpinning = next.spinning === true;
         board.classList.toggle('spinning', engineSpinning);
         title.textContent = next.title;
-        // 揭晓后引擎已经推进到下一个人，顶栏再写就与底栏的中奖人并列了
+        // 揭晓后引擎已经推进到下一条，顶栏再写就与底栏并列了
         sub.textContent =
-          next.revealed || next.personName === '' ? '' : `上台 · ${next.personName}`;
+          next.revealed || next.anchorName === ''
+            ? ''
+            : [next.anchorLabel, next.anchorName].filter(Boolean).join(' · ');
 
         const copy = idleCopy({
-          mode: next.mode,
+          anchor: next.anchor,
+          focus: next.focus,
           allDrawn: next.allDrawn,
           handed: next.handed,
-          prizeName: next.prizeName,
-          remaining: next.prizeRemaining,
+          anchorLabel: next.anchorLabel,
+          anchorName: next.anchorName,
+          anchorNote: next.anchorNote,
+          focusLeft: next.focusLeft,
           batch: next.batch,
-          personName: next.personName,
-          personDept: next.personDept,
-          prizeCount: next.prizeCount,
         });
         status.replaceChildren(
           el('span', 'status-eyebrow', copy.eyebrow),
@@ -338,12 +387,12 @@ export function defineLuckyStage({ id, label, kind, skins = [], build, styles, h
         // 机身按钮只有老虎机用；盘面按钮的字画在 canvas 里，不在这里更新
         if (trigger === 'button') {
           action.set({
-            text: next.spinning ? '停' : next.allDrawn ? '看结果' : '抽一个奖',
+            text: next.spinning ? '停' : next.allDrawn ? '看结果' : '开抽',
             note: next.spinning
               ? '再按一次'
               : next.allDrawn
-                ? `${next.handed} 人已中奖`
-                : `${next.prizeCount} 个奖项在池`,
+                ? `${next.handed} 个${next.focusLabel ?? ''}已抽出`
+                : `${next.focusCount ?? 0} 个${next.focusLabel ?? ''}可抽`,
             running: next.spinning,
             disabled: !next.spinning && !next.allDrawn && !next.canDraw,
           });
@@ -353,6 +402,8 @@ export function defineLuckyStage({ id, label, kind, skins = [], build, styles, h
           root.classList.remove('settled');
           reload(next.labels, next.weights);
         }
+
+        syncPickers(next.fixed);
       }
 
       // 主页预览没有 api，也走这一套：先给一份示意盘面
@@ -368,6 +419,7 @@ export function defineLuckyStage({ id, label, kind, skins = [], build, styles, h
           clearAuto();
           board.removeEventListener('click', onBoardClick, true);
           cleanup.clearAll();
+          pickers.clear();
           machine.destroy();
           host.replaceChildren();
         },

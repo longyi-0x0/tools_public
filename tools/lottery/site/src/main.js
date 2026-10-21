@@ -1,42 +1,52 @@
 /**
  * 抽奖台主页。
  *
- * 左边是三类对象（抽奖 / 名单 / 奖品）的列表，右边是选中项的详情。
+ * 左边是两类对象（抽奖 / 池）的列表，右边是选中项的详情。
  * 抽奖页是独立入口 `draw.html`，这里只负责管理：导入导出的 xlsx、
- * 开始 / 继续 / 重新抽、形式与形态的配置。
+ * 开始 / 继续 / 重新抽、抽法与形态的配置。
+ *
+ * 「池」是一堆条目：名字 + 数量 + 权重（图片占位）。池上的 `kind` 只在**创建与
+ * 编辑**时决定问哪几个字段（人问部门工号、奖品问等级）；抽法、槽、绑定、引擎
+ * 一律不看它 —— 名单池绑到奖项槽上也照样能抽。
  */
 
-import { MODE, undoWinner } from './engine.js';
+import { undoPick } from './engine.js';
 import {
-  addPrizeSet,
-  addRoster,
-  cleanPeople,
-  cleanPrizes,
+  MAX_BATCH,
+  addLotteryPool,
+  addPool,
   createLottery,
+  defaultSlots,
+  isUniqueWinner,
   lotteryById,
   lotteryStatus,
   lotterySummary,
   patchLotteryPools,
+  poolById,
+  poolOfSlot,
   removeLottery,
-  removePrizeSet,
-  removeRoster,
+  removeLotteryPool,
+  removePool,
   replaceLotteryData,
   resetLottery,
   runState,
+  setLotteryBinding,
+  setUniqueWinner,
+  slotsOfPool,
   uniqueName,
   updateLottery,
-  updatePrizeSet,
-  updateRoster,
+  updatePool,
   writeRunState,
 } from './data.js';
+import { cleanEntries, KINDS, KIND_LABELS, KIND_NAMES, capacityOf, kindOf, nextEntryId } from './pools.js';
+import { PROTOCOLS, batchSlotOf, protocolInfo, slotOf, spinSlot } from './protocols.js';
 import { loadApp, saveApp, flushApp } from './store.js';
-import { STAGES, createStage, stageFields, stageInfo, stageLabel, stageMode } from './stages/index.js';
+import { STAGES, createStage, stageFields, stageLabel, stagesFor } from './stages/index.js';
 import { h, el, clear, clockTime } from './dom.js';
 import { THEMES, applyTheme, loadTheme, saveTheme } from './theme.js';
 import {
   buildLotteryWorkbook,
-  buildPrizeSetWorkbook,
-  buildRosterWorkbook,
+  buildPoolWorkbook,
   buildResultWorkbook,
   downloadBytes,
   readLotteryWorkbook,
@@ -52,10 +62,9 @@ applyTheme(loadTheme());
 const theme = { id: loadTheme() };
 
 const ui = {
-  view: ['lotteries', 'rosters', 'prizes'].includes(app.lastView) ? app.lastView : 'lotteries',
+  view: ['lotteries', 'pools'].includes(app.lastView) ? app.lastView : 'lotteries',
   lotteryId: app.lastLotteryId ?? app.lotteries[0]?.id ?? null,
-  rosterId: app.rosters[0]?.id ?? null,
-  prizeSetId: app.prizeSets[0]?.id ?? null,
+  poolId: app.lastPoolId ?? app.pools[0]?.id ?? null,
   /** 弹窗：`{ kind, ... }`，见 renderDialog。 */
   dialog: null,
   /** 新建抽奖的草稿。 */
@@ -66,9 +75,10 @@ const ui = {
   pending: null,
   /** 形态弹窗里的预览实例。 */
   preview: null,
-  poolsTab: 'people',
-  resultsTab: 'prize',
-  /** 结果明细里勾掉的人，键是 `resultId:personId`。 */
+  /** 抽奖详情里正在编辑的那个池。 */
+  editPoolId: null,
+  resultsTab: 'anchor',
+  /** 结果明细里勾掉的条目，键是 `resultId:poolId:entryId`。 */
   resultsPicked: new Set(),
   /** 结果明细的编辑态：只有这时才能多选与撤销。 */
   resultsEditing: false,
@@ -76,16 +86,10 @@ const ui = {
 
 /* ---------- 视图数据 ---------- */
 
-const VIEW_LABELS = { lotteries: '抽奖', rosters: '名单', prizes: '奖品' };
+const VIEW_LABELS = { lotteries: '抽奖', pools: '池' };
 
 function viewItems() {
-  if (ui.view === 'rosters') {
-    return app.rosters;
-  }
-  if (ui.view === 'prizes') {
-    return app.prizeSets;
-  }
-  return app.lotteries;
+  return ui.view === 'pools' ? app.pools : app.lotteries;
 }
 
 function itemName(item) {
@@ -96,16 +100,17 @@ function currentLottery() {
   return lotteryById(app, ui.lotteryId);
 }
 
-function currentRoster() {
-  return app.rosters.find((item) => item.id === ui.rosterId) ?? null;
-}
-
-function currentPrizeSet() {
-  return app.prizeSets.find((item) => item.id === ui.prizeSetId) ?? null;
+function currentPool() {
+  return poolById(app, ui.poolId);
 }
 
 function remember() {
-  app = { ...app, lastView: ui.view, lastLotteryId: ui.lotteryId };
+  app = {
+    ...app,
+    lastView: ui.view,
+    lastLotteryId: ui.lotteryId,
+    lastPoolId: ui.poolId,
+  };
   saveApp(app);
 }
 
@@ -115,11 +120,8 @@ function render() {
   if (ui.view === 'lotteries' && ui.lotteryId === null && app.lotteries.length > 0) {
     ui.lotteryId = app.lotteries[0].id;
   }
-  if (ui.view === 'rosters' && ui.rosterId === null && app.rosters.length > 0) {
-    ui.rosterId = app.rosters[0].id;
-  }
-  if (ui.view === 'prizes' && ui.prizeSetId === null && app.prizeSets.length > 0) {
-    ui.prizeSetId = app.prizeSets[0].id;
+  if (ui.view === 'pools' && ui.poolId === null && app.pools.length > 0) {
+    ui.poolId = app.pools[0].id;
   }
   destroyPreview();
   clear(appEl);
@@ -216,7 +218,7 @@ function renderSidebar() {
     h(
       'nav',
       { class: 'tabbar' },
-      ['lotteries', 'rosters', 'prizes'].map((view) =>
+      ['lotteries', 'pools'].map((view) =>
         h('button', {
           class: `tab${ui.view === view ? ' active' : ''}`,
           type: 'button',
@@ -248,20 +250,12 @@ function onAdd() {
 }
 
 function isCurrent(item) {
-  if (ui.view === 'rosters') {
-    return item.id === ui.rosterId;
-  }
-  if (ui.view === 'prizes') {
-    return item.id === ui.prizeSetId;
-  }
-  return item.id === ui.lotteryId;
+  return ui.view === 'pools' ? item.id === ui.poolId : item.id === ui.lotteryId;
 }
 
 function select(item) {
-  if (ui.view === 'rosters') {
-    ui.rosterId = item.id;
-  } else if (ui.view === 'prizes') {
-    ui.prizeSetId = item.id;
+  if (ui.view === 'pools') {
+    ui.poolId = item.id;
   } else {
     ui.lotteryId = item.id;
   }
@@ -270,11 +264,8 @@ function select(item) {
 /* ---------- 主区 ---------- */
 
 function renderMain() {
-  if (ui.view === 'rosters') {
-    return { content: renderRosterPage() };
-  }
-  if (ui.view === 'prizes') {
-    return { content: renderPrizeSetPage() };
+  if (ui.view === 'pools') {
+    return { content: renderPoolPage() };
   }
   return renderLotteryPage();
 }
@@ -388,7 +379,7 @@ function emptyState(title, text, actions = []) {
 /* ---------- 格子 ---------- */
 
 /**
- * 一格一格的名单 / 奖项。
+ * 一格一格的条目。
  *
  * 折到两行：格子高度固定，两行之外先藏起来，按钮量完再决定露不露。
  */
@@ -423,26 +414,54 @@ function tileGrid({ id, items, render, height = 78, empty = '还没有内容' })
   return h('div', { class: 'grid-block' }, grid, more);
 }
 
-function personTile(person, won) {
+/**
+ * 一格一条：条目自己有说明（部门 / 工号 / 等级）就写说明，没有就写名额进度。
+ *
+ * 不看池的种类 —— 同一个池里混着带说明和不带说明的条目也照样显示。
+ */
+function entryTile(pool, entry, { drawn = 0, won = false } = {}) {
+  const capacity = capacityOf(entry);
+  const done = capacity !== Infinity && drawn >= capacity;
+  const ratio = capacity === Infinity ? 1 : Math.min(1, drawn / capacity);
+  const note = [entry.meta?.dept, entry.meta?.employeeId, entry.meta?.level]
+    .filter((value) => typeof value === 'string' && value !== '')
+    .join(' · ');
+  const progress = capacity === Infinity ? `${drawn} · 不限量` : `${drawn} / ${capacity}`;
   return h(
     'div',
-    { class: `tile person-tile${won ? ' won' : ''}` },
-    h('span', { class: 'tile-name', text: person.name }),
-    h('span', { class: 'tile-meta', text: person.dept || person.employeeId || '—' }),
-    won ? h('span', { class: 'tile-tag', text: '已中奖' }) : null,
+    { class: `tile entry-tile${done ? ' done' : ''}${won ? ' won' : ''}` },
+    h('span', { class: 'tile-name', text: entry.name }),
+    h('span', { class: 'tile-meta', text: note !== '' ? note : progress }),
+    h('span', { class: 'tile-bar' }, h('i', { style: `width:${ratio * 100}%` })),
   );
 }
 
-function prizeTile(prize, drawn) {
-  const ratio = prize.count <= 0 ? 0 : Math.min(1, drawn / prize.count);
-  const done = drawn >= prize.count;
-  return h(
-    'div',
-    { class: `tile prize-tile${done ? ' done' : ''}` },
-    h('span', { class: 'tile-name', text: prize.name }),
-    h('span', { class: 'tile-meta', text: `${drawn} / ${prize.count}` }),
-    h('span', { class: 'tile-bar' }, h('i', { style: `width:${ratio * 100}%` })),
-  );
+/** 某一类条目在这份抽奖里的数量与进度。 */
+function poolProgress(lottery, pool) {
+  const drawn = new Map();
+  for (const result of lottery.results) {
+    for (const pick of result.picks) {
+      if (pick.poolId !== pool.id) {
+        continue;
+      }
+      drawn.set(pick.entryId, (drawn.get(pick.entryId) ?? 0) + 1);
+    }
+  }
+  return drawn;
+}
+
+/**
+ * 这一场里的两个角色，都从抽法来：
+ * 锚（`source: 'fixed'`，主持人先定的那个）与焦点（`protocol.focus`，抽出来的那个）。
+ *
+ * 界面只认这两个角色，不认「人」「奖」这些词 —— 池是什么种类跟怎么用无关。
+ */
+function rolesOf(item) {
+  const protocol = protocolInfo(item.protocol);
+  return {
+    anchor: protocol.slots.find((slot) => slot.source === 'fixed') ?? null,
+    focus: slotOf(item.protocol, protocol.focus) ?? protocol.slots[0] ?? null,
+  };
 }
 
 /* ---------- 抽奖详情 ---------- */
@@ -451,7 +470,7 @@ function renderLotteryPage() {
   const item = currentLottery();
   if (item === null) {
     return {
-      content: emptyState('还没有抽奖', '导入一份含「奖品」「名单」两表的 xlsx，或用现成的名单与奖品新建一场。', [
+      content: emptyState('还没有抽奖', '导入一份 xlsx，或用现成的池新建一场。抽奖用哪个池，随时可以在右侧「绑定」里改。', [
         { label: '导入 xlsx', primary: true, onClick: () => pickFile('lottery') },
         { label: '新建', onClick: () => openNewDialog() },
       ]),
@@ -460,8 +479,11 @@ function renderLotteryPage() {
 
   const summary = lotterySummary(item);
   const status = lotteryStatus(item);
+  const focusKey = rolesOf(item).focus?.key;
   const won = new Set(
-    item.results.flatMap((result) => result.winners.map((winner) => winner.personId)),
+    item.results.flatMap((result) =>
+      result.picks.filter((pick) => pick.slot === focusKey).map((pick) => pick.entryId),
+    ),
   );
 
   const content = h(
@@ -483,7 +505,7 @@ function renderLotteryPage() {
       }),
       h('p', {
         class: 'detail-sub',
-        text: `${summary.handed} / ${summary.total} 已抽出 · ${summary.people} 人 · ${summary.prizes} 个奖项`,
+        text: `${protocolInfo(item.protocol).label} · 已抽出 ${summary.handed} / ${summary.total}${summary.unlimited ? ' · 含不限量' : ''}`,
       }),
       h(
         'div',
@@ -515,65 +537,57 @@ function renderLotteryPage() {
       'div',
       { class: 'detail-body' },
       summary.handed > 0 ? renderResultsSection(item) : null,
-      h(
-        'section',
-        { class: 'section' },
-        h(
-          'div',
-          { class: 'section-head' },
-          h('h2', { class: 'section-title', text: `奖项 ${summary.prizes}` }),
-          h('button', {
-            class: 'text-btn',
-            type: 'button',
-            text: '编辑',
-            onClick: () => openPools(item, 'prizes'),
-          }),
-        ),
-        tileGrid({
-          id: 'prizes-more',
-          height: 96,
-          empty: '还没有奖项',
-          items: item.prizes,
-          render: (prize) =>
-            prizeTile(
-              prize,
-              item.results
-                .filter((result) => result.prizeId === prize.id)
-                .reduce((sum, result) => sum + result.winners.length, 0),
-            ),
-        }),
-      ),
-      h(
-        'section',
-        { class: 'section' },
-        h(
-          'div',
-          { class: 'section-head' },
-          h('h2', { class: 'section-title', text: `参与人 ${summary.people}` }),
-          h('button', {
-            class: 'text-btn',
-            type: 'button',
-            text: '编辑',
-            onClick: () => openPools(item, 'people'),
-          }),
-        ),
-        tileGrid({
-          id: 'people-more',
-          empty: '还没有人',
-          items: item.people,
-          render: (person) => personTile(person, won.has(person.id)),
-        }),
-      ),
+      item.pools.map((pool) => renderPoolSection(item, pool, won)),
     ),
   );
 
   return { content, rail: renderRail(item, summary, status) };
 }
 
-function renderResultsSection(item) {
-  const rows = item.results.flatMap((result) =>
-    result.winners.map((winner) => ({ result, winner })),
+/**
+ * 池一节：池名 + 它在这场里填哪个槽。
+ *
+ * 这里不写「名单 / 奖品」—— 抽奖进行中只认绑定，池是什么种类是编辑素材时的事。
+ * 徽标是这一层唯一看得见绑定的地方：抽法一换，谁是盘面、谁是大字都变了。
+ */
+function renderPoolSection(item, pool, won) {
+  const drawn = poolProgress(item, pool);
+  const roles = slotsOfPool(item, pool.id).map(
+    (key) => slotOf(item.protocol, key)?.label ?? key,
   );
+  const bound = roles.length > 0;
+  return h(
+    'section',
+    { class: 'section' },
+    h(
+      'div',
+      { class: 'section-head' },
+      h(
+        'h2',
+        { class: 'section-title pool-title' },
+        h('span', { class: 'pool-name', text: pool.name }),
+        h('span', { class: bound ? 'pool-tag' : 'pool-tag muted', text: bound ? roles.join(' / ') : '未参与' }),
+      ),
+      h('button', {
+        class: 'text-btn',
+        type: 'button',
+        text: '编辑',
+        onClick: () => openPools(item, pool.id),
+      }),
+    ),
+    tileGrid({
+      id: `pool-more-${pool.id}`,
+      height: 96,
+      empty: '还没有条目',
+      items: pool.entries,
+      render: (entry) =>
+        entryTile(pool, entry, { drawn: drawn.get(entry.id) ?? 0, won: won.has(entry.id) }),
+    }),
+  );
+}
+
+function renderResultsSection(item) {
+  const rows = resultRowsOf(item);
   const latest = rows.slice().reverse();
 
   return h(
@@ -590,24 +604,123 @@ function renderResultsSection(item) {
       height: 92,
       empty: '还没开抽',
       items: latest,
-      render: ({ result, winner }) =>
+      render: (row) =>
         h(
           'div',
           { class: 'tile result-tile' },
-          h('span', { class: 'tile-name', text: winner.name }),
-          h('span', { class: 'tile-meta', text: result.prizeName }),
-          h('span', { class: 'tile-time', text: clockTime(result.at) }),
+          h('span', { class: 'tile-name', text: row.pick.name }),
+          h('span', { class: 'tile-meta', text: row.anchor?.name ?? '' }),
+          h('span', { class: 'tile-time', text: clockTime(row.result.at) }),
         ),
+    }),
+  );
+}
+
+/**
+ * 「绑定」一节：每个槽一个下拉，列全部池，**不按 kind 过滤**。
+ *
+ * 这是这场抽奖唯一能改「用哪个池」的地方，创建之后也一直能改。
+ */
+function renderBindingSection(item) {
+  const slots = protocolInfo(item.protocol).slots;
+  return h(
+    'section',
+    { class: 'rail-section' },
+    h('h2', { class: 'rail-title', text: '绑定' }),
+    ...slots.map((slot) => {
+      const value = item.slots?.[slot.key] ?? '';
+      return h(
+        'div',
+        { class: 'field' },
+        h(
+          'span',
+          { class: 'field-label' },
+          h('span', { text: slot.label }),
+          slot.hint ? h('span', { class: 'field-hint', text: slot.hint }) : null,
+        ),
+        h(
+          'select',
+          {
+            class: 'field-select',
+            'aria-label': slot.label,
+            onChange: (event) =>
+              commit(setLotteryBinding(app, item.id, slot.key, event.currentTarget.value || null)),
+          },
+          h('option', { value: '', text: '未绑定', selected: value === '' }),
+          item.pools.map((pool) =>
+            h('option', {
+              value: pool.id,
+              text: `${pool.name} · ${pool.entries.length} 条`,
+              selected: pool.id === value,
+            }),
+          ),
+        ),
+      );
+    }),
+    h('p', {
+      class: 'rail-note',
+      text: '槽不挑池的类型——名单也能拿来抽奖品。没被任何槽选中的池不参与这一场。',
+    }),
+    h('button', {
+      class: 'text-btn',
+      type: 'button',
+      text: '加一个池',
+      onClick: () => openPoolSource(item),
+    }),
+  );
+}
+
+/** 一次抽几个：只在抽法有 `take: 'batch'` 的槽时出现。 */
+function batchField(item, slot) {
+  const value = item.batchSize ?? item.batch;
+  return h(
+    'div',
+    { class: 'field' },
+    h(
+      'span',
+      { class: 'field-label' },
+      h('span', { text: '一次抽' }),
+      h('span', { class: 'field-hint', text: slot.label }),
+    ),
+    h('input', {
+      class: 'field-input',
+      type: 'number',
+      min: '1',
+      max: String(MAX_BATCH),
+      step: '1',
+      value: String(value),
+      'aria-label': '一次抽几个',
+      // 打字时只存不重绘：每敲一个字就重建侧栏会把焦点弄丢
+      onInput: (event) => {
+        app = updateLottery(app, item.id, { batchSize: event.currentTarget.value });
+        saveApp(app);
+      },
+      onBlur: () => commit(app),
     }),
   );
 }
 
 function renderRail(item, summary, status, { footer = true } = {}) {
   const primary = status === 'done' ? '查看结果' : status === 'running' ? '继续抽奖' : '开始抽奖';
+  const focusSlot = slotOf(item.protocol, protocolInfo(item.protocol).focus);
+  const focusPool = focusSlot === null ? null : poolOfSlot(item, focusSlot.key);
+  const batchSlot = batchSlotOf(item.protocol);
 
   return h(
     'aside',
     { class: 'rail' },
+    h(
+      'section',
+      { class: 'rail-section' },
+      h('h2', { class: 'rail-title', text: '抽法' }),
+      choices(
+        PROTOCOLS.map((protocol) => ({ value: protocol.id, label: protocol.label })),
+        item.protocol,
+        (value) => commit(updateLottery(app, item.id, { protocol: value })),
+      ),
+      h('p', { class: 'rail-note', text: protocolInfo(item.protocol).hint }),
+    ),
+    renderBindingSection(item),
     h(
       'section',
       { class: 'rail-section' },
@@ -629,9 +742,14 @@ function renderRail(item, summary, status, { footer = true } = {}) {
       'section',
       { class: 'rail-section' },
       h('h2', { class: 'rail-title', text: '设置' }),
-      toggle('不重复中奖', item.uniqueWinner, (checked) =>
-        commit(updateLottery(app, item.id, { uniqueWinner: checked })),
-      ),
+      focusPool === null
+        ? null
+        : toggle(
+            `每个${focusSlot?.label ?? '条目'}只出现一次`,
+            isUniqueWinner(item),
+            (checked) => commit(setUniqueWinner(app, item.id, checked)),
+          ),
+      batchSlot === null ? null : batchField(item, batchSlot),
       ...stageFields(item.stage).map((field) =>
         renderConfigField(item, field, item.stageConfig[item.stage]?.[field.key] ?? field.value),
       ),
@@ -701,29 +819,34 @@ function renderRail(item, summary, status, { footer = true } = {}) {
   );
 }
 
+/** 撤销最后一次开奖：走引擎，记录与名额一起回退。 */
 function undoLastResult() {
   const item = currentLottery();
   if (item === null || item.results.length === 0) {
     return;
   }
-  const last = item.results[item.results.length - 1];
-  commit({
-    ...app,
-    lotteries: app.lotteries.map((entry) =>
-      entry.id === item.id ? { ...entry, results: entry.results.slice(0, -1) } : entry,
-    ),
-  });
-  toast(`已撤销 ${last.prizeName} 的最后一抽`);
+  const run = runState(item);
+  const next = { ...run, results: run.results.slice(0, -1) };
+  const removed = run.results[run.results.length - 1];
+  commit(writeRunState(app, item.id, next));
+  const head = removed === undefined ? undefined : focusPick(removed, item.protocol);
+  toast(head ? `已撤销 ${head.name} 的最后一抽` : '已撤销最后一抽');
 }
 
-function statusText(_item, status, summary) {
+function statusText(item, status, summary) {
+  const focus = slotOf(item.protocol, protocolInfo(item.protocol).focus);
+  const label = focus?.label ?? '条目';
   if (status === 'done') {
-    return `已抽完，共 ${summary.handed} 人中奖`;
+    return `已抽完，共 ${summary.handed} 个${label}`;
   }
   if (status === 'running') {
     return `还剩 ${Math.max(0, summary.total - summary.handed)} 个名额`;
   }
-  return summary.people === 0 ? '还没有参与人' : '还没开始';
+  const first = summary.slots.find((slot) => slot.source === 'draw') ?? summary.slots[0];
+  if (first === undefined || first.poolId !== null) {
+    return '还没开始';
+  }
+  return `还没有给「${first.label}」选池`;
 }
 
 function renderConfigField(item, field, value) {
@@ -793,15 +916,21 @@ function writeStageConfig(item, key, value, stageId = item.stage, { rerender = t
   saveApp(app);
 }
 
-/* ---------- 名单详情 ---------- */
+/* ---------- 池详情 ---------- */
 
-function renderRosterPage() {
-  const item = currentRoster();
+function renderPoolPage() {
+  const item = currentPool();
   if (item === null) {
-    return emptyState('还没有名单', '导入一份含「姓名」列的 xlsx。', [
-      { label: '导入 xlsx', primary: true, onClick: () => pickFile('roster') },
+    return emptyState('还没有池', '导入一份含「姓名」或「奖品名称」列的 xlsx，或新建一个空池。', [
+      { label: '导入 xlsx', primary: true, onClick: () => pickFile('pool') },
+      { label: '新建', onClick: openPoolKindDialog },
     ]);
   }
+
+  const total = item.entries.reduce((sum, entry) => {
+    const capacity = capacityOf(entry);
+    return sum + (capacity === Infinity ? 0 : capacity);
+  }, 0);
 
   return h(
     'article',
@@ -813,93 +942,50 @@ function renderRosterPage() {
         class: 'detail-title',
         type: 'text',
         value: item.name,
-        'aria-label': '名单名称',
+        'aria-label': '池名称',
         onInput: (event) => {
-          app = updateRoster(app, item.id, { name: event.currentTarget.value });
+          app = updatePool(app, item.id, { name: event.currentTarget.value });
           saveApp(app);
         },
       }),
-      h('p', { class: 'detail-sub', text: `${item.people.length} 人` }),
+      h('p', {
+        class: 'detail-sub',
+        text:
+          item.kind === 'people'
+            ? `${KIND_LABELS[item.kind]} · ${item.entries.length} 条`
+            : `${KIND_LABELS[item.kind]} · ${item.entries.length} 条 · ${total} 个名额`,
+      }),
     ),
     h(
       'div',
       { class: 'detail-body' },
       section(
-        '参与人',
+        KIND_NAMES[item.kind],
         h(
           'div',
           { class: 'edit-list' },
-          item.people.length === 0
-            ? h('p', { class: 'note', text: '还没有人' })
-            : item.people.map((person) =>
-                h(
-                  'div',
-                  { class: 'edit-row' },
-                  h('input', {
-                    class: 'edit-input',
-                    type: 'text',
-                    value: person.name,
-                    'aria-label': '姓名',
-                    onInput: (event) =>
-                      writeRosterPeople(item, item.people.map((p) =>
-                        p.id === person.id ? { ...p, name: event.currentTarget.value } : p,
-                      ), { rerender: false }),
-                  }),
-                  h('input', {
-                    class: 'edit-input muted',
-                    type: 'text',
-                    value: person.dept ?? '',
-                    placeholder: '部门',
-                    'aria-label': '部门',
-                    onInput: (event) =>
-                      writeRosterPeople(item, item.people.map((p) =>
-                        p.id === person.id ? { ...p, dept: event.currentTarget.value } : p,
-                      ), { rerender: false }),
-                  }),
-                  h('input', {
-                    class: 'edit-input muted narrow',
-                    type: 'text',
-                    value: person.employeeId ?? '',
-                    placeholder: '工号',
-                    'aria-label': '工号',
-                    onInput: (event) =>
-                      writeRosterPeople(item, item.people.map((p) =>
-                        p.id === person.id ? { ...p, employeeId: event.currentTarget.value } : p,
-                      ), { rerender: false }),
-                  }),
-                  h('button', {
-                    class: 'edit-remove',
-                    type: 'button',
-                    text: '×',
-                    'aria-label': '删除这个人',
-                    onClick: () =>
-                      writeRosterPeople(item, item.people.filter((p) => p.id !== person.id)),
-                  }),
-                ),
-              ),
+          item.entries.length === 0
+            ? h('p', { class: 'note', text: `还没有${KIND_NAMES[item.kind]}` })
+            : item.entries.map((entry) => entryEditRow(item, entry)),
         ),
         h(
           'div',
           { class: 'links' },
-          h('button', { class: 'text-btn', type: 'button', text: '导入', onClick: () => pickFile('roster-replace') }),
-          h('button', { class: 'text-btn', type: 'button', text: '追加', onClick: () => pickFile('roster-append') }),
+          h('button', { class: 'text-btn', type: 'button', text: '导入', onClick: () => pickFile('pool-replace') }),
+          h('button', { class: 'text-btn', type: 'button', text: '追加', onClick: () => pickFile('pool-append') }),
           h('button', {
             class: 'text-btn',
             type: 'button',
             text: '导出',
             onClick: async () => {
-              downloadBytes(`${safeName(item.name)}.xlsx`, await buildRosterWorkbook(item));
+              downloadBytes(`${safeName(item.name)}.xlsx`, await buildPoolWorkbook(item));
             },
           }),
           h('button', {
             class: 'text-btn',
             type: 'button',
-            text: '加一人',
-            onClick: () =>
-              writeRosterPeople(item, [
-                ...item.people,
-                { id: `p${Date.now()}`, name: '新参与人', dept: '', employeeId: '' },
-              ]),
+            text: '加一条',
+            onClick: () => writePoolEntries(item, [...item.entries, draftEntry(item)]),
           }),
         ),
       ),
@@ -909,16 +995,16 @@ function renderRosterPage() {
         h('button', {
           class: 'text-btn danger',
           type: 'button',
-          text: '删除这份名单',
+          text: '删除这个池',
           onClick: () =>
             confirmSheet({
               title: `删除「${item.name}」？`,
-              message: '不能撤销。',
+              message: '不能撤销。已经复制进抽奖的那几份不受影响。',
               confirmLabel: '删除',
               danger: true,
               onConfirm: () => {
-                app = removeRoster(app, item.id);
-                ui.rosterId = app.rosters[0]?.id ?? null;
+                app = removePool(app, item.id);
+                ui.poolId = app.pools[0]?.id ?? null;
                 commit(app);
               },
             }),
@@ -928,18 +1014,111 @@ function renderRosterPage() {
   );
 }
 
-function writeRosterPeople(item, people, { rerender = true } = {}) {
-  const next = updateRoster(app, item.id, { people: cleanPeople(people) });
-  const after = next.rosters.find((entry) => entry.id === item.id)?.people.length ?? 0;
-  saveRows(next, rerender, after === item.people.length);
+/** 一条可编辑的条目：人写姓名/部门/工号，奖品与条目写名称/名额。 */
+function entryEditRow(pool, entry, { drawn = 0, rerender = false } = {}) {
+  const write = (patch, options) =>
+    writePoolEntries(
+      pool,
+      pool.entries.map((item) => (item.id === entry.id ? { ...item, ...patch } : item)),
+      options,
+    );
+
+  if (pool.kind === 'people') {
+    return h(
+      'div',
+      { class: 'edit-row' },
+      h('input', {
+        class: 'edit-input',
+        type: 'text',
+        value: entry.name,
+        'aria-label': '姓名',
+        onInput: (event) => write({ name: event.currentTarget.value }, { rerender }),
+      }),
+      h('input', {
+        class: 'edit-input muted',
+        type: 'text',
+        value: entry.meta?.dept ?? '',
+        placeholder: '部门',
+        'aria-label': '部门',
+        onInput: (event) =>
+          write({ meta: { ...entry.meta, dept: event.currentTarget.value } }, { rerender }),
+      }),
+      h('input', {
+        class: 'edit-input muted narrow',
+        type: 'text',
+        value: entry.meta?.employeeId ?? '',
+        placeholder: '工号',
+        'aria-label': '工号',
+        onInput: (event) =>
+          write({ meta: { ...entry.meta, employeeId: event.currentTarget.value } }, { rerender }),
+      }),
+      h('button', {
+        class: 'edit-remove',
+        type: 'button',
+        text: '×',
+        'aria-label': '删除这一条',
+        onClick: () => writePoolEntries(pool, pool.entries.filter((item) => item.id !== entry.id)),
+      }),
+    );
+  }
+
+  const capacity = capacityOf(entry);
+  return h(
+    'div',
+    { class: 'edit-row' },
+    h('input', {
+      class: 'edit-input',
+      type: 'text',
+      value: entry.name,
+      'aria-label': '名称',
+      onInput: (event) => write({ name: event.currentTarget.value }, { rerender }),
+    }),
+    h('span', { class: 'edit-progress', text: `${drawn} / ${capacity === Infinity ? '∞' : capacity}` }),
+    h('input', {
+      class: 'edit-input number',
+      type: 'number',
+      min: String(Math.max(1, drawn)),
+      value: String(capacity === Infinity ? 0 : capacity),
+      'aria-label': '名额',
+      onChange: (event) => {
+        const raw = Math.floor(Number(event.currentTarget.value));
+        const next = raw <= 0 ? null : Math.max(drawn, raw);
+        write({ capacity: next });
+      },
+    }),
+    h('button', {
+      class: 'edit-remove',
+      type: 'button',
+      text: '×',
+      'aria-label': '删除这一条',
+      onClick: () => writePoolEntries(pool, pool.entries.filter((item) => item.id !== entry.id)),
+    }),
+  );
+}
+
+function draftEntry(pool) {
+  const kind = kindOf(pool.kind);
+  return {
+    id: nextEntryId(pool),
+    name: kind === 'people' ? '新参与人' : kind === 'prizes' ? '新奖品' : '新条目',
+    weight: 1,
+    capacity: 1,
+    meta: {},
+  };
 }
 
 /**
- * 存一行。
+ * 存池里的条目。
  *
  * 输入框传 `rerender: false`：整页重绘会把输入框连同焦点一起换掉。
  * 行数变了（名字被清空，整行会消失）时仍然重绘。
  */
+function writePoolEntries(pool, entries, { rerender = true } = {}) {
+  const next = updatePool(app, pool.id, { entries: cleanEntries(entries, pool.kind) });
+  const after = next.pools.find((item) => item.id === pool.id)?.entries.length ?? 0;
+  saveRows(next, rerender, after === entries.length);
+}
+
 function saveRows(next, rerender, rowsSame) {
   if (rerender || !rowsSame) {
     commit(next);
@@ -949,138 +1128,11 @@ function saveRows(next, rerender, rowsSame) {
   saveApp(app);
 }
 
-/* ---------- 奖品详情 ---------- */
-
-function renderPrizeSetPage() {
-  const item = currentPrizeSet();
-  if (item === null) {
-    return emptyState('还没有奖品', '导入一份含「奖品名称」「数量」两列的 xlsx。', [
-      { label: '导入 xlsx', primary: true, onClick: () => pickFile('prize') },
-    ]);
-  }
-
-  const total = item.prizes.reduce((sum, prize) => sum + prize.count, 0);
-
-  return h(
-    'article',
-    { class: 'detail' },
-    h(
-      'header',
-      { class: 'detail-head' },
-      h('input', {
-        class: 'detail-title',
-        type: 'text',
-        value: item.name,
-        'aria-label': '奖品名称',
-        onInput: (event) => {
-          app = updatePrizeSet(app, item.id, { name: event.currentTarget.value });
-          saveApp(app);
-        },
-      }),
-      h('p', { class: 'detail-sub', text: `${item.prizes.length} 项 · ${total} 个名额` }),
-    ),
-    h(
-      'div',
-      { class: 'detail-body' },
-      section(
-        '奖项',
-        h(
-          'div',
-          { class: 'edit-list' },
-          item.prizes.length === 0
-            ? h('p', { class: 'note', text: '还没有奖品' })
-            : item.prizes.map((prize) =>
-                h(
-                  'div',
-                  { class: 'edit-row' },
-                  h('input', {
-                    class: 'edit-input',
-                    type: 'text',
-                    value: prize.name,
-                    'aria-label': '奖品名称',
-                    onInput: (event) =>
-                      writePrizeSetPrizes(item, item.prizes.map((p) =>
-                        p.id === prize.id ? { ...p, name: event.currentTarget.value } : p,
-                      ), { rerender: false }),
-                  }),
-                  h('input', {
-                    class: 'edit-input number',
-                    type: 'number',
-                    min: '1',
-                    value: String(prize.count),
-                    'aria-label': '名额',
-                    onChange: (event) =>
-                      writePrizeSetPrizes(item, item.prizes.map((p) =>
-                        p.id === prize.id
-                          ? { ...p, count: Math.max(1, Math.floor(Number(event.currentTarget.value) || 1)) }
-                          : p,
-                      )),
-                  }),
-                  h('button', {
-                    class: 'edit-remove',
-                    type: 'button',
-                    text: '×',
-                    'aria-label': '删除奖品',
-                    onClick: () =>
-                      writePrizeSetPrizes(item, item.prizes.filter((p) => p.id !== prize.id)),
-                  }),
-                ),
-              ),
-        ),
-        h(
-          'div',
-          { class: 'links' },
-          h('button', { class: 'text-btn', type: 'button', text: '导入', onClick: () => pickFile('prize-replace') }),
-          h('button', { class: 'text-btn', type: 'button', text: '追加', onClick: () => pickFile('prize-append') }),
-          h('button', {
-            class: 'text-btn',
-            type: 'button',
-            text: '导出',
-            onClick: async () => {
-              downloadBytes(`${safeName(item.name)}.xlsx`, await buildPrizeSetWorkbook(item));
-            },
-          }),
-          h('button', {
-            class: 'text-btn',
-            type: 'button',
-            text: '加一项',
-            onClick: () =>
-              writePrizeSetPrizes(item, [
-                ...item.prizes,
-                { id: `a${Date.now()}`, name: '新奖品', count: 1, weight: 1, level: '' },
-              ]),
-          }),
-        ),
-      ),
-      h(
-        'div',
-        { class: 'section section-plain' },
-        h('button', {
-          class: 'text-btn danger',
-          type: 'button',
-          text: '删除这套奖品',
-          onClick: () =>
-            confirmSheet({
-              title: `删除「${item.name}」？`,
-              message: '不能撤销。',
-              confirmLabel: '删除',
-              danger: true,
-              onConfirm: () => {
-                app = removePrizeSet(app, item.id);
-                ui.prizeSetId = app.prizeSets[0]?.id ?? null;
-                commit(app);
-              },
-            }),
-        }),
-      ),
-    ),
-  );
-}
-
-function writePrizeSetPrizes(item, prizes, { rerender = true } = {}) {
-  const next = updatePrizeSet(app, item.id, { prizes: cleanPrizes(prizes) });
-  const after = next.prizeSets.find((entry) => entry.id === item.id)?.prizes.length ?? 0;
-  saveRows(next, rerender, after === item.prizes.length);
+function createEmptyPool(kind) {
+  const [next, created] = addPool(app, { name: `新${KIND_NAMES[kind]}`, kind, entries: [] });
+  ui.poolId = created.id;
+  ui.view = 'pools';
+  commit(next);
 }
 
 /* ---------- 弹窗 ---------- */
@@ -1101,6 +1153,9 @@ function renderDialog() {
   if (dialog.kind === 'addMenu') {
     return renderAddMenu();
   }
+  if (dialog.kind === 'poolKind') {
+    return renderPoolKindSheet();
+  }
   if (dialog.kind === 'new') {
     return renderNewSheet();
   }
@@ -1112,6 +1167,9 @@ function renderDialog() {
   }
   if (dialog.kind === 'pools') {
     return renderPoolsSheet();
+  }
+  if (dialog.kind === 'poolSource') {
+    return renderPoolSourceSheet();
   }
   if (dialog.kind === 'results') {
     return renderResultsSheet();
@@ -1185,7 +1243,7 @@ function sheet({ title, sub, children, footer, wide = false }) {
 
 function renderAddMenu() {
   const label = VIEW_LABELS[ui.view];
-  const importTarget = ui.view === 'lotteries' ? 'lottery' : ui.view === 'rosters' ? 'roster' : 'prize';
+  const isPools = ui.view === 'pools';
   return h(
     'section',
     { class: 'action-sheet' },
@@ -1197,29 +1255,65 @@ function renderAddMenu() {
         class: 'action-item',
         type: 'button',
         text: '从 xlsx 导入',
-        onClick: () => pickFile(importTarget),
+        onClick: () => pickFile(isPools ? 'pool' : 'lottery'),
       }),
       h('button', {
         class: 'action-item',
         type: 'button',
         text: '新建',
         onClick: () => {
-          if (ui.view === 'lotteries') {
+          if (!isPools) {
             openNewDialog();
             return;
           }
-          ui.dialog = null;
-          if (ui.view === 'rosters') {
-            const [next, created] = addRoster(app, { name: '新名单', people: [] });
-            ui.rosterId = created.id;
-            commit(next);
-            return;
-          }
-          const [next, created] = addPrizeSet(app, { name: '新奖品', prizes: [] });
-          ui.prizeSetId = created.id;
-          commit(next);
+          openPoolKindDialog();
         },
       }),
+    ),
+    h(
+      'div',
+      { class: 'action-group' },
+      h('button', { class: 'action-item cancel', type: 'button', text: '取消', onClick: closeDialog }),
+    ),
+  );
+}
+
+/**
+ * 新建池：先问是哪种。
+ *
+ * 不预设「名单」—— 池的类型只是它默认长哪几列（姓名 / 数量 / 只有一个名称），
+ * 跟它在这场里填哪个槽没有关系，没有哪一种更「默认」。
+ */
+function openPoolKindDialog() {
+  ui.dialog = { kind: 'poolKind' };
+  render();
+}
+
+const POOL_KIND_HINTS = {
+  people: '姓名 / 部门 / 工号',
+  prizes: '奖品名称 / 数量 / 权重',
+  items: '只有一个名称，人和奖都能装',
+};
+
+function renderPoolKindSheet() {
+  return h(
+    'section',
+    { class: 'action-sheet' },
+    h('p', { class: 'action-title', text: '新建池' }),
+    h(
+      'div',
+      { class: 'action-group' },
+      KINDS.map((kind) =>
+        h('button', {
+          class: 'action-item',
+          type: 'button',
+          text: `${KIND_NAMES[kind]} · ${POOL_KIND_HINTS[kind]}`,
+          onClick: () => {
+            ui.dialog = null;
+            createEmptyPool(kind);
+          },
+        }),
+      ),
     ),
     h(
       'div',
@@ -1236,9 +1330,21 @@ function renderPreviewSheet() {
   }
   const { parsed, base, target } = pending;
   const duplicate = duplicateOf(target, base);
-  const people = parsed.people.length;
-  const prizes = parsed.prizes.length;
-  const total = parsed.prizes.reduce((sum, prize) => sum + prize.count, 0);
+  const protocol = protocolInfo(parsed.meta.protocol);
+  const bySlot = (key) => {
+    const id = parsed.meta.slots?.[key];
+    return id ? parsed.pools.find((pool) => pool.id === id) ?? null : null;
+  };
+  const boundCount = protocol.slots.filter((slot) => bySlot(slot.key) !== null).length;
+  const total = parsed.pools.reduce(
+    (sum, pool) =>
+      sum +
+      pool.entries.reduce((inner, entry) => {
+        const capacity = capacityOf(entry);
+        return inner + (capacity === Infinity ? 0 : capacity);
+      }, 0),
+    0,
+  );
 
   return sheet({
     title: '导入',
@@ -1247,9 +1353,10 @@ function renderPreviewSheet() {
       h(
         'div',
         { class: 'facts' },
-        fact('参与人', `${people} 人`),
-        fact('奖项', `${prizes} 项`),
+        fact('池', `${parsed.pools.length} 个`),
+        fact('条目', `${parsed.pools.reduce((sum, pool) => sum + pool.entries.length, 0)} 条`),
         fact('名额', `${total} 个`),
+        fact('绑定', `${boundCount} / ${protocol.slots.length}`),
         fact('开奖记录', `${parsed.results.length} 条`),
       ),
       parsed.problems.length > 0
@@ -1385,18 +1492,19 @@ function renderStageSheet() {
     return null;
   }
   const stageId = ui.dialog.stage ?? item.stage;
-  const stage = stageInfo(stageId);
+  /** 只列这个抽法下能用的形态：能力协商的结果就是这张表。 */
+  const usable = stagesFor(protocolInfo(item.protocol));
 
   return sheet({
     title: '形态',
-    sub: item.title,
+    sub: `${item.title} · ${protocolInfo(item.protocol).label}`,
     wide: true,
     children: [
       h('div', { class: 'stage-preview', id: 'stage-preview' }),
       h(
         'div',
         { class: 'stage-tabs' },
-        ...STAGES.map((entry) =>
+        ...usable.map((entry) =>
           h(
             'button',
             {
@@ -1418,6 +1526,10 @@ function renderStageSheet() {
           ),
         ),
       ),
+      h('p', {
+        class: 'sheet-note',
+        text: `这个抽法下能用 ${usable.length} 种形态；换抽法时配不上的会自动换掉。`,
+      }),
     ],
     footer: [
       h('button', {
@@ -1431,7 +1543,7 @@ function renderStageSheet() {
 }
 
 /**
- * 弹窗里的预览：用这张抽奖自己的名单跑一遍形态，能一直动。
+ * 弹窗里的预览：用这张抽奖自己的池跑一遍形态，能一直动。
  * 关弹窗、换形态、页面重渲染时都要销毁，否则动画会留在后台。
  */
 function mountPreview() {
@@ -1441,17 +1553,21 @@ function mountPreview() {
   }
 
   let stageId;
-  let prizes;
-  let people;
+  let protocolId;
+  let pools;
+  let slots;
   let config;
+  let batch = 1;
   if (ui.dialog?.kind === 'new') {
     const draft = ui.draft;
     if (draft === null) {
       return;
     }
     stageId = draft.stage;
-    prizes = app.prizeSets.find((item) => item.id === draft.prizeSetId)?.prizes ?? [];
-    people = app.rosters.find((item) => item.id === draft.rosterId)?.people ?? [];
+    protocolId = draft.protocol;
+    pools = draftPools(draft);
+    slots = draft.slots;
+    batch = draft.batchSize ?? 1;
     config = {};
   } else if (ui.dialog?.kind === 'stage') {
     const item = lotteryById(app, ui.dialog.lotteryId);
@@ -1459,72 +1575,62 @@ function mountPreview() {
       return;
     }
     stageId = ui.dialog.stage;
-    prizes = item.prizes;
-    people = item.people;
+    protocolId = item.protocol;
+    pools = item.pools;
+    slots = item.slots;
+    batch = item.batch;
     config = item.stageConfig[stageId] ?? {};
   } else {
     return;
   }
 
-  const mode = stageMode(stageId);
-  const samplePrizes = prizes.length > 0
-    ? prizes
-    : [
-        { id: 'p1', name: '一等奖', count: 1, weight: 1 },
-        { id: 'p2', name: '二等奖', count: 3, weight: 1 },
-        { id: 'p3', name: '阳光普照', count: 8, weight: 1 },
-      ];
-  const samplePeople = people.length > 0
-    ? people
-    : ['张三', '李四', '王五', '赵六', '钱七', '孙八', '周九', '吴十'].map((name, index) => ({
-        id: `t${index}`,
-        name,
-        dept: '演示名单',
-        employeeId: `A${100 + index}`,
-      }));
-
-  // 直接铺在预览框里：形态自己按宿主尺寸排版，整屏界面与抽奖页里一样
   ui.preview = createStage(stageId, host, config, {});
-  ui.preview.update(previewView(mode, samplePrizes, samplePeople));
+  ui.preview?.update(previewView(pools, slots, batch, protocolId));
 }
 
-/** 预览用的一份快照：结构与抽奖页交给形态的那份一致。 */
-function previewView(mode, prizes, people) {
+/**
+ * 预览用的一份快照：结构与抽奖页交给形态的那份一致。
+ *
+ * 全按抽法取：锚槽、焦点槽、盘面槽，池一律按**绑定**找。池里没东西时给一份
+ * 中性的示意盘面，不拿「一等奖 / 张三」当默认值。
+ */
+function previewView(pools, slots = {}, batch = 1, protocolId = undefined) {
+  const protocol = protocolInfo(protocolId);
+  const anchorSlot = protocol.slots.find((slot) => slot.source === 'fixed') ?? protocol.slots[0];
+  const focusSlot = slotOf(protocol.id, protocol.focus) ?? protocol.slots[0];
+  const spin = spinSlot(protocol.id);
+  const poolOf = (key) => (pools ?? []).find((pool) => pool.id === slots?.[key]) ?? null;
+
+  const anchorEntries = poolOf(anchorSlot.key)?.entries ?? [];
+  const focusEntries = poolOf(focusSlot.key)?.entries ?? [];
+  const spinEntries = poolOf(spin.key)?.entries ?? [];
+  const sampleLabels = ['一号', '二号', '三号', '四号', '五号', '六号', '七号', '八号'];
+
+  const focusLeft = focusEntries.reduce((sum, entry) => {
+    const capacity = capacityOf(entry);
+    return sum + (capacity === Infinity ? 1 : capacity);
+  }, 0);
+
   return {
     title: '预览',
-    mode,
+    focus: focusSlot.key,
+    anchor: anchorSlot.key,
+    anchorLabel: anchorSlot.label,
+    anchorName: anchorEntries[0]?.name ?? '—',
+    anchorNote:
+      anchorEntries.length > 0 ? `${anchorEntries.length} 条可选` : `还没有${anchorSlot.label}`,
+    focusLabel: focusSlot.label,
+    focusLeft,
+    focusCount: focusEntries.length,
     spinning: false,
     revealed: false,
     allDrawn: false,
     canDraw: true,
     handed: 0,
-    totalSlots: prizes.reduce((sum, prize) => sum + prize.count, 0),
-    batch: 1,
-    prizeName: prizes[0]?.name ?? '',
-    prizeRemaining: prizes[0]?.count ?? 0,
-    personName: people[0]?.name ?? '',
-    personDept: people[0]?.dept ?? '',
-    prizeCount: prizes.length,
-    peopleLeft: people.length,
-    labels: mode === MODE.PERSON ? prizes.map((prize) => prize.name) : people.map((person) => person.name),
-    weights: mode === MODE.PERSON ? prizes.map(() => 1) : [],
-    prizes: prizes.map((prize, index) => ({
-      id: prize.id,
-      name: prize.name,
-      count: prize.count,
-      drawn: 0,
-      remaining: prize.count,
-      active: index === 0,
-    })),
-    people: mode === MODE.PERSON
-      ? people.map((person, index) => ({
-          id: person.id,
-          name: person.name,
-          dept: person.dept ?? '',
-          employeeId: person.employeeId ?? '',
-          picked: index === 0,
-        }))
-      : [],
+    batch: Math.max(1, Math.min(MAX_BATCH, Number(batch) || 1)),
+    labels: spinEntries.length > 0 ? spinEntries.map((entry) => entry.name) : sampleLabels,
+    weights: (spinEntries.length > 0 ? spinEntries : sampleLabels).map((entry) => entry.weight ?? 1),
+    fixed: [],
   };
 }
 
@@ -1538,30 +1644,58 @@ function destroyPreview() {
 /* ---------- 新建抽奖 ---------- */
 
 function openNewDialog() {
+  const protocol = PROTOCOLS[0].id;
   ui.draft = {
     title: '',
-    stage: STAGES[0].id,
+    protocol,
+    stage: STAGES[0]?.id ?? '',
     uniqueWinner: true,
-    rosterId: app.rosters[0]?.id ?? '',
-    prizeSetId: app.prizeSets[0]?.id ?? '',
+    slots: defaultSlots(app.pools, protocol),
+    batchSize: null,
   };
   ui.dialog = { kind: 'new' };
   render();
 }
 
+/** 草稿里绑到的池（去重、按抽法的槽顺序）；一个都没绑就是空的一场。 */
+function draftPools(draft) {
+  const used = new Map();
+  for (const slot of protocolInfo(draft.protocol).slots) {
+    const chosen = app.pools.find((pool) => pool.id === draft.slots[slot.key]);
+    if (chosen !== undefined && !used.has(chosen.id)) {
+      used.set(chosen.id, chosen);
+    }
+  }
+  return [...used.values()];
+}
+
 function renderNewSheet() {
   const draft = ui.draft;
+  if (draft === null) {
+    return null;
+  }
   /** 打字时只改草稿：整页重绘会把输入框连同焦点一起换掉，弹窗动画也会重播。 */
   const patch = (next) => {
     Object.assign(ui.draft, next);
   };
-  /** 换名单或奖品只影响左边预览，重挂一次就够了。 */
+  /** 换池或换抽法只影响左边预览，重挂一次就够了。 */
   const refreshPreview = () => {
     destroyPreview();
     mountPreview();
   };
-  const roster = app.rosters.find((item) => item.id === draft.rosterId);
-  const prizeSet = app.prizeSets.find((item) => item.id === draft.prizeSetId);
+  const protocol = protocolInfo(draft.protocol);
+  const stageOptions = stagesFor(protocol);
+
+  /** 还有槽没选池就建不了 —— 建出来也抽不动，不如在这里拦住。 */
+  const missingSlot = () =>
+    protocolInfo(draft.protocol).slots.some((slot) => (draft.slots[slot.key] ?? '') === '');
+  /** 下拉一改就同步按钮，不整页重绘（预览会闪、输入框会丢焦点）。 */
+  const syncCreate = () => {
+    const button = document.querySelector('#modal .form-actions .btn.primary');
+    if (button !== null) {
+      button.disabled = missingSlot();
+    }
+  };
 
   return sheet({
     title: '新建抽奖',
@@ -1577,9 +1711,34 @@ function renderNewSheet() {
           h(
             'div',
             { class: 'field' },
+            h('span', { class: 'field-label', text: '抽法' }),
+            choices(
+              PROTOCOLS.map((item) => ({ value: item.id, label: item.label })),
+              draft.protocol,
+              (value) => {
+                patch({ protocol: value });
+                const nextStage = stagesFor(protocolInfo(value))[0]?.id;
+                if (nextStage !== undefined) {
+                  patch({ stage: nextStage });
+                }
+                // 槽的键集合可能跟着抽法变；已有的绑定留着，缺的按下标配
+                const kept = {};
+                for (const slot of protocolInfo(value).slots) {
+                  if (draft.slots[slot.key] !== undefined) {
+                    kept[slot.key] = draft.slots[slot.key];
+                  }
+                }
+                draft.slots = { ...defaultSlots(app.pools, value), ...kept };
+                render();
+              },
+            ),
+          ),
+          h(
+            'div',
+            { class: 'field' },
             h('span', { class: 'field-label', text: '形态' }),
             choices(
-              STAGES.map((stage) => ({ value: stage.id, label: stage.label })),
+              stageOptions.map((stage) => ({ value: stage.id, label: stage.label })),
               draft.stage,
               (value, button) => {
                 patch({ stage: value });
@@ -1603,55 +1762,64 @@ function renderNewSheet() {
               onInput: (event) => patch({ title: event.currentTarget.value }),
             }),
           ),
-          h(
-            'div',
-            { class: 'field' },
-            h('span', { class: 'field-label', text: '名单' }),
-            h(
-              'select',
-              {
-                class: 'field-select',
-                'aria-label': '名单',
-                onChange: (event) => {
-                  patch({ rosterId: event.currentTarget.value });
-                  refreshPreview();
+          ...protocol.slots.map((slot) => {
+            const value = draft.slots[slot.key] ?? '';
+            return h(
+              'div',
+              { class: 'field' },
+              h(
+                'span',
+                { class: 'field-label' },
+                h('span', { text: slot.label }),
+                slot.hint ? h('span', { class: 'field-hint', text: slot.hint }) : null,
+              ),
+              h(
+                'select',
+                {
+                  class: 'field-select',
+                  'aria-label': slot.label,
+                  onChange: (event) => {
+                    draft.slots[slot.key] = event.currentTarget.value;
+                    syncCreate();
+                    refreshPreview();
+                  },
                 },
-              },
-              h('option', { value: '', text: '现场名单', selected: draft.rosterId === '' }),
-              app.rosters.map((item) =>
-                h('option', {
-                  value: item.id,
-                  text: `${item.name} · ${item.people.length} 人`,
-                  selected: item.id === draft.rosterId,
+                h('option', { value: '', text: '未绑定', selected: value === '' }),
+                app.pools.map((pool) =>
+                  h('option', {
+                    value: pool.id,
+                    text: `${pool.name} · ${pool.entries.length} 条`,
+                    selected: pool.id === value,
+                  }),
+                ),
+              ),
+            );
+          }),
+          batchSlotOf(protocol.id) === null
+            ? null
+            : h(
+                'div',
+                { class: 'field' },
+                h(
+                  'span',
+                  { class: 'field-label' },
+                  h('span', { text: '一次抽' }),
+                  h('span', { class: 'field-hint', text: batchSlotOf(protocol.id).label }),
+                ),
+                h('input', {
+                  class: 'field-input',
+                  type: 'number',
+                  min: '1',
+                  max: String(MAX_BATCH),
+                  step: '1',
+                  value: String(draft.batchSize ?? 1),
+                  'aria-label': '一次抽几个',
+                  onInput: (event) => {
+                    draft.batchSize = event.currentTarget.value === '' ? null : Number(event.currentTarget.value);
+                  },
                 }),
               ),
-            ),
-          ),
-          h(
-            'div',
-            { class: 'field' },
-            h('span', { class: 'field-label', text: '奖品' }),
-            h(
-              'select',
-              {
-                class: 'field-select',
-                'aria-label': '奖品',
-                onChange: (event) => {
-                  patch({ prizeSetId: event.currentTarget.value });
-                  refreshPreview();
-                },
-              },
-              h('option', { value: '', text: '现场奖品', selected: draft.prizeSetId === '' }),
-              app.prizeSets.map((item) =>
-                h('option', {
-                  value: item.id,
-                  text: `${item.name} · ${item.prizes.length} 项`,
-                  selected: item.id === draft.prizeSetId,
-                }),
-              ),
-            ),
-          ),
-          toggle('不重复中奖', draft.uniqueWinner, (checked, button) => {
+          toggle(`每个${slotOf(draft.protocol, protocolInfo(draft.protocol).focus)?.label ?? '条目'}只出现一次`, draft.uniqueWinner, (checked, button) => {
             patch({ uniqueWinner: checked });
             paintToggle(button, checked);
           }),
@@ -1663,14 +1831,17 @@ function renderNewSheet() {
               class: 'btn primary',
               type: 'button',
               text: '创建',
+              disabled: protocol.slots.some((slot) => (draft.slots[slot.key] ?? '') === ''),
               onClick: () => {
                 const [next, created] = createLottery(app, {
                   title: draft.title,
+                  protocol: draft.protocol,
                   stage: draft.stage,
                   stageConfig: {},
                   uniqueWinner: draft.uniqueWinner,
-                  rosterId: draft.rosterId,
-                  prizeSetId: draft.prizeSetId,
+                  slots: draft.slots,
+                  batchSize: draft.batchSize,
+                  pools: draftPools(draft),
                 });
                 app = next;
                 ui.lotteryId = created.id;
@@ -1687,12 +1858,10 @@ function renderNewSheet() {
   });
 }
 
-/* ---------- 参与人与奖品 ---------- */
+/* ---------- 抽奖里的池 ---------- */
 
-function openPools(item, tab) {
-  if (tab === 'people' || tab === 'prizes') {
-    ui.poolsTab = tab;
-  }
+function openPools(item, poolId) {
+  ui.editPoolId = poolId ?? item.pools[0]?.id ?? null;
   ui.dialog = { kind: 'pools', lotteryId: item.id };
   render();
 }
@@ -1702,126 +1871,109 @@ function renderPoolsSheet() {
   if (item === null) {
     return null;
   }
-  const summary = lotterySummary(item);
-  const tab = ui.poolsTab;
+  const poolId = item.pools.some((pool) => pool.id === ui.editPoolId)
+    ? ui.editPoolId
+    : item.pools[0]?.id ?? null;
+  const pool = item.pools.find((entry) => entry.id === poolId) ?? null;
+  const slots = protocolInfo(item.protocol).slots;
+  const boundTo = pool === null ? [] : slotsOfPool(item, pool.id);
 
   return sheet({
-    title: '参与人与奖品',
+    title: '池',
     sub: item.title,
     wide: true,
     children: [
-      choices(
-        [
-          { value: 'people', label: `参与人 ${summary.people}` },
-          { value: 'prizes', label: `奖品 ${summary.prizes}` },
-        ],
-        tab,
-        (value) => {
-          ui.poolsTab = value;
-          render();
-        },
-      ),
-      tab === 'people'
-        ? h(
+      item.pools.length <= 1
+        ? null
+        : choices(
+            item.pools.map((entry) => {
+              const roles = slotsOfPool(item, entry.id).map(
+                (key) => slotOf(item.protocol, key)?.label ?? key,
+              );
+              return {
+                value: entry.id,
+                label: `${entry.name} · ${roles.length > 0 ? roles.join('/') : '未参与'}`,
+              };
+            }),
+            poolId,
+            (value) => {
+              ui.editPoolId = value;
+              render();
+            },
+          ),
+      pool === null
+        ? h('p', { class: 'note', text: '这场抽奖还没有池' })
+        : h(
             'div',
-            { class: 'edit-list' },
-            item.people.map((person) =>
-              h(
-                'div',
-                { class: 'edit-row' },
-                h('input', {
-                  class: 'edit-input',
-                  type: 'text',
-                  value: person.name,
-                  'aria-label': '姓名',
-                  onInput: (event) =>
-                    writeLotteryPeople(item, item.people.map((p) =>
-                      p.id === person.id ? { ...p, name: event.currentTarget.value } : p,
-                    ), { rerender: false }),
-                }),
-                h('input', {
-                  class: 'edit-input muted',
-                  type: 'text',
-                  value: person.dept ?? '',
-                  placeholder: '部门',
-                  'aria-label': '部门',
-                  onInput: (event) =>
-                    writeLotteryPeople(item, item.people.map((p) =>
-                      p.id === person.id ? { ...p, dept: event.currentTarget.value } : p,
-                    ), { rerender: false }),
-                }),
-                h('button', {
-                  class: 'edit-remove',
-                  type: 'button',
-                  text: '×',
-                  onClick: () =>
-                    writeLotteryPeople(item, item.people.filter((p) => p.id !== person.id)),
-                }),
-              ),
+            { class: 'field' },
+            h(
+              'span',
+              { class: 'field-label' },
+              h('span', { text: '用于' }),
+              h('span', { class: 'field-hint', text: '一个池可以同时填两个槽' }),
             ),
-          )
+            h(
+              'div',
+              { class: 'choices' },
+              ...slots.map((slot) => {
+                const on = boundTo.includes(slot.key);
+                return h('button', {
+                  class: `choice${on ? ' active' : ''}`,
+                  type: 'button',
+                  'aria-pressed': on ? 'true' : 'false',
+                  text: slot.label,
+                  onClick: () =>
+                    commit(setLotteryBinding(app, item.id, slot.key, on ? null : pool.id)),
+                });
+              }),
+              boundTo.length === 0 ? h('span', { class: 'note', text: '未参与' }) : null,
+            ),
+          ),
+      pool === null
+        ? null
         : h(
             'div',
             { class: 'edit-list' },
-            item.prizes.map((prize) => {
-              const drawn = item.results
-                .filter((result) => result.prizeId === prize.id)
-                .reduce((sum, result) => sum + result.winners.length, 0);
-              return h(
-                'div',
-                { class: 'edit-row' },
-                h('input', {
-                  class: 'edit-input',
-                  type: 'text',
-                  value: prize.name,
-                  'aria-label': '奖品名称',
-                  onInput: (event) =>
-                    writeLotteryPrizes(item, item.prizes.map((p) =>
-                      p.id === prize.id ? { ...p, name: event.currentTarget.value } : p,
-                    ), { rerender: false }),
-                }),
-                h('span', { class: 'edit-progress', text: `${drawn} / ${prize.count}` }),
-                h('input', {
-                  class: 'edit-input number',
-                  type: 'number',
-                  min: String(Math.max(1, drawn)),
-                  value: String(prize.count),
-                  'aria-label': '名额',
-                  onChange: (event) =>
-                    writeLotteryPrizes(item, item.prizes.map((p) =>
-                      p.id === prize.id
-                        ? { ...p, count: Math.max(drawn, Math.floor(Number(event.currentTarget.value) || 1)) }
-                        : p,
-                    )),
-                }),
-                h('button', {
-                  class: 'edit-remove',
-                  type: 'button',
-                  text: '×',
-                  onClick: () =>
-                    writeLotteryPrizes(item, item.prizes.filter((p) => p.id !== prize.id)),
-                }),
-              );
-            }),
+            pool.entries.map((entry) =>
+              entryEditRow(pool, entry, {
+                drawn: poolProgress(item, pool).get(entry.id) ?? 0,
+              }),
+            ),
           ),
     ],
     footer: [
       h('button', {
-        class: 'btn plain',
+        class: 'btn plain small',
         type: 'button',
-        text: tab === 'people' ? '加一人' : '加一项',
+        text: '加池',
+        onClick: () => openPoolSource(item),
+      }),
+      pool === null
+        ? null
+        : h('button', {
+            class: 'btn plain small',
+            type: 'button',
+            text: '移除这个池',
+            onClick: () => {
+              const [next, error] = removeLotteryPool(app, item.id, pool.id);
+              if (error !== null) {
+                toast(error);
+                return;
+              }
+              ui.editPoolId = null;
+              commit(next);
+            },
+          }),
+      h('span', { class: 'foot-spacer' }),
+      h('button', {
+        class: 'btn plain small',
+        type: 'button',
+        text: '加一条',
         onClick: () => {
-          if (tab === 'people') {
-            writeLotteryPeople(item, [
-              ...item.people,
-              { id: `p${Date.now()}`, name: '新参与人', dept: '', employeeId: '' },
-            ]);
-          } else {
-            writeLotteryPrizes(item, [
-              ...item.prizes,
-              { id: `a${Date.now()}`, name: '新奖品', count: 1, weight: 1, level: '' },
-            ]);
+          if (pool === null) {
+            return;
           }
+          writeLotteryEntries(item, pool, [...pool.entries, draftEntry(pool)]);
         },
       }),
       h('button', { class: 'btn primary', type: 'button', text: '完成', onClick: closeDialog }),
@@ -1829,16 +1981,73 @@ function renderPoolsSheet() {
   });
 }
 
-function writeLotteryPeople(item, people, { rerender = true } = {}) {
-  const next = patchLotteryPools(app, item.id, { people: cleanPeople(people) });
-  const after = next.lotteries.find((entry) => entry.id === item.id)?.people.length ?? 0;
-  saveRows(next, rerender, after === item.people.length);
+/** 加池：从素材池复制一份，或者建一个空池。 */
+function openPoolSource(item) {
+  ui.dialog = { kind: 'poolSource', lotteryId: item.id };
+  render();
 }
 
-function writeLotteryPrizes(item, prizes, { rerender = true } = {}) {
-  const next = patchLotteryPools(app, item.id, { prizes: cleanPrizes(prizes) });
-  const after = next.lotteries.find((entry) => entry.id === item.id)?.prizes.length ?? 0;
-  saveRows(next, rerender, after === item.prizes.length);
+function renderPoolSourceSheet() {
+  const item = lotteryById(app, ui.dialog.lotteryId);
+  if (item === null) {
+    return null;
+  }
+  const inside = new Set(item.pools.map((pool) => pool.id));
+
+  return sheet({
+    title: '加池',
+    sub: item.title,
+    children: [
+      h('p', { class: 'sheet-note', text: '复制一份素材池进来，或者直接建一个空的。改副本不影响素材。' }),
+      app.pools.length === 0
+        ? h('p', { class: 'note', text: '「池」里还没有素材池' })
+        : h(
+            'div',
+            { class: 'action-group' },
+            app.pools.map((pool) =>
+              h('button', {
+                class: 'action-item',
+                type: 'button',
+                disabled: inside.has(pool.id),
+                text: `${pool.name} · ${pool.entries.length} 条${inside.has(pool.id) ? '（已在）' : ''}`,
+                onClick: () => {
+                  const [next, added] = addLotteryPool(app, item.id, { sourceId: pool.id });
+                  ui.editPoolId = added?.id ?? null;
+                  ui.dialog = { kind: 'pools', lotteryId: item.id };
+                  commit(next);
+                },
+              }),
+            ),
+          ),
+      h(
+        'div',
+        { class: 'action-group' },
+        KINDS.map((kind) =>
+          h('button', {
+            class: 'action-item',
+            type: 'button',
+            text: `新建空${KIND_NAMES[kind]}`,
+            onClick: () => {
+              const [next, added] = addLotteryPool(app, item.id, { kind });
+              ui.editPoolId = added?.id ?? null;
+              ui.dialog = { kind: 'pools', lotteryId: item.id };
+              commit(next);
+            },
+          }),
+        ),
+      ),
+    ],
+    footer: [h('button', { class: 'btn plain', type: 'button', text: '取消', onClick: closeDialog })],
+  });
+}
+
+function writeLotteryEntries(item, pool, entries, { rerender = true } = {}) {
+  const next = patchLotteryPools(app, item.id, pool.id, entries);
+  const after =
+    next.lotteries
+      .find((lottery) => lottery.id === item.id)
+      ?.pools.find((entry) => entry.id === pool.id)?.entries.length ?? 0;
+  saveRows(next, rerender, after === entries.length);
 }
 
 /* ---------- 结果 ---------- */
@@ -1855,26 +2064,37 @@ function openResults() {
   render();
 }
 
+function resultRowsOf(item) {
+  const { anchor, focus } = rolesOf(item);
+  const rows = [];
+  let order = 1;
+  for (const result of item.results) {
+    const anchorPick =
+      anchor === null ? null : result.picks.find((pick) => pick.slot === anchor.key) ?? null;
+    const heads =
+      focus === null ? [] : result.picks.filter((pick) => pick.slot === focus.key);
+    for (const pick of heads.length > 0 ? heads : [anchorPick]) {
+      if (pick !== null && pick !== undefined) {
+        rows.push({ order: order++, result, pick, anchor: anchorPick });
+      }
+    }
+  }
+  return rows;
+}
+
 function renderResultsSheet() {
   const item = lotteryById(app, ui.dialog.lotteryId);
   if (item === null) {
     return null;
   }
-  const rows = [];
-  let order = 1;
-  for (const result of item.results) {
-    for (const winner of result.winners) {
-      rows.push({ order: order++, result, winner });
-    }
-  }
-
+  const rows = resultRowsOf(item);
   const picked = ui.resultsPicked;
   const editing = ui.resultsEditing;
   const allPicked = rows.length > 0 && rows.every((row) => picked.has(rowKey(row)));
 
   return sheet({
     title: '开奖结果',
-    sub: `${item.title} · ${rows.length} 人`,
+    sub: `${item.title} · ${rows.length} 条`,
     wide: true,
     children: [
       h(
@@ -1882,7 +2102,7 @@ function renderResultsSheet() {
         { class: 'result-tools' },
         choices(
           [
-            { value: 'prize', label: '按奖项' },
+            { value: 'anchor', label: `按${rolesOf(item).anchor?.label ?? '分组'}` },
             { value: 'time', label: '按时间' },
           ],
           ui.resultsTab,
@@ -1892,8 +2112,8 @@ function renderResultsSheet() {
           },
         ),
       ),
-      ui.resultsTab === 'prize'
-        ? resultsByPrize(item, rows)
+      ui.resultsTab === 'anchor'
+        ? resultsByAnchor(item, rows)
         : resultsByTime(rows),
     ],
     footer: editing
@@ -1969,10 +2189,10 @@ function renderResultsSheet() {
 }
 
 function rowKey(row) {
-  return `${row.result.id}:${row.winner.personId}`;
+  return `${row.result.id}:${row.pick.poolId}:${row.pick.entryId}`;
 }
 
-/** 撤销选中（单选或多选）的中奖记录：只去掉记录，这些人回到池子。 */
+/** 撤销选中的中奖记录：只去掉记录，这些条目回到池子。 */
 function undoPicked() {
   const item = lotteryById(app, ui.dialog?.lotteryId);
   if (item === null || ui.resultsPicked.size === 0) {
@@ -1980,22 +2200,28 @@ function undoPicked() {
   }
   let state = runState(item);
   const targets = [...ui.resultsPicked].reverse();
+  let done = 0;
   for (const key of targets) {
-    const [resultId, personId] = key.split(':');
+    const [resultId, poolId, entryId] = [
+      key.slice(0, key.indexOf(':')),
+      key.slice(key.indexOf(':') + 1, key.lastIndexOf(':')),
+      key.slice(key.lastIndexOf(':') + 1),
+    ];
     const stillThere = state.results.some(
-      (result) => result.id === resultId && result.winners.some((winner) => winner.personId === personId),
+      (result) => result.id === resultId && result.picks.some((pick) => pick.poolId === poolId && pick.entryId === entryId),
     );
     if (!stillThere) {
       continue;
     }
-    state = undoWinner(state, resultId, personId);
+    state = undoPick(state, resultId, poolId, entryId);
+    done += 1;
   }
   ui.resultsPicked = new Set();
   ui.resultsEditing = false;
   app = writeRunState(app, item.id, state);
   saveApp(app);
   render();
-  toast(`已撤销 ${targets.length} 条记录`);
+  toast(`已撤销 ${done} 条记录`);
 }
 
 function resultCard(row) {
@@ -2021,16 +2247,22 @@ function resultCard(row) {
     editing ? 'button' : 'div',
     props,
     selected ? h('span', { class: 'tile-check', text: '✓' }) : null,
-    h('span', { class: 'tile-name', text: row.winner.name }),
-    h('span', { class: 'tile-meta', text: row.result.prizeName }),
-    h('span', { class: 'tile-time', text: [row.winner.dept, clockTime(row.result.at)].filter(Boolean).join(' · ') }),
+    h('span', { class: 'tile-name', text: row.pick.name }),
+    h('span', { class: 'tile-meta', text: row.anchor?.name ?? '' }),
+    h('span', { class: 'tile-time', text: [row.pick.meta?.dept, clockTime(row.result.at)].filter(Boolean).join(' · ') }),
   );
 }
 
-function resultsByPrize(item, rows) {
-  const groups = item.prizes
-    .map((prize) => ({ prize, rows: rows.filter((row) => row.result.prizeId === prize.id) }))
+function resultsByAnchor(item, rows) {
+  const anchor = rolesOf(item).anchor;
+  const pool = anchor === null ? null : poolOfSlot(item, anchor.key);
+  const groups = (pool?.entries ?? [])
+    .map((entry) => ({ entry, rows: rows.filter((row) => row.anchor?.entryId === entry.id) }))
     .filter((group) => group.rows.length > 0);
+  const loose = rows.filter((row) => row.anchor === null || row.anchor === undefined);
+  if (loose.length > 0) {
+    groups.push({ entry: { id: 'none', name: '未分组' }, rows: loose });
+  }
 
   return h(
     'div',
@@ -2042,8 +2274,8 @@ function resultsByPrize(item, rows) {
         h(
           'header',
           { class: 'group-head' },
-          h('h3', { class: 'group-title', text: group.prize.name }),
-          h('span', { class: 'group-count', text: `${group.rows.length} / ${group.prize.count} 个名额` }),
+          h('h3', { class: 'group-title', text: group.entry.name }),
+          h('span', { class: 'group-count', text: `${group.rows.length} 条` }),
         ),
         h(
           'div',
@@ -2096,11 +2328,8 @@ function duplicateOf(target, base) {
   if (target === 'lottery') {
     return app.lotteries.find((item) => item.title === base) ?? null;
   }
-  if (target === 'roster') {
-    return app.rosters.find((item) => item.name === base) ?? null;
-  }
-  if (target === 'prize') {
-    return app.prizeSets.find((item) => item.name === base) ?? null;
+  if (target === 'pool') {
+    return app.pools.find((item) => item.name === base) ?? null;
   }
   return null;
 }
@@ -2109,10 +2338,7 @@ function uniqueNameFor(target, base) {
   if (target === 'lottery') {
     return uniqueName(app.lotteries, base, (item) => item.title);
   }
-  if (target === 'roster') {
-    return uniqueName(app.rosters, base);
-  }
-  return uniqueName(app.prizeSets, base);
+  return uniqueName(app.pools, base);
 }
 
 function applyImport(name) {
@@ -2125,44 +2351,35 @@ function applyImport(name) {
   ui.dialog = null;
 
   if (target === 'lottery') {
+    const slots = parsed.meta.slots ?? defaultSlots(parsed.pools, parsed.meta.protocol);
     const [next, created] = createLottery(app, {
       title: name,
-      mode: parsed.meta.mode,
+      protocol: parsed.meta.protocol,
       stage: parsed.meta.stage,
       stageConfig: parsed.meta.stageConfig,
-      batch: parsed.meta.batch,
       uniqueWinner: parsed.meta.uniqueWinner,
-      prizes: parsed.prizes,
-      people: parsed.people,
+      pools: parsed.pools,
+      slots,
+      batchSize: parsed.meta.batchSize,
       results: parsed.results,
     });
     ui.lotteryId = created.id;
     ui.view = 'lotteries';
     commit(next);
-    toast(`已导入 ${parsed.people.length} 人与 ${parsed.prizes.length} 个奖项`);
+    toast(`已导入 ${parsed.pools.length} 个池`);
     return;
   }
 
-  if (target === 'roster') {
-    const [next, created] = addRoster(app, {
-      name,
-      people: parsed.people,
-    });
-    ui.rosterId = created.id;
-    ui.view = 'rosters';
-    commit(next);
-    toast(`已导入 ${parsed.people.length} 人`);
+  const first = parsed.pools[0];
+  if (first === undefined) {
+    toast('这份文件里没有可用的池');
     return;
   }
-
-  const [next, created] = addPrizeSet(app, {
-    name,
-    prizes: parsed.prizes,
-  });
-  ui.prizeSetId = created.id;
-  ui.view = 'prizes';
+  const [next, created] = addPool(app, { name, kind: first.kind, entries: first.entries });
+  ui.poolId = created.id;
+  ui.view = 'pools';
   commit(next);
-  toast(`已导入 ${parsed.prizes.length} 项奖品`);
+  toast(`已导入 ${first.entries.length} 条`);
 }
 
 function overwriteImport(existing) {
@@ -2181,23 +2398,19 @@ function overwriteImport(existing) {
       ui.lotteryId = existing.id;
       ui.view = 'lotteries';
       app = replaceLotteryData(app, existing.id, {
-        mode: parsed.meta.mode,
+        protocol: parsed.meta.protocol,
         stage: parsed.meta.stage,
         stageConfig: parsed.meta.stageConfig,
-        batch: parsed.meta.batch,
-        uniqueWinner: parsed.meta.uniqueWinner,
-        prizes: parsed.prizes,
-        people: parsed.people,
+        pools: parsed.pools,
+        slots: parsed.meta.slots ?? defaultSlots(parsed.pools, parsed.meta.protocol),
+        batchSize: parsed.meta.batchSize,
         results: parsed.results,
       });
-    } else if (target === 'roster') {
-      app = updateRoster(app, existing.id, { people: parsed.people });
-      ui.rosterId = existing.id;
-      ui.view = 'rosters';
     } else {
-      app = updatePrizeSet(app, existing.id, { prizes: parsed.prizes });
-      ui.prizeSetId = existing.id;
-      ui.view = 'prizes';
+      const first = parsed.pools[0];
+      app = updatePool(app, existing.id, { entries: first?.entries ?? [] });
+      ui.poolId = existing.id;
+      ui.view = 'pools';
     }
     commit(app);
   };
@@ -2218,36 +2431,26 @@ function overwriteImport(existing) {
 function applyReplace(target, existingId, parsed) {
   if (target === 'lottery-replace') {
     app = replaceLotteryData(app, existingId, {
-      mode: parsed.meta.mode,
+      protocol: parsed.meta.protocol,
       stage: parsed.meta.stage,
       stageConfig: parsed.meta.stageConfig,
-      batch: parsed.meta.batch,
-      uniqueWinner: parsed.meta.uniqueWinner,
-      prizes: parsed.prizes,
-      people: parsed.people,
+      pools: parsed.pools,
+      slots: parsed.meta.slots ?? defaultSlots(parsed.pools, parsed.meta.protocol),
+      batchSize: parsed.meta.batchSize,
       results: parsed.results,
     });
-  } else if (target === 'roster-replace') {
-    const roster = currentRoster();
-    app = updateRoster(app, existingId, { people: parsed.people });
-    if (roster !== null) {
-      ui.rosterId = roster.id;
+  } else if (target === 'pool-replace') {
+    const pool = currentPool();
+    const first = parsed.pools.find((item) => item.kind === pool?.kind) ?? parsed.pools[0];
+    if (pool !== null && first !== undefined) {
+      app = updatePool(app, pool.id, { entries: first.entries });
+      ui.poolId = pool.id;
     }
-  } else if (target === 'prize-replace') {
-    const set = currentPrizeSet();
-    app = updatePrizeSet(app, existingId, { prizes: parsed.prizes });
-    if (set !== null) {
-      ui.prizeSetId = set.id;
-    }
-  } else if (target === 'roster-append') {
-    const roster = currentRoster();
-    if (roster !== null) {
-      app = updateRoster(app, roster.id, { people: [...roster.people, ...parsed.people] });
-    }
-  } else if (target === 'prize-append') {
-    const set = currentPrizeSet();
-    if (set !== null) {
-      app = updatePrizeSet(app, set.id, { prizes: [...set.prizes, ...parsed.prizes] });
+  } else if (target === 'pool-append') {
+    const pool = currentPool();
+    const first = parsed.pools.find((item) => item.kind === pool?.kind) ?? parsed.pools[0];
+    if (pool !== null && first !== undefined) {
+      app = updatePool(app, pool.id, { entries: [...pool.entries, ...first.entries] });
     }
   }
   commit(app);
@@ -2264,9 +2467,16 @@ function openDraw() {
   if (item === null) {
     return;
   }
-  if (item.people.length === 0) {
-    toast('名单里还没有人');
-    return;
+  for (const slot of protocolInfo(item.protocol).slots) {
+    const pool = poolOfSlot(item, slot.key);
+    if (pool === null) {
+      toast(`「${slot.label}」还没有选池`);
+      return;
+    }
+    if (pool.entries.length === 0) {
+      toast(`「${pool.name}」里还没有条目`);
+      return;
+    }
   }
   window.location.href = `./draw.html?id=${encodeURIComponent(item.id)}`;
 }
@@ -2274,7 +2484,7 @@ function openDraw() {
 function confirmReset(item) {
   confirmSheet({
     title: '重新抽奖？',
-    message: '会清空开奖记录，名单、奖品与名额保留。',
+    message: '会清空开奖记录，池、条目与名额保留。',
     confirmLabel: '重新抽奖',
     danger: true,
     onConfirm: () => {
@@ -2303,10 +2513,6 @@ function svg(path, size = 18) {
 
 function plusIcon() {
   return svg('<path d="M12 5v14M5 12h14"/>');
-}
-
-function moreIcon() {
-  return svg('<circle cx="5" cy="12" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="19" cy="12" r="1.4"/>');
 }
 
 function docIcon() {
@@ -2371,20 +2577,12 @@ async function handleReplaceFile(file, target) {
   try {
     const bytes = new Uint8Array(await file.arrayBuffer());
     const parsed = await readLotteryWorkbook(bytes);
-    if (target.startsWith('roster') && parsed.people.length === 0) {
-      toast('这份文件里没有名单（需要一张含「姓名」列的表）');
-      return;
-    }
-    if (target.startsWith('prize') && parsed.prizes.length === 0) {
-      toast('这份文件里没有奖品（需要一张含「奖品名称」的表）');
+    if (parsed.pools.length === 0) {
+      toast('这份文件里没有可用的池（需要一张含「姓名」或「奖品名称」列的表）');
       return;
     }
     const existing =
-      target === 'lottery-replace'
-        ? currentLottery()
-        : target.startsWith('roster')
-          ? currentRoster()
-          : currentPrizeSet();
+      target === 'lottery-replace' ? currentLottery() : currentPool();
     if (existing === null) {
       return;
     }

@@ -245,6 +245,29 @@
   color: var(--paper);
 }
 
+/* 固定槽侧栏：机身是横的，左右都没空，横排在机身与按钮之间 */
+.stage-slot .slot-picker {
+  bottom: 16cqh;
+  width: min(78cqw, 780px);
+  max-height: 13cqh;
+}
+
+.stage-slot .slot-picker .picker-title { color: var(--gold); }
+
+.stage-slot .slot-picker .picker-list { gap: 10px; }
+
+.stage-slot .slot-picker .pick {
+  color: var(--paper-3);
+  border-left: 0;
+  border-bottom: 2px solid transparent;
+}
+
+.stage-slot .slot-picker .pick.on {
+  color: var(--paper);
+  border-bottom-color: var(--gold);
+  background: rgba(232, 181, 81, 0.14);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .stage-slot .stage-reveal {
     transition-duration: 0.01ms !important;

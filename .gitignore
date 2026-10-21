@@ -1,0 +1,23 @@
+# 部署用的密钥文件（INTERNAL_CALL_TOKEN 等），不入库
+.env
+.env.local
+.env.*.local
+
+# 部署编排产生的本地状态
+.cloudbase-mcp/
+cloudbase-framework/
+
+# 部署用的暂存目录（tcb fn deploy --dir .tcb-stage/<函数名>）
+.tcb-stage/
+
+# 本地运行日志
+/logs/
+
+# Reactly 预览启动时扩展写的发现文件（server.json 等）
+.reactly/
+
+# 协作助手的本地工作记录，不入库
+.workbuddy/
+
+node_modules/
+dist/

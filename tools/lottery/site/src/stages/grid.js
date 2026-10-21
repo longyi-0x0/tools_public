@@ -198,8 +198,12 @@ export default defineLuckyStage({
   id: 'grid',
   label: '九宫格',
   kind: 'grid',
+  // 格子跟着条目数长，一格一个名字，比转盘能铺得多
+  capabilities: { spin: 1, slots: 2, winners: 'many', labels: 28 },
   styles: new URL('./grid.css', import.meta.url).href,
   skins: SKINS,
   build,
+  // 九宫格比转盘窄，右边还有空
+  picker: 'rail-right',
   hint: '点中间开抽，转动中点盘面停下。格数跟着奖项数走，最多 28 个奖项；中奖概率按剩余名额加权。',
 });

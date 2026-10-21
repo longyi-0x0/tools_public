@@ -66,35 +66,29 @@ export function createReveal() {
       node.classList.remove('on');
     },
     /**
-     * `focus` 决定大字写谁：奖品抽人写人，人抽奖品写奖；写反了会让人以为
-     * 又抽了一次。
+     * 一行小字写「这一抽的锚」（先定的那个奖项 / 上台的那个人），
+     * 大字写抽出来的那些。谁是谁全由数据决定，形态不猜玩法。
      *
-     * `compact` 只留奖项与附注 —— 名字已经在画面里（墙上的格子、翻开的牌），
+     * `compact` 只留锚与附注 —— 名字已经在画面里（墙上的格子、翻开的牌），
      * 再来一行就是重复。
      */
-    show({ winners = [], prizeName = '', focus = 'people', compact = false } = {}) {
+    show({ winners = [], anchorName = '', compact = false } = {}) {
       prize.textContent = '';
       names.replaceChildren();
       meta.textContent = '';
 
-      if (focus === 'prize') {
-        const person = winners[0];
-        prize.textContent = [person?.name, person?.dept].filter(Boolean).join(' · ');
-        names.append(el('span', 'reveal-name', prizeName || '—'));
-        meta.textContent = person?.employeeId ?? '';
-      } else {
-        prize.textContent = prizeName;
-        if (!compact) {
-          for (const winner of winners) {
-            names.append(el('span', 'reveal-name', winner.name));
-          }
+      prize.textContent = anchorName;
+      prize.hidden = anchorName === '';
+      if (!compact) {
+        for (const winner of winners) {
+          names.append(el('span', 'reveal-name', winner.name));
         }
-        const depts = [...new Set(winners.map((winner) => winner.dept).filter(Boolean))];
-        // 多人同部门时写部门，多人跨部门时写人数 —— 并排列两个部门会被读成
-        // 「这些人都属于这两个部门」，反而说不清
-        meta.textContent =
-          winners.length > 1 && depts.length > 1 ? `${winners.length} 人` : depts.join(' / ');
       }
+      const depts = [...new Set(winners.map((winner) => winner.dept).filter(Boolean))];
+      // 多人同部门时写部门，多人跨部门时写人数 —— 并排列两个部门会被读成
+      // 「这些人都属于这两个部门」，反而说不清
+      meta.textContent =
+        winners.length > 1 && depts.length > 1 ? `${winners.length} 人` : depts.join(' / ');
 
       names.dataset.count = String(Math.min(4, Math.max(1, names.childElementCount)));
       node.classList.add('on');
@@ -102,13 +96,24 @@ export function createReveal() {
   };
 }
 
-/** 列表行：一行一项，点了就选它。长什么样由形态的样式表定。 */
+/**
+ * 侧栏：一个标题 + 一列可点的项，点了就选它。
+ *
+ * 只长结构，不摆位置 —— 长什么样、在左在右还是在底下，由各形态的样式表定。
+ * 给的是主持人先定的那个槽（先选奖项 / 先指定上台的人）。
+ */
 export function createPicker(onPick) {
   const node = el('div', 'picker');
+  const title = el('p', 'picker-title');
+  const list = el('div', 'picker-list');
+  node.append(title, list);
+
   return {
     node,
-    update(items = []) {
-      node.replaceChildren();
+    update(items = [], label = '') {
+      title.textContent = label;
+      title.hidden = label === '';
+      list.replaceChildren();
       for (const item of items) {
         const row = el(
           'button',
@@ -117,12 +122,12 @@ export function createPicker(onPick) {
         row.type = 'button';
         row.disabled = item.disabled === true;
         row.append(
-          el('span', 'pick-label', item.label),
+          el('span', 'pick-label', item.label ?? item.name ?? ''),
           el('span', 'pick-sub', item.sub ?? ''),
           el('span', 'pick-note', item.note ?? ''),
         );
         row.addEventListener('click', () => onPick(item.id));
-        node.append(row);
+        list.append(row);
       }
     },
   };
@@ -160,22 +165,20 @@ export function createMetaBar(api) {
   return node;
 }
 
-/** 待机该说什么，五种形态共用一套口径，免得同一件事五种说法。 */
+/**
+ * 待机该说什么，各形态共用一套口径，免得同一件事五种说法。
+ *
+ * 只说锚槽现在指着谁，附注由外壳拼好（部门、还剩几个名额、一次抽几个）。
+ * 槽的 label 是抽法给的，形态不认识「人」「奖」这些词。
+ */
 export function idleCopy(info = {}) {
   if (info.allDrawn) {
-    return { eyebrow: '抽完了', main: '看结果', note: `共 ${info.handed ?? 0} 人中奖` };
-  }
-  if (info.mode === 'person-prize') {
-    return {
-      eyebrow: '请上台',
-      main: info.personName || '—',
-      note: [info.personDept, `还剩 ${info.prizeCount ?? 0} 个奖项`].filter(Boolean).join(' · '),
-    };
+    return { eyebrow: '抽完了', main: '看结果', note: `共 ${info.handed ?? 0} 个` };
   }
   return {
-    eyebrow: '下一支',
-    main: info.prizeName || '—',
-    note: `还剩 ${info.remaining ?? 0} 个名额 · 一次抽 ${info.batch ?? 1} 人`,
+    eyebrow: info.anchorLabel || '',
+    main: info.anchorName || '—',
+    note: info.anchorNote || '',
   };
 }
 

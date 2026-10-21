@@ -1,37 +1,44 @@
 /**
  * 活动文件：读入一份 xlsx、生成模板、导出结果。
  *
- * 表有四张，后两张可选：
+ * 一张表就是一个池。表名决定池的类型，认不出来时看表头：
  *
- * - `设置`：键 / 值，记名称、抽法、形态、每次几人、形态配置
+ * - `设置`：键 / 值，记名称、抽法、形态、不重复中奖、形态配置
  * - `奖品`：奖品名称、数量、权重（可选）、等级（可选）
  * - `名单`：姓名、部门（可选）、工号（可选）
+ * - `条目`：名称、权重（可选）、上限（可选）—— 既能抽人也能抽奖的通用池
  * - `开奖记录`：序号、记录、奖项、姓名、部门、工号、开奖时间
  *
  * 表名可以先不较真：先按表名认，认不出来再看表头。列的顺序也不要求，
  * 认的是表头里的字。所有解析都在浏览器里做，文件不上传。
  */
 
-import { MODE, MODE_LABELS } from './engine.js';
-import { DEFAULT_STAGE, STAGES } from './stages/index.js';
-import { date, buildWorkbook, number, parseWorkbook, text } from './xlsx.js';
+import { capacityOf, cleanEntries, cleanText, kindOf } from './pools.js';
+import { DEFAULT_PROTOCOL, protocolIdByText, protocolInfo } from './protocols.js';
+import { DEFAULT_STAGE, STAGES, defaultStageFor, stageInfo } from './stages/index.js';
+import { date, buildWorkbook, number, parseWorkbook, safeSheetName, text } from './xlsx.js';
 
-/** 设置表与开奖记录表：名字认得出就不当奖品 / 名单处理。 */
+/** 设置表与开奖记录表：名字认得出就不当池处理。 */
 const SETTINGS_SHEET = /^(设置|配置|参数)$/;
 const RESULT_SHEET = /^(开奖记录|结果|中奖记录|获奖记录)$/;
 
 const HEADERS = {
-  prizeName: ['奖品名称', '奖项名称', '奖品', '奖项', '奖名', '名称'],
-  prizeCount: ['数量', '名额', '个数', '份数'],
-  prizeWeight: ['权重', '概率'],
-  prizeLevel: ['等级', '级别', '奖级'],
+  name: ['奖品名称', '奖项名称', '奖品', '奖项', '奖名', '姓名', '名字', '参与人', '员工姓名', '成员', '名称', '条目'],
+  capacity: ['数量', '名额', '个数', '份数', '上限'],
+  weight: ['权重', '概率'],
+  level: ['等级', '级别', '奖级'],
   personName: ['姓名', '名字', '参与人', '员工姓名', '成员'],
   personDept: ['部门', '科室', '单位', '班级', '组别'],
   personEmployeeId: ['工号', '员工号', '编号', '学号'],
+  poolName: ['池', '池名', '池子'],
+  poolKind: ['类型', '种类'],
 };
 
 const PRIZE_SHEET = /奖品|奖项|奖池/;
 const PEOPLE_SHEET = /名单|人员|参与|抽奖人/;
+const ITEM_SHEET = /条目|选项|菜单|任务|惩罚|盲盒/;
+
+const SHEET_OF_KIND = { people: '名单', prizes: '奖品', items: '条目' };
 
 function cell(row, index) {
   const value = row?.[index];
@@ -66,62 +73,97 @@ function findColumn(header, candidates) {
   return -1;
 }
 
-/** 一份表像奖品表还是名单表。 */
+/** 一份表是设置、结果，还是某一类型的池。 */
 function classifySheet(sheet) {
-  if (SETTINGS_SHEET.test(sheet.name.trim())) {
+  const name = String(sheet.name ?? '').trim();
+  if (SETTINGS_SHEET.test(name)) {
     return 'settings';
   }
-  if (RESULT_SHEET.test(sheet.name.trim())) {
+  if (RESULT_SHEET.test(name)) {
     return 'results';
   }
-  if (PRIZE_SHEET.test(sheet.name) && !PEOPLE_SHEET.test(sheet.name)) {
+  const prizeName = PRIZE_SHEET.test(name);
+  const peopleName = PEOPLE_SHEET.test(name);
+  const itemName = ITEM_SHEET.test(name);
+  if (prizeName && !peopleName && !itemName) {
     return 'prizes';
   }
-  if (PEOPLE_SHEET.test(sheet.name) && !PRIZE_SHEET.test(sheet.name)) {
+  if (peopleName && !prizeName && !itemName) {
     return 'people';
   }
+  if (itemName && !prizeName && !peopleName) {
+    return 'items';
+  }
+
   const header = sheet.rows[0] ?? [];
-  const hasPrize = findColumn(header, HEADERS.prizeCount) !== -1;
-  const hasPerson = findColumn(header, HEADERS.personName) !== -1;
-  if (hasPrize && !hasPerson) {
-    return 'prizes';
-  }
-  if (hasPerson && !hasPrize) {
+  const hasCapacity = findColumn(header, HEADERS.capacity) !== -1;
+  const hasDept = findColumn(header, HEADERS.personDept) !== -1;
+  const hasEmployee = findColumn(header, HEADERS.personEmployeeId) !== -1;
+  const hasLevel = findColumn(header, HEADERS.level) !== -1;
+  if (hasDept || hasEmployee) {
     return 'people';
   }
-  if (PRIZE_SHEET.test(sheet.name)) {
+  if (hasCapacity || hasLevel) {
     return 'prizes';
   }
-  if (PEOPLE_SHEET.test(sheet.name)) {
+  if (prizeName) {
+    return 'prizes';
+  }
+  if (peopleName) {
     return 'people';
+  }
+  if (itemName) {
+    return 'items';
   }
   return 'unknown';
 }
 
-function parsePrizeSheet(sheet, problems) {
+/** 名额列里认这些写法是不限量。 */
+const UNLIMITED = ['不限', '不限量', '无限', '无穷', '∞'];
+
+/** 读「数量 / 上限」列：不限量、正整数、其余按 1 并记一条提示。 */
+function readCapacityCell(value, name, sheetName, rowNumber, problems) {
+  const raw = String(value ?? '').trim();
+  if (UNLIMITED.includes(raw)) {
+    return null;
+  }
+  const count = Math.floor(Number(raw));
+  if (Number.isFinite(count) && count > 0) {
+    return count;
+  }
+  problems.push({
+    sheet: sheetName,
+    row: rowNumber,
+    message: `「${name}」的数量读不出正数，已按 1 算（不限量请写「不限」）`,
+  });
+  return 1;
+}
+
+/** 一张池表读成条目；`kind` 决定哪几列算数，`池名` 列可以覆盖表名。 */
+function parsePoolSheet(sheet, kind, problems) {
   const header = sheet.rows[0] ?? [];
-  const nameColumn = findColumn(header, HEADERS.prizeName);
-  const countColumn = findColumn(header, HEADERS.prizeCount);
-  const weightColumn = findColumn(header, HEADERS.prizeWeight);
-  const levelColumn = findColumn(header, HEADERS.prizeLevel);
+  const first = sheet.rows[1] ?? [];
+  const kindColumn = findColumn(header, HEADERS.poolKind);
+  const declaredKind = kindColumn === -1 ? null : readKindCell(cell(first, kindColumn));
+  const actual = declaredKind ?? kind;
+  const nameColumn = findColumn(header, actual === 'people' ? HEADERS.personName : HEADERS.name);
+  const capacityColumn = actual === 'people' ? -1 : findColumn(header, HEADERS.capacity);
+  const weightColumn = findColumn(header, HEADERS.weight);
+  const levelColumn = actual === 'prizes' ? findColumn(header, HEADERS.level) : -1;
+  const deptColumn = actual === 'people' ? findColumn(header, HEADERS.personDept) : -1;
+  const employeeColumn = actual === 'people' ? findColumn(header, HEADERS.personEmployeeId) : -1;
+  const poolNameColumn = findColumn(header, HEADERS.poolName);
 
   if (nameColumn === -1) {
     problems.push({
       sheet: sheet.name,
       row: 1,
-      message: '奖品表缺少「奖品名称」列',
+      message: `这张表缺少「${actual === 'people' ? '姓名' : '名称'}」列`,
     });
-    return [];
-  }
-  if (countColumn === -1) {
-    problems.push({
-      sheet: sheet.name,
-      row: 1,
-      message: '奖品表缺少「数量」列，默认每个奖项算 1 个',
-    });
+    return { entries: [], name: '', kind: actual };
   }
 
-  const prizes = [];
+  const rows = [];
   const seen = new Set();
   for (let index = 1; index < sheet.rows.length; index += 1) {
     const row = sheet.rows[index];
@@ -130,22 +172,9 @@ function parsePrizeSheet(sheet, problems) {
     }
     const name = cellText(row, nameColumn);
     if (name === '') {
-      problems.push({ sheet: sheet.name, row: index + 1, message: '这个奖项没有名称，已跳过' });
+      problems.push({ sheet: sheet.name, row: index + 1, message: '这一行没有名字，已跳过' });
       continue;
     }
-    const rawCount = countColumn === -1 ? 1 : cell(row, countColumn);
-    const count = Math.floor(Number(rawCount));
-    const validCount = Number.isFinite(count) && count > 0;
-    if (!validCount) {
-      problems.push({
-        sheet: sheet.name,
-        row: index + 1,
-        message: `「${name}」的数量读不出正数，已按 1 算`,
-      });
-    }
-    const weightValue = weightColumn === -1 ? 1 : Number(cell(row, weightColumn));
-    const level = levelColumn === -1 ? '' : cellText(row, levelColumn);
-
     if (seen.has(name)) {
       problems.push({
         sheet: sheet.name,
@@ -156,45 +185,53 @@ function parsePrizeSheet(sheet, problems) {
     }
     seen.add(name);
 
-    prizes.push({
+    const capacity =
+      capacityColumn === -1
+        ? 1
+        : readCapacityCell(cell(row, capacityColumn), name, sheet.name, index + 1, problems);
+    const weightValue = weightColumn === -1 ? 1 : Number(cell(row, weightColumn));
+    const meta =
+      actual === 'people'
+        ? {
+            dept: deptColumn === -1 ? '' : cellText(row, deptColumn),
+            employeeId: employeeColumn === -1 ? '' : cellText(row, employeeColumn),
+          }
+        : actual === 'prizes'
+          ? { level: levelColumn === -1 ? '' : cellText(row, levelColumn) }
+          : {};
+
+    rows.push({
       name,
-      count: validCount ? count : 1,
       weight: Number.isFinite(weightValue) && weightValue > 0 ? weightValue : 1,
-      level,
+      capacity,
+      meta,
     });
   }
-  return prizes;
+
+  return {
+    entries: cleanEntries(rows, actual),
+    // 表名会被 31 字截断、禁用字符被替换，"池名" 这一列才是还原得回来的那一份
+    name: poolNameColumn === -1 ? '' : cellText(first, poolNameColumn),
+    kind: actual,
+  };
 }
 
-function parsePeopleSheet(sheet, problems) {
-  const header = sheet.rows[0] ?? [];
-  const nameColumn = findColumn(header, HEADERS.personName);
-  const deptColumn = findColumn(header, HEADERS.personDept);
-  const employeeColumn = findColumn(header, HEADERS.personEmployeeId);
-
-  if (nameColumn === -1) {
-    problems.push({ sheet: sheet.name, row: 1, message: '名单缺少「姓名」列' });
-    return [];
+/** 「类型」列的写法 → kind。 */
+function readKindCell(value) {
+  const raw = String(value ?? '').trim();
+  if (raw === '') {
+    return null;
   }
-
-  const people = [];
-  for (let index = 1; index < sheet.rows.length; index += 1) {
-    const row = sheet.rows[index];
-    if (row === undefined || row.every((value) => String(value ?? '').trim() === '')) {
-      continue;
-    }
-    const name = cellText(row, nameColumn);
-    if (name === '') {
-      problems.push({ sheet: sheet.name, row: index + 1, message: '这一行没有姓名，已跳过' });
-      continue;
-    }
-    people.push({
-      name,
-      dept: deptColumn === -1 ? '' : cellText(row, deptColumn),
-      employeeId: employeeColumn === -1 ? '' : cellText(row, employeeColumn),
-    });
+  if (/名单|人员|员工|人/.test(raw)) {
+    return 'people';
   }
-  return people;
+  if (/奖/.test(raw)) {
+    return 'prizes';
+  }
+  if (/条目|选项/.test(raw)) {
+    return 'items';
+  }
+  return null;
 }
 
 function parseSettingsSheet(sheet) {
@@ -219,7 +256,7 @@ function parseResultSheet(sheet) {
   const employeeColumn = findColumn(header, HEADERS.personEmployeeId);
   const timeColumn = findColumn(header, ['开奖时间', '时间', '中奖时间']);
 
-  if (prizeColumn === -1 || nameColumn === -1) {
+  if (nameColumn === -1) {
     return [];
   }
 
@@ -236,7 +273,7 @@ function parseResultSheet(sheet) {
     const time = timeColumn === -1 ? 0 : Number(cell(row, timeColumn));
     rows.push({
       group: groupColumn === -1 ? String(index) : cellText(row, groupColumn),
-      prizeName: cellText(row, prizeColumn),
+      prizeName: prizeColumn === -1 ? '' : cellText(row, prizeColumn),
       name,
       dept: deptColumn === -1 ? '' : cellText(row, deptColumn),
       employeeId: employeeColumn === -1 ? '' : cellText(row, employeeColumn),
@@ -246,21 +283,18 @@ function parseResultSheet(sheet) {
   return rows;
 }
 
-function readMode(value) {
-  const raw = String(value ?? '').trim();
-  if (raw === MODE.PERSON || raw === MODE_LABELS[MODE.PERSON]) {
-    return MODE.PERSON;
-  }
-  return MODE.PRIZE;
+function readProtocol(value) {
+  return protocolIdByText(value) ?? DEFAULT_PROTOCOL;
 }
 
-function readStage(value) {
+function readStage(value, protocolId) {
   const raw = String(value ?? '').trim();
   const byId = STAGES.find((stage) => stage.id === raw);
   if (byId !== undefined) {
     return byId.id;
   }
-  return STAGES.find((stage) => stage.label === raw)?.id ?? DEFAULT_STAGE;
+  const byLabel = STAGES.find((stage) => stage.label === raw);
+  return byLabel?.id ?? defaultStageFor(protocolInfo(protocolId)) ?? DEFAULT_STAGE;
 }
 
 function readBoolean(value, fallback) {
@@ -289,15 +323,14 @@ function readStageConfig(value) {
 /**
  * 读一份 xlsx。
  *
- * 认三类表：`奖品` / `名单` 是数据，`设置` 与 `开奖记录` 可选。
- * 返回 `{ prizes, people, problems, sheets, meta, results }`；`problems` 只是提示，
+ * 每张池表读成一个池；`设置` 与 `开奖记录` 可选。返回
+ * `{ pools, problems, sheets, meta, results }`，`problems` 只是提示，
  * 能读出来的照样入池，界面上把提示列出来，由人决定要不要改表重来。
  */
 export async function readLotteryWorkbook(bytes) {
   const sheets = await parseWorkbook(bytes);
   const problems = [];
-  let prizes = [];
-  let people = [];
+  const pools = [];
   let settings = {};
   let resultRows = [];
 
@@ -305,132 +338,275 @@ export async function readLotteryWorkbook(bytes) {
     const shape = classifySheet(sheet);
     if (shape === 'settings') {
       settings = { ...settings, ...parseSettingsSheet(sheet) };
-    } else if (shape === 'results') {
-      resultRows = resultRows.concat(parseResultSheet(sheet));
-    } else if (shape === 'prizes') {
-      prizes = prizes.concat(parsePrizeSheet(sheet, problems));
-    } else if (shape === 'people') {
-      people = people.concat(parsePeopleSheet(sheet, problems));
-    } else if (sheet.rows.length > 0) {
-      problems.push({
-        sheet: sheet.name,
-        row: 1,
-        message: '这张表既不像奖品表也不像名单表，已跳过',
-      });
+      continue;
     }
-  }
-
-  if (prizes.length === 0) {
-    problems.push({
-      sheet: '奖品',
-      row: 0,
-      message: '没读到奖品：需要一张含「奖品名称」「数量」两列的表',
+    if (shape === 'results') {
+      resultRows = resultRows.concat(parseResultSheet(sheet));
+      continue;
+    }
+    if (shape === 'unknown') {
+      if (sheet.rows.length > 0) {
+        problems.push({
+          sheet: sheet.name,
+          row: 1,
+          message: '这张表认不出是名单、奖品还是条目，已跳过',
+        });
+      }
+      continue;
+    }
+    const parsed = parsePoolSheet(sheet, shape, problems);
+    if (parsed.entries.length === 0) {
+      continue;
+    }
+    pools.push({
+      // 池名有专门一列就用它；没有就退回表名
+      name: cleanText(parsed.name, cleanText(sheet.name)),
+      kind: parsed.kind,
+      entries: parsed.entries,
     });
   }
-  if (people.length === 0) {
+
+  if (pools.length === 0) {
     problems.push({
-      sheet: '名单',
+      sheet: '池',
       row: 0,
-      message: '没读到参与人：需要一张含「姓名」列的表（不做不重复限制时可以不传）',
+      message: '没读到任何池：需要一张含「姓名」或「奖品名称」列的表',
     });
   }
 
-  prizes = prizes.map((prize, index) => ({ ...prize, id: `a${index + 1}` }));
-  people = people.map((person, index) => ({ ...person, id: `p${index + 1}` }));
+  const protocol = readProtocol(settings['抽法'] ?? settings['模式']);
+  const batchSize = readBatchSize(settings['一次抽几人'] ?? settings['一次抽']);
+
+  // 池与条目的 id 在这里定下来，开奖记录才能指回条目。
+  //
+  // 编号按 kind 各自连续 —— 用「全池下标」会让两个名单池得到 p-1 和 p-3，
+  // 而条目 id 又会跨池从 1 重排撞车（两条 p1 分属两个池，记录就对不上）。
+  const counters = { people: 0, prizes: 0, items: 0 };
+  const entryCounters = { people: 0, prizes: 0, items: 0 };
+  const withIds = pools.map((pool) => {
+    const kind = kindOf(pool.kind);
+    const prefix = kind === 'people' ? 'p' : kind === 'prizes' ? 'a' : 'i';
+    counters[kind] += 1;
+    return {
+      ...pool,
+      kind,
+      id: `${prefix}-${counters[kind]}`,
+      entries: cleanEntries(
+        pool.entries.map((entry) => {
+          entryCounters[kind] += 1;
+          return { ...entry, id: `${prefix}${entryCounters[kind]}` };
+        }),
+        kind,
+      ),
+    };
+  });
+
+  // 「绑定」写的是池名：导出时池 id 是 `k1` 这种，导入会重新编号，只有名字稳
+  const byName = new Map(withIds.map((pool) => [pool.name, pool.id]));
+  const rawSlots = readJsonCell(settings['绑定']);
+  const slots =
+    rawSlots === null
+      ? null
+      : Object.fromEntries(
+          Object.entries(rawSlots).map(([key, value]) => [
+            key,
+            typeof value === 'string' ? byName.get(value) ?? null : null,
+          ]),
+        );
 
   const meta = {
     title: cellText([settings['名称'], settings['抽奖名称']], 0),
-    mode: readMode(settings['抽法'] ?? settings['模式']),
-    stage: readStage(settings['形态']),
-    batch: Math.max(1, Math.min(50, Math.floor(Number(settings['每次抽几人'] ?? settings['每次']) || 1))),
+    protocol,
+    stage: readStage(settings['形态'], protocol),
     uniqueWinner: readBoolean(settings['不重复中奖'] ?? settings['已中奖的人不再进池'], true),
-    rosterName: cellText([settings['关联名单'], settings['名单']], 0),
-    prizeSetName: cellText([settings['关联奖品'], settings['奖品']], 0),
     stageConfig: readStageConfig(settings['形态配置']),
+    slots,
+    batchSize,
   };
 
+  return {
+    pools: withIds,
+    problems,
+    sheets,
+    meta,
+    results: buildResults(resultRows, withIds, protocol, problems, slots),
+  };
+}
+
+/** 一次抽几个：没写或读不出就不设，交给形态的缺省值。 */
+function readBatchSize(value) {
+  const count = Math.floor(Number(String(value ?? '').trim()));
+  return Number.isFinite(count) && count > 0 ? count : null;
+}
+
+/** 设置表里的一段 JSON（绑定这么存）；读不出返回 null。 */
+function readJsonCell(value) {
+  if (typeof value !== 'string' || value.trim() === '') {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(value);
+    return parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 把「记录 / 奖项 / 姓名」的行拼回一次一次开奖。
+ *
+ * 一场里可能有多个同 kind 的池（导入两张名单表就是），所以查找按
+ * 「绑定的那个池优先，其次所有同 kind 的池」走，不只看第一个。
+ */
+function buildResults(rows, pools, protocol, problems, slots = null) {
+  const pickPool = (key, kind) => {
+    const id = slots?.[key];
+    return (id ? pools.find((pool) => pool.id === id) : null) ??
+      pools.find((pool) => pool.kind === kind) ??
+      null;
+  };
+  const people = pickPool('person', 'people');
+  const prizes = pickPool('prize', 'prizes');
+  const peoplePools = pools.filter((pool) => pool.kind === 'people');
+  const prizePools = pools.filter((pool) => pool.kind === 'prizes');
   const results = [];
   const groups = new Map();
-  for (const row of resultRows) {
-    const prize = prizes.find((item) => item.name === row.prizeName);
-    if (prize === undefined) {
-      problems.push({
-        sheet: '开奖记录',
-        row: 0,
-        message: `「${row.prizeName}」不在奖品表里，这条记录已跳过`,
-      });
-      continue;
+
+  const findEntry = (candidates, match) => {
+    for (const pool of candidates) {
+      const entry = pool.entries.find(match);
+      if (entry !== undefined) {
+        return { pool, entry };
+      }
     }
+    return null;
+  };
+
+  for (const row of rows) {
+    let prize = null;
+    if (row.prizeName !== '') {
+      const hit = findEntry(prizePools.length > 0 ? prizePools : [prizes].filter(Boolean), (entry) => entry.name === row.prizeName);
+      if (hit === null) {
+        problems.push({
+          sheet: '开奖记录',
+          row: 0,
+          message: `「${row.prizeName}」不在奖品表里，这条记录已跳过`,
+        });
+        continue;
+      }
+      prize = hit;
+    }
+    const person =
+      peoplePools.length === 0
+        ? null
+        : findEntry(
+            peoplePools,
+            (entry) =>
+              entry.name === row.name &&
+              (row.employeeId === '' || entry.meta?.employeeId === row.employeeId),
+          ) ?? findEntry(peoplePools, (entry) => entry.name === row.name);
+
     let result = groups.get(row.group);
     if (result === undefined) {
-      result = {
-        id: `r${results.length + 1}`,
-        at: row.at,
-        mode: meta.mode,
-        prizeId: prize.id,
-        prizeName: prize.name,
-        requested: 1,
-        winners: [],
-      };
+      result = { id: `r${results.length + 1}`, at: row.at, protocol, picks: [] };
       groups.set(row.group, result);
       results.push(result);
     }
-    const person = people.find(
-      (item) => item.name === row.name && (row.employeeId === '' || item.employeeId === row.employeeId),
-    );
-    result.winners.push({
-      personId: person?.id ?? '',
-      name: row.name,
-      dept: row.dept,
-      employeeId: row.employeeId,
-    });
-    result.requested = Math.max(result.requested, result.winners.length);
+    if (prize !== null && !result.picks.some((pick) => pick.slot === 'prize')) {
+      result.picks.push({
+        slot: 'prize',
+        poolId: prize.pool.id,
+        entryId: prize.entry.id,
+        name: prize.entry.name,
+        meta: prize.entry.meta ?? {},
+      });
+    }
+    if (people !== null) {
+      result.picks.push({
+        slot: 'person',
+        poolId: person?.pool.id ?? people.id,
+        entryId: person?.entry.id ?? '',
+        name: row.name,
+        meta: { dept: row.dept, employeeId: row.employeeId },
+      });
+    }
   }
 
-  return { prizes, people, problems, sheets, meta, results };
+  return results.filter((result) => result.picks.length > 0);
 }
 
 /* ---------- 写 ---------- */
 
 const SHEET_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
-function prizeRows(prizes) {
-  const rows = [['奖品名称', '数量', '权重', '等级'].map(text)];
-  for (const prize of prizes) {
+/**
+ * 一个池写成一张表。
+ *
+ * 末尾都带一列「池名」—— 表名会被 31 字截断、禁用字符被替换，只有这一列能
+ * 把池名原样带回来。一场里有两个名单池时，靠它才分得清哪张是哪张。
+ */
+function poolRows(pool) {
+  if (pool.kind === 'people') {
+    const rows = [['姓名', '部门', '工号', '池名'].map(text)];
+    for (const entry of pool.entries) {
+      rows.push([
+        text(entry.name),
+        text(entry.meta?.dept ?? ''),
+        text(entry.meta?.employeeId ?? ''),
+        text(pool.name),
+      ]);
+    }
+    return rows;
+  }
+  if (pool.kind === 'prizes') {
+    const rows = [['奖品名称', '数量', '权重', '等级', '池名'].map(text)];
+    for (const entry of pool.entries) {
+      rows.push([
+        text(entry.name),
+        capacityCell(entry),
+        number(entry.weight ?? 1),
+        text(entry.meta?.level ?? ''),
+        text(pool.name),
+      ]);
+    }
+    return rows;
+  }
+  const rows = [['名称', '权重', '上限', '池名'].map(text)];
+  for (const entry of pool.entries) {
     rows.push([
-      text(prize.name),
-      number(prize.count),
-      number(prize.weight ?? 1),
-      text(prize.level ?? ''),
+      text(entry.name),
+      number(entry.weight ?? 1),
+      capacityCell(entry),
+      text(pool.name),
     ]);
   }
   return rows;
 }
 
-function peopleRows(people) {
-  const rows = [['姓名', '部门', '工号'].map(text)];
-  for (const person of people) {
-    rows.push([
-      text(person.name),
-      text(person.dept ?? ''),
-      text(person.employeeId ?? ''),
-    ]);
-  }
-  return rows;
+/** 不限量在表里写「不限」：写 0 会被读成「读不出正数」，往返就失真了。 */
+function capacityCell(entry) {
+  const capacity = capacityOf(entry);
+  return capacity === Infinity ? text('不限') : number(capacity);
 }
 
 function resultRows(results) {
   const rows = [['序号', '记录', '奖项', '姓名', '部门', '工号', '开奖时间'].map(text)];
   let order = 1;
   results.forEach((result, index) => {
-    for (const winner of result.winners) {
+    const prize = result.picks.find((pick) => pick.slot === 'prize') ?? null;
+    const people = result.picks.filter((pick) => pick.slot === 'person');
+    const rowsOfResult = people.length > 0 ? people : [prize];
+    for (const pick of rowsOfResult) {
+      if (pick === null) {
+        continue;
+      }
       rows.push([
         number(order),
         number(index + 1),
-        text(result.prizeName),
-        text(winner.name),
-        text(winner.dept ?? ''),
-        text(winner.employeeId ?? ''),
+        text(prize?.name ?? ''),
+        text(pick.name),
+        text(pick.meta?.dept ?? ''),
+        text(pick.meta?.employeeId ?? ''),
         date(result.at),
       ]);
       order += 1;
@@ -439,37 +615,98 @@ function resultRows(results) {
   return rows;
 }
 
-/** 导出一场抽奖：设置、奖品、名单、开奖记录四张表，导回来就是同一场。 */
+/**
+ * 工作表名去重。
+ *
+ * Excel 不许两张表同名，而 `SHEET_OF_KIND` 是固定映射 —— 一场里有两个名单池
+ * 就会导出两张「名单」，Excel 要么拒绝要么丢一张。这里在 `safeSheetName` 之后
+ * 加「 2」「 3」后缀，后缀算进 31 字上限里。
+ */
+export function uniqueSheetNames(sheets, reserved = []) {
+  const taken = new Set(reserved);
+  const out = [];
+  for (const sheet of sheets) {
+    const base = safeSheetName(String(sheet.name ?? '').trim() || '表');
+    let name = base;
+    if (taken.has(name)) {
+      name = '';
+      for (let n = 2; n < 1000; n += 1) {
+        const suffix = ` ${n}`;
+        const candidate = `${base.slice(0, 31 - suffix.length)}${suffix}`;
+        if (!taken.has(candidate)) {
+          name = candidate;
+          break;
+        }
+      }
+      if (name === '') {
+        name = base;
+      }
+    }
+    taken.add(name);
+    out.push({ ...sheet, name });
+  }
+  return out;
+}
+
+/** 池表叫什么：带上类型前缀，导入时靠它认出这是哪一类池。 */
+function poolSheetName(pool) {
+  const kindName = SHEET_OF_KIND[pool.kind] ?? '条目';
+  const name = String(pool.name ?? '').trim();
+  if (name === '') {
+    return kindName;
+  }
+  return name.startsWith(kindName) ? name : `${kindName}·${name}`;
+}
+
+/** 绑定写成 `{ 槽: 池名 }`：池 id 导入后会重编，名字才带得回去。 */
+function bindingsOf(lottery) {
+  const slots = lottery.slots ?? {};
+  const out = {};
+  for (const key of Object.keys(slots)) {
+    const pool = lottery.pools.find((item) => item.id === slots[key]) ?? null;
+    out[key] = pool?.name ?? null;
+  }
+  return out;
+}
+
+/** 导出一场抽奖：设置 + 每个池一张表 + 开奖记录，导回来就是同一场。 */
 export async function buildLotteryWorkbook(lottery) {
   const settings = [['键', '值'].map(text)];
-  const put = (key, value, numeric = false) => {
-    settings.push([text(key), numeric ? number(value) : text(value)]);
+  const put = (key, value) => {
+    settings.push([text(key), text(value)]);
   };
   put('名称', lottery.title);
-  put('抽法', MODE_LABELS[lottery.mode] ?? MODE_LABELS[MODE.PRIZE]);
+  put('抽法', protocolInfo(lottery.protocol).label);
   put('形态', lottery.stage);
-  put('每次抽几人', lottery.batch, true);
-  put('不重复中奖', lottery.uniqueWinner ? '是' : '否');
-  put('关联名单', lottery.rosterName ?? '');
-  put('关联奖品', lottery.prizeSetName ?? '');
+  put('不重复中奖', isUnique(lottery) ? '是' : '否');
+  put('一次抽几人', String(lottery.batch ?? 1));
+  put('绑定', JSON.stringify(bindingsOf(lottery)));
   put('形态配置', JSON.stringify(lottery.stageConfig ?? {}));
+
+  const poolSheets = uniqueSheetNames(
+    lottery.pools.map((pool) => ({ name: poolSheetName(pool), rows: poolRows(pool) })),
+    ['设置', '开奖记录'],
+  );
 
   return buildWorkbook([
     { name: '设置', rows: settings },
-    { name: '奖品', rows: prizeRows(lottery.prizes) },
-    { name: '名单', rows: peopleRows(lottery.people) },
+    ...poolSheets,
     { name: '开奖记录', rows: resultRows(lottery.results) },
   ]);
 }
 
-/** 导出名单素材。 */
-export async function buildRosterWorkbook(roster) {
-  return buildWorkbook([{ name: '名单', rows: peopleRows(roster.people) }]);
+/** 「不重复中奖」落在数据上是把人池的容量设成 1；只看绑到 person 槽的那个池。 */
+function isUnique(lottery) {
+  const boundId = lottery.slots?.person;
+  const people =
+    (boundId ? lottery.pools.find((pool) => pool.id === boundId) : null) ??
+    lottery.pools.find((pool) => pool.kind === 'people');
+  return people === undefined || people.entries.every((entry) => capacityOf(entry) === 1);
 }
 
-/** 导出奖品素材。 */
-export async function buildPrizeSetWorkbook(set) {
-  return buildWorkbook([{ name: '奖品', rows: prizeRows(set.prizes) }]);
+/** 导出一份池素材。 */
+export async function buildPoolWorkbook(pool) {
+  return buildWorkbook([{ name: SHEET_OF_KIND[pool.kind] ?? '条目', rows: poolRows(pool) }]);
 }
 
 /** 生成一份可以直接填的活动模板。 */
@@ -496,23 +733,31 @@ export async function buildTemplateWorkbook() {
   ]);
 }
 
-/** 导出开奖结果。 */
-export async function buildResultWorkbook(state) {
+/** 导出开奖结果与奖项统计。 */
+export async function buildResultWorkbook(lottery) {
+  const boundId = lottery.slots?.prize;
+  const prizes =
+    (boundId ? lottery.pools.find((pool) => pool.id === boundId) : null) ??
+    lottery.pools.find((pool) => pool.kind === 'prizes') ??
+    null;
   const summaryRows = [['奖项', '名额', '已抽', '剩余'].map(text)];
-  for (const prize of state.prizes) {
-    const drawn = state.results
-      .filter((result) => result.prizeId === prize.id)
-      .reduce((sum, result) => sum + result.winners.length, 0);
+  for (const entry of prizes?.entries ?? []) {
+    const drawn = lottery.results.reduce(
+      (sum, result) =>
+        sum + result.picks.filter((pick) => pick.slot === 'prize' && pick.entryId === entry.id).length,
+      0,
+    );
+    const capacity = capacityOf(entry);
     summaryRows.push([
-      text(prize.name),
-      number(prize.count),
+      text(entry.name),
+      text(capacity === Infinity ? '不限' : String(capacity)),
       number(drawn),
-      number(Math.max(0, prize.count - drawn)),
+      text(capacity === Infinity ? '不限' : String(Math.max(0, capacity - drawn))),
     ]);
   }
 
   return buildWorkbook([
-    { name: '结果', rows: resultRows(state.results) },
+    { name: '结果', rows: resultRows(lottery.results) },
     { name: '奖项统计', rows: summaryRows },
   ]);
 }

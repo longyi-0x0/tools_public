@@ -4,105 +4,76 @@ import test from 'node:test';
 import {
   DEFAULT_STAGE,
   STAGES,
-  STAGE_IDS,
-  createStage,
+  capabilitiesOf,
+  compatible,
   isStageId,
   normalizeConfig,
   stageBatch,
+  stageFields,
   stageInfo,
   stageLabel,
-  stageMode,
+  stagesFor,
 } from '../site/src/stages/index.js';
+import { PROTOCOLS, protocolInfo } from '../site/src/protocols.js';
 
-test('每种形态都有 id、名字、create 与整屏界面', () => {
+test('三种形态都登记在册，且都声明了能力', () => {
+  assert.equal(STAGES.length, 3);
+  assert.deepEqual(
+    STAGES.map((stage) => stage.id),
+    ['wheel', 'grid', 'slot'],
+  );
+  assert.equal(DEFAULT_STAGE, 'wheel');
   for (const stage of STAGES) {
-    assert.equal(typeof stage.id, 'string', '缺 id');
-    assert.match(stage.id, /^[a-z][a-z0-9-]*$/, `id 形状不对：${stage.id}`);
-    assert.equal(typeof stage.label, 'string', `${stage.id} 缺 label`);
-    assert.notEqual(stage.label.trim(), '', `${stage.id} 的 label 是空的`);
-    assert.equal(typeof stage.create, 'function', `${stage.id} 缺 create`);
-    assert.equal(typeof stage.styles, 'string', `${stage.id} 缺 styles`);
+    assert.equal(isStageId(stage.id), true);
+    assert.equal(typeof stage.label, 'string');
+    assert.equal(typeof stage.capabilities, 'object');
+    assert.equal(typeof stage.create, 'function');
+    // 形态不再声明自己是什么抽法
+    assert.equal('mode' in stage, false);
   }
 });
 
-test('createStage 把入口一起交给形态', () => {
-  let received = null;
-  const host = { replaceChildren() {} };
-  const api = { start() {}, pickPrize() {} };
-  for (const stage of STAGES) {
-    const original = stage.create;
-    stage.create = (_host, _config, given) => {
-      received = given;
-      return { begin() {}, reveal() {}, reset() {}, update() {}, destroy() {} };
-    };
-    try {
-      createStage(stage.id, host, {}, api);
-      assert.equal(received, api, `${stage.id} 没拿到入口`);
-    } finally {
-      stage.create = original;
+test('认不出的形态 id 退回第一种', () => {
+  assert.equal(stageInfo('没有这个').id, DEFAULT_STAGE);
+  assert.equal(stageLabel('没有这个'), stageLabel(DEFAULT_STAGE));
+});
+
+test('能力协商：现有三种形态都能承接两种抽法', () => {
+  for (const protocol of PROTOCOLS) {
+    const usable = stagesFor(protocol);
+    assert.equal(usable.length, 3, `${protocol.label} 应能用三种形态`);
+    for (const stage of usable) {
+      assert.equal(compatible(stage, protocol), true);
     }
   }
 });
 
-test('id 不重复，默认形态在册', () => {
-  assert.equal(new Set(STAGE_IDS).size, STAGE_IDS.length);
-  assert.ok(isStageId(DEFAULT_STAGE));
-  assert.equal(stageLabel(DEFAULT_STAGE), STAGE_IDS.map(stageLabel)[0]);
+test('能力协商：画不了多个结果的形态接不了多人抽奖', () => {
+  const single = { id: 'single', label: '单格', capabilities: { spin: 1, slots: 2, winners: 1 } };
+  assert.equal(compatible(single, protocolInfo('person-prize')), true);
+  assert.equal(compatible(single, protocolInfo('prize-person')), false);
 });
 
-test('认不出的 id 退回第一种形态', () => {
-  assert.equal(stageInfo('does-not-exist').id, DEFAULT_STAGE);
-  assert.equal(stageLabel('does-not-exist'), stageInfo(DEFAULT_STAGE).label);
-  assert.equal(isStageId('does-not-exist'), false);
+test('能力协商：不转的形态接不了要转的抽法', () => {
+  const plain = { id: 'plain', label: '揭晓卡', capabilities: { spin: 0, slots: 2, winners: 'many' } };
+  assert.equal(compatible(plain, protocolInfo('prize-person')), false);
+  assert.equal(compatible(plain, { requires: { spin: 0, slots: 1, winners: 1 } }), true);
 });
 
-test('createStage 交给对应形态', () => {
-  let called = '';
-  const host = { replaceChildren() {} };
-  for (const stage of STAGES) {
-    const original = stage.create;
-    stage.create = (received) => {
-      called = stage.id;
-      assert.equal(received, host);
-      return { begin() {}, reveal() {}, reset() {}, destroy() {} };
-    };
-    try {
-      createStage(stage.id, host);
-      assert.equal(called, stage.id);
-    } finally {
-      stage.create = original;
-    }
-  }
+test('能力缺项时按最保守的一份算', () => {
+  const capabilities = capabilitiesOf('没有这个');
+  assert.deepEqual(capabilities, { spin: 0, slots: 1, winners: 1, labels: 1 });
 });
 
-test('每种形态自带抽法；一次抽几个是形态内部的配置', () => {
-  for (const stage of STAGES) {
-    assert.ok(stage.mode === 'prize-person' || stage.mode === 'person-prize', `${stage.id} 缺 mode`);
-    const hasBatch = (stage.config ?? []).some((field) => field.key === 'batch');
-    assert.equal(hasBatch, stage.mode === 'prize-person', `${stage.id} 的 batch 配置与抽法不一致`);
-  }
-  // 转盘 / 九宫格 / 老虎机都是「上台一个人 → 抽一个奖」
-  for (const id of ['wheel', 'grid', 'slot']) {
-    assert.equal(stageMode(id), 'person-prize');
-    assert.equal(stageBatch(id, {}), 1);
-  }
+test('配置项与默认值', () => {
+  const keys = stageFields('wheel').map((field) => field.key);
+  assert.deepEqual(keys, ['skin', 'duration', 'sound']);
+  assert.equal(stageBatch('wheel', {}), 1);
 });
 
-test('每种形态都能选样式，默认那一套在选项里', () => {
-  for (const stage of STAGES) {
-    const field = (stage.config ?? []).find((item) => item.key === 'skin');
-    assert.ok(field !== undefined, `${stage.id} 没有样式可选`);
-    assert.equal(field.type, 'select', `${stage.id} 的样式不是下拉`);
-    assert.ok(field.options.length > 1, `${stage.id} 只有一套样式`);
-    assert.ok(
-      field.options.some((option) => option.value === field.value),
-      `${stage.id} 的默认样式不在选项里`,
-    );
-    assert.equal(normalizeConfig(stage.id, {}).skin, field.value, `${stage.id} 取不到默认样式`);
-    assert.equal(
-      normalizeConfig(stage.id, { skin: '不存在的样式' }).skin,
-      field.value,
-      `${stage.id} 认不出的样式没退回默认`,
-    );
-  }
+test('配置归一化：越界收边，认不出的选项退回默认', () => {
+  assert.equal(normalizeConfig('wheel', { duration: 1 }).duration, 2);
+  assert.equal(normalizeConfig('wheel', { duration: 99 }).duration, 8);
+  assert.equal(normalizeConfig('wheel', { sound: 'false' }).sound, false);
+  assert.equal(normalizeConfig('wheel', { skin: '???' }).skin, 'red-gold');
 });

@@ -208,6 +208,22 @@
   color: var(--paper);
 }
 
+/* 固定槽侧栏：盘面占满中间，只剩左边一条空，竖排、选中项压一道金线 */
+.stage-wheel .slot-picker {
+  left: 2.2cqw;
+  width: min(17cqw, 224px);
+}
+
+.stage-wheel .slot-picker .picker-title { color: var(--gold); }
+
+.stage-wheel .slot-picker .pick { color: var(--paper-3); }
+
+.stage-wheel .slot-picker .pick.on {
+  color: var(--paper);
+  border-left-color: var(--gold);
+  background: rgba(232, 181, 81, 0.14);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .stage-wheel .stage-reveal {
     transition-duration: 0.01ms !important;
