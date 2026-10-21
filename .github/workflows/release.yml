@@ -41,10 +41,16 @@ jobs:
         run: |
           set -euo pipefail
 
+          # 手动触发有两种来路：重跑某次 tag 的流水线（ref 是 tag），或直接选 main
+          # 发一个按提交号命名的临时版本。tag 那一种必须继续用 tag 名，
+          # 否则重跑会把同一个提交发到另一个目录上。
           if [[ "$GITHUB_EVENT_NAME" != "push" ]]; then
-            # 手动触发：只在 main 上，发一个按提交号命名的临时版本。
+            if [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "release=${TAG}-s5" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
             if [[ "$TAG" != "main" ]]; then
-              echo "::error::手动触发只能选 main，现在是 ${TAG}"
+              echo "::error::手动触发只能选 main 或 vX.Y.Z 的 tag，现在是 ${TAG}"
               exit 1
             fi
             echo "release=${GITHUB_SHA}-s5" >> "$GITHUB_OUTPUT"
