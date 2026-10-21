@@ -73,7 +73,6 @@ jobs:
       TOOLBOX_RELEASE: ${{ needs.guard.outputs.release }}
       TOOLBOX_TOOLS_BASE: ${{ vars.TOOLBOX_TOOLS_BASE || 'https://toolbox.longyi.cloud/' }}
       RELEASE_STAGE: .release
-      CLOUDBASE_ENV_ID: ${{ vars.CLOUDBASE_ENV_ID }}
     steps:
       - uses: actions/checkout@v4
 
@@ -84,18 +83,13 @@ jobs:
       - name: 组装版本目录与清单
         run: node scripts/build-release.mjs
 
-      - name: 登录 CloudBase
-        env:
-          CLOUDBASE_APIKEY: ${{ secrets.CLOUDBASE_APIKEY }}
-        run: >-
-          npx -y -p @cloudbase/cli@3.8.7 tcb login
-          --cloudbase-api-key "$CLOUDBASE_APIKEY" -e "$CLOUDBASE_ENV_ID"
-
+      # 不直传对象存储：从海外 runner 往国内 COS 传，几个大文件会扛到超时
+      # （实测「User network is too slow」）。改成交给 toolbox_service 在云端写。
       - name: 上传本源版本目录
-        run: >-
-          npx -y -p @cloudbase/cli@3.8.7 tcb hosting deploy
-          "$RELEASE_STAGE" "releases/$TOOLBOX_SOURCE/$TOOLBOX_RELEASE"
-          -e "$CLOUDBASE_ENV_ID"
+        env:
+          TOOLBOX_SERVICE_URL: ${{ vars.TOOLBOX_SERVICE_URL }}
+          TOOLBOX_RELEASE_TOKEN: ${{ secrets.TOOLBOX_RELEASE_TOKEN }}
+        run: node scripts/upload-release.mjs
 
       - name: 切本源指针
         env:

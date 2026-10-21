@@ -45,7 +45,7 @@
 git tag v0.1.0 && git push origin v0.1.0
   ↓ GitHub Actions（只有 tag 触发，分支推送不发布）
   node scripts/build-release.mjs          组装 .release/
-  tcb hosting deploy .release releases/tools_public/v0.1.0-s5
+  node scripts/upload-release.mjs         分片经 /ops/shell 写进 releases/tools_public/v0.1.0-s5/
   POST <toolbox_service>/ops/releases { source: "tools_public", release: "v0.1.0-s5" }
 ```
 
@@ -60,10 +60,8 @@ tag 必须打在 `main` 上、形如 `vX.Y.Z`；流水线第一个 job 校验这
 
 | 类型 | 名称 | 用途 |
 | --- | --- | --- |
-| variable | `CLOUDBASE_ENV_ID` | 目标 CloudBase 环境 |
 | variable | `TOOLBOX_SERVICE_URL` | 指向 `toolbox_service` 的 HTTP 访问地址 |
 | variable | `TOOLBOX_TOOLS_BASE` | 可选，H5 装载基址，默认 `https://toolbox.longyi.cloud/` |
-| secret | `CLOUDBASE_APIKEY` | 环境 API Key，供 `tcb login` 与静态托管上传 |
 | secret | `TOOLBOX_RELEASE_TOKEN` | **本仓专用**发布令牌；切不了私有仓的指针 |
 
 清单契约（`schemaVersion: 5`）见主仓 `src/tcb/toolbox_service/README.md`。工具 id 与另一个仓
