@@ -16,6 +16,8 @@ import path from "node:path";
 
 const SOURCE = "tools_public";
 const SCHEMA_VERSION = 5;
+/** 与服务端 LIMITS.toolIdPattern 同一口径。 */
+const CAPABILITY_ID = /^[A-Za-z0-9._-]{1,64}$/;
 const repoRoot = process.cwd();
 const release =
   maybeText(process.env.TOOLBOX_RELEASE) ??
@@ -67,6 +69,9 @@ for (const tool of tools) {
 }
 
 for (const capability of await loadCaps()) {
+  if (capability.id in caps) {
+    fail(`能力 id「${capability.id}」在两个能力包里重复`);
+  }
   caps[capability.id] = { entry: capability.entry, version: capability.version };
 }
 
@@ -166,20 +171,49 @@ async function loadCaps() {
       fail(`${manifestPath} 不存在`);
     }
     const raw = JSON.parse(await readFile(manifestPath, "utf8"));
-    const id = requireText(raw["id"]);
-    if (id !== entry.name) {
-      fail(`${manifestPath}：id「${id}」与目录名「${entry.name}」不一致`);
+    const bundle = requireText(raw["id"]);
+    if (bundle !== entry.name) {
+      fail(`${manifestPath}：id「${bundle}」与目录名「${entry.name}」不一致`);
     }
     const version = requireText(raw["version"]);
-    const capabilityEntry = requireText(raw["entry"]);
     const dist = path.join(dir, "dist");
-    if (!(await exists(path.join(dist, capabilityEntry)))) {
-      fail(`${manifestPath}：dist/${capabilityEntry} 不存在`);
+
+    // 两种写法：单能力用 entry；一个包提供多个能力用 provides。
+    // 后者是常态——store.kv 与 store.docs 共用一份握手与请求封装。
+    const provides = {};
+    if (raw["provides"] !== undefined) {
+      if (raw["entry"] !== undefined) {
+        fail(`${manifestPath}：entry 与 provides 只能二选一`);
+      }
+      const map = raw["provides"];
+      if (map === null || typeof map !== "object" || Array.isArray(map)) {
+        fail(`${manifestPath}：provides 必须是 { "<能力 id>": "<dist 内相对路径>" }`);
+      }
+      for (const [id, target] of Object.entries(map)) {
+        if (!CAPABILITY_ID.test(id)) {
+          fail(`${manifestPath}：能力 id「${id}」格式不合法`);
+        }
+        provides[id] = requireText(target);
+      }
+      if (Object.keys(provides).length === 0) {
+        fail(`${manifestPath}：provides 不能为空`);
+      }
+    } else {
+      provides[bundle] = requireText(raw["entry"]);
     }
-    const target = path.join(stage, "caps", id);
+
+    for (const [id, capabilityEntry] of Object.entries(provides)) {
+      if (!(await exists(path.join(dist, capabilityEntry)))) {
+        fail(`${manifestPath}：dist/${capabilityEntry}（能力 ${id}）不存在`);
+      }
+    }
+
+    const target = path.join(stage, "caps", bundle);
     await mkdir(target, { recursive: true });
     await cp(dist, target, { recursive: true });
-    loaded.push({ id, version, entry: `caps/${id}/${capabilityEntry}` });
+    for (const [id, capabilityEntry] of Object.entries(provides)) {
+      loaded.push({ id, version, entry: `caps/${bundle}/${capabilityEntry}` });
+    }
   }
   return loaded;
 }
