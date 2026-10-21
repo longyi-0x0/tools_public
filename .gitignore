@@ -23,3 +23,7 @@ node_modules/
 dist/
 # 发布脚本的暂存目录
 .release/
+
+# 能力包的产物要入库：它就是发布产物本身，不是本地构建垃圾。
+!caps/*/dist/
+!caps/*/dist/**
