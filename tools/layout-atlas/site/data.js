@@ -36,19 +36,19 @@ const CATALOG = {
       id: "clinic-scheduler",
       name: "诊所排程台",
       group: "shell",
-      tags: ["日程", "排程", "侧栏", "详情抽屉"],
-      summary: "左侧工作台导航、四列医师时间轴、右侧预约详情卡；一屏交代今天谁在班、几点做什么、这一单怎么结。",
-      note: "整屏应用外壳，适合排程、工单、资源调度这类「以时间轴为主」的后台；纯列表页套这套三栏，右栏会白占掉主区宽度。每块的位置都按小时算（top: calc(var(--hour) * N)），拖 --hour 整条时间轴等比缩放，块与刻度不会脱节。",
-      previewVw: 1440,
+      tags: ["日程", "排程", "侧栏", "详情抽屉", "还原稿"],
+      summary: "玻璃底板浮着三块白色内容区：左边工作台导航，中间四列医师时间轴，右边这一单的详情与结算；标题与工具栏直接落在玻璃上，不做第四条通栏。",
+      note: "整屏应用外壳，按参考图做成还原稿 —— 底色、字号、间距、状态一并复刻，不抽成骨架。这套「玻璃底 + 多块白卡」的关键是：外壳只负责一层淡粉玻璃，所有内容都装在独立的圆角白卡里，卡与卡之间留出玻璃缝；侧栏里的门店切换、详情里的术前清单再用一层玻璃色嵌套块，让白卡内部也有层次。每块的位置都按小时算（top: calc(var(--hour) * N)），拖 --hour 整条时间轴等比缩放，块与刻度不会脱节。",
+      previewVw: 1080,
       params: [
-        { name: "radius",  label: "外壳圆角", min: 0,   max: 32,  step: 2, value: 22,  unit: "px" },
-        { name: "sidebar", label: "侧栏宽",   min: 200, max: 320, step: 4, value: 272, unit: "px" },
-        { name: "panel",   label: "详情栏宽", min: 300, max: 470, step: 4, value: 396, unit: "px" },
-        { name: "hour",    label: "每小时高", min: 56,  max: 108, step: 2, value: 80,  unit: "px" }
+        { name: "radius",  label: "外壳圆角", min: 0,   max: 40,  step: 2, value: 22,  unit: "px" },
+        { name: "sidebar", label: "侧栏宽",   min: 120, max: 260, step: 1, value: 165, unit: "px" },
+        { name: "panel",   label: "详情栏宽", min: 180, max: 340, step: 1, value: 230, unit: "px" },
+        { name: "hour",    label: "每小时高", min: 40,  max: 90,  step: 1, value: 59,  unit: "px" }
       ],
       html: `
 <div class="app">
-  <aside class="side">
+  <aside class="side card">
     <div class="brand"><span class="mark"></span><b>medspa</b></div>
 
     <div class="clinic">
@@ -123,9 +123,9 @@ const CATALOG = {
     </div>
 
     <div class="board">
-      <section class="cal">
+      <section class="cal card">
         <div class="phead">
-          <div></div>
+          <div class="gmt">GMT-4</div>
           <div class="ph"><span class="pav pa1">MC</span><span class="pi"><b>Dr. Maya Chen</b><i>4 appts · 88%</i><span class="pbar"><s style="width:88%"></s></span></span></div>
           <div class="ph"><span class="pav pa2">LP</span><span class="pi"><b>Leo Park, RN</b><i>5 appts · 78%</i><span class="pbar"><s style="width:78%"></s></span></span></div>
           <div class="ph"><span class="pav pa3">JO</span><span class="pi"><b>Dr. James Ortiz</b><i>4 appts · 54%</i><span class="pbar"><s style="width:54%"></s></span></span></div>
@@ -145,88 +145,88 @@ const CATALOG = {
           </div>
 
           <div class="col">
-            <div class="ev" style="top:calc(var(--hour)*0);height:calc(var(--hour)*.75)">
+            <div class="ev" style="top:calc(var(--hour)*0);height:calc(var(--hour)*.75 - 8px)">
               <div class="t">9:00-9:45</div><div class="n">Consultation</div>
             </div>
-            <div class="ev p" style="top:calc(var(--hour)*1);height:calc(var(--hour)*.75)">
+            <div class="ev p" style="top:calc(var(--hour)*1);height:calc(var(--hour)*.75 - 8px)">
               <div class="t">10:00-10:45</div><div class="n">Botox · 3 areas</div>
             </div>
-            <div class="ev g" style="top:calc(var(--hour)*2.25);height:calc(var(--hour)*.75)">
+            <div class="ev g" style="top:calc(var(--hour)*2.25);height:calc(var(--hour)*.75 - 8px)">
               <svg class="bd" width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 9v4"/><circle cx="12" cy="17" r=".8" fill="currentColor"/><path d="M10.3 3.8L2.6 17a2 2 0 001.7 3h15.4a2 2 0 001.7-3L13.7 3.8a2 2 0 00-3.4 0z"/></svg>
               <div class="t">11:15-12:00</div><div class="n">Lip filler · 1 ml</div>
             </div>
-            <div class="ev plain" style="top:calc(var(--hour)*3);height:calc(var(--hour)*1)">
+            <div class="ev plain" style="top:calc(var(--hour)*3);height:calc(var(--hour)*1 - 8px)">
               <div class="n">Lunch&nbsp; 12:00-13:00</div>
             </div>
-            <div class="ev g" style="top:calc(var(--hour)*4.5);height:calc(var(--hour)*1)">
+            <div class="ev g" style="top:calc(var(--hour)*4.5);height:calc(var(--hour)*1 - 8px)">
               <div class="t">13:30-14:30</div><div class="n">Cheek filler · 2 ml</div><div class="c">Lauren Mills</div>
             </div>
-            <div class="ev" style="top:calc(var(--hour)*6);height:calc(var(--hour)*.5)">
+            <div class="ev" style="top:calc(var(--hour)*6);height:calc(var(--hour)*.5 - 8px)">
               <div class="t">15:00-15:30</div><div class="n">Consultation</div>
             </div>
-            <div class="ev" style="top:calc(var(--hour)*7);height:calc(var(--hour)*.75)">
+            <div class="ev" style="top:calc(var(--hour)*7);height:calc(var(--hour)*.75 - 8px)">
               <div class="t">16:00-16:45</div><div class="n">Consultation</div>
             </div>
           </div>
 
           <div class="col">
-            <div class="ev g" style="top:calc(var(--hour)*.5);height:calc(var(--hour)*.75)">
+            <div class="ev g" style="top:calc(var(--hour)*.5);height:calc(var(--hour)*.75 - 8px)">
               <div class="t">9:30-10:15</div><div class="n">Dermaplaning</div>
             </div>
-            <div class="ev g" style="top:calc(var(--hour)*1.5);height:calc(var(--hour)*.75)">
+            <div class="ev g" style="top:calc(var(--hour)*1.5);height:calc(var(--hour)*.75 - 8px)">
               <div class="t">10:30-11:15</div><div class="n">HydraFacial Deluxe</div><div class="c">Chloe Bennett</div>
             </div>
-            <div class="ev plain" style="top:calc(var(--hour)*3);height:calc(var(--hour)*.5)">
+            <div class="ev plain" style="top:calc(var(--hour)*3);height:calc(var(--hour)*.5 - 8px)">
               <div class="n">Lunch&nbsp; 12:00-12:30</div>
             </div>
-            <div class="ev g" style="top:calc(var(--hour)*4.75);height:calc(var(--hour)*.66)">
+            <div class="ev g" style="top:calc(var(--hour)*4.75);height:calc(var(--hour)*.66 - 8px)">
               <div class="t">13:45-14:25</div><div class="n">Chemical peel</div>
             </div>
-            <div class="ev" style="top:calc(var(--hour)*5.5);height:calc(var(--hour)*.66)">
+            <div class="ev" style="top:calc(var(--hour)*5.5);height:calc(var(--hour)*.66 - 8px)">
               <div class="t">14:30-15:10</div><div class="n">Gold member facial</div><div class="c">Ruby Clarke</div>
             </div>
-            <div class="ev g" style="top:calc(var(--hour)*6.25);height:calc(var(--hour)*.66)">
+            <div class="ev g" style="top:calc(var(--hour)*6.25);height:calc(var(--hour)*.66 - 8px)">
               <div class="t">15:15-15:55</div><div class="n">Microneedling + PRP</div><div class="c">Isla Turner</div>
             </div>
-            <div class="ev" style="top:calc(var(--hour)*7);height:calc(var(--hour)*.75)">
+            <div class="ev" style="top:calc(var(--hour)*7);height:calc(var(--hour)*.75 - 8px)">
               <div class="t">16:00-16:45</div><div class="n">IPL photofacial</div>
             </div>
           </div>
 
           <div class="col">
-            <div class="ev" style="top:calc(var(--hour)*0);height:calc(var(--hour)*1)">
+            <div class="ev" style="top:calc(var(--hour)*0);height:calc(var(--hour)*1 - 8px)">
               <div class="t">9:00-10:00</div><div class="n">Laser hair removal</div><div class="c">Daniel Reyes</div>
             </div>
-            <div class="ev plain" style="top:calc(var(--hour)*3);height:calc(var(--hour)*.5)">
+            <div class="ev plain" style="top:calc(var(--hour)*3);height:calc(var(--hour)*.5 - 8px)">
               <div class="n">12:00-12:30</div>
             </div>
-            <div class="ev plain" style="top:calc(var(--hour)*4);height:calc(var(--hour)*1)">
+            <div class="ev plain" style="top:calc(var(--hour)*4);height:calc(var(--hour)*1 - 8px)">
               <div class="n">Lunch&nbsp; 13:00-14:00</div>
             </div>
-            <div class="ev" style="top:calc(var(--hour)*5);height:calc(var(--hour)*1.5)">
+            <div class="ev" style="top:calc(var(--hour)*5);height:calc(var(--hour)*1.5 - 8px)">
               <div class="t">14:00-15:30</div><div class="n">CoolSculpting · abdom…</div><div class="c">Maria Lopez</div>
             </div>
-            <div class="ev" style="top:calc(var(--hour)*6.75);height:calc(var(--hour)*.75)">
+            <div class="ev" style="top:calc(var(--hour)*6.75);height:calc(var(--hour)*.75 - 8px)">
               <div class="t">15:45-16:30</div><div class="n">IPL photofacial</div>
             </div>
           </div>
 
           <div class="col">
-            <div class="ev g" style="top:calc(var(--hour)*1);height:calc(var(--hour)*1)">
+            <div class="ev g" style="top:calc(var(--hour)*1);height:calc(var(--hour)*1 - 8px)">
               <div class="t">10:00-11:00</div><div class="n">Microneedling</div><div class="c">Ava Johnson</div>
             </div>
-            <div class="ev g" style="top:calc(var(--hour)*2.5);height:calc(var(--hour)*.75)">
+            <div class="ev g" style="top:calc(var(--hour)*2.5);height:calc(var(--hour)*.75 - 8px)">
               <svg class="bd" width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M20 11a8 8 0 10-2.3 5.7"/><path d="M20 5v6h-6"/></svg>
               <div class="t">11:30-12:15</div><div class="n">LED therapy</div>
             </div>
-            <div class="ev plain" style="top:calc(var(--hour)*3.25);height:calc(var(--hour)*.75)">
+            <div class="ev plain" style="top:calc(var(--hour)*3.25);height:calc(var(--hour)*.75 - 8px)">
               <div class="n">Lunch&nbsp; 12:15-13:00</div>
             </div>
-            <div class="ev" style="top:calc(var(--hour)*4.5);height:calc(var(--hour)*1.5)">
+            <div class="ev" style="top:calc(var(--hour)*4.5);height:calc(var(--hour)*1.5 - 8px)">
               <svg class="bd" width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M20 11a8 8 0 10-2.3 5.7"/><path d="M20 5v6h-6"/></svg>
               <div class="t">13:30-15:00</div><div class="n">Body contouring</div><div class="c">Nora Patel</div>
             </div>
-            <div class="ev g" style="top:calc(var(--hour)*6.5);height:calc(var(--hour)*1)">
+            <div class="ev g" style="top:calc(var(--hour)*6.5);height:calc(var(--hour)*1 - 8px)">
               <div class="t">15:30-16:30</div><div class="n">HydraFacial</div><div class="c">Lily Chen</div>
             </div>
           </div>
@@ -235,7 +235,7 @@ const CATALOG = {
         </div>
       </section>
 
-      <aside class="panel">
+      <aside class="panel card">
         <div class="pan-h">
           <b>Appointment</b>
           <span class="state">In treatment</span>
@@ -310,221 +310,219 @@ const CATALOG = {
 </div>
       `,
       css: `
-:root{
-  
-  --ink:#17171a;--ink2:#3b3b40;--muted:#8d8d92;--dim:#a6a39b;
-  --line:#ece9e1;--line2:#f4f1ea;--cream:#f8f6f0;--cream2:#fbf9f3;
-  --lime:#e6f2a8;--lav:#e7e1fa;--purple:#7c53f4;
-  --green:#e5f1dd;--greenln:#d4e6c7;--red:#df4339;
-}
 *,*::before,*::after{box-sizing:border-box}
 body{
-  margin:0;padding:16px;background:#e8e7ed;color:#17171a;
+  margin:0;padding:40px 27px;background:#cfcace;color:#17171a;
   font:400 13px/1.45 -apple-system,BlinkMacSystemFont,"SF Pro Text","PingFang SC",system-ui,sans-serif;
   -webkit-font-smoothing:antialiased;
 }
 svg{display:block;flex:none}
+
+/* 玻璃底板：所有白色内容区都浮在它上面 */
 .app{
-  position:relative;display:flex;height:calc(100vh - 32px);min-height:640px;
-  background:#f8f6f0;border-radius:var(--radius);overflow:hidden;
-  box-shadow:0 18px 44px rgba(24,20,40,.10),0 1px 0 rgba(255,255,255,.7) inset;
+  position:relative;display:flex;gap:10px;
+  height:calc(100vh - 80px);min-height:600px;
+  padding:10px 66px 10px 19px;
+  background:#f8f2f6;border-radius:var(--radius);overflow:hidden;
+  box-shadow:0 24px 60px rgba(90,80,110,.22);
 }
+.card{background:#fff;border-radius:20px}
 
-/* ---------------- 侧栏 ---------------- */
-.side{
-  width:var(--sidebar);flex:none;display:flex;flex-direction:column;
-  background:#fbf9f3;border-right:1px solid #ece9e1;padding:16px 13px 12px;
-}
-.brand{display:flex;align-items:center;gap:8px;padding:0 5px 12px}
-.mark{width:23px;height:23px;border-radius:8px;background:conic-gradient(from 210deg,#c9e06a,#8f7bea,#f0c8b6,#c9e06a);position:relative}
-.mark::after{content:"";position:absolute;inset:6px;border-radius:50%;background:#fbf9f3}
-.brand b{font-size:14.5px;font-weight:600;letter-spacing:-.3px}
+/* ---------------- 侧栏：一整块白卡 ---------------- */
+.side{width:var(--sidebar);flex:none;display:flex;flex-direction:column;padding:11px 9px}
+.brand{display:flex;align-items:center;gap:9px;padding:2px 2px 16px}
+.mark{width:24px;height:24px;border-radius:8px;position:relative;
+  background:conic-gradient(from 200deg,#c9b6ee,#ded3fb 25%,#deeebf 55%,#f2c8b6 78%,#c9b6ee)}
+.mark::after{content:"";position:absolute;inset:7px;border-radius:50%;background:#fff}
+.brand b{font-size:15px;font-weight:600;letter-spacing:-.4px}
 
-.clinic{
-  display:flex;align-items:center;gap:8px;padding:7px 8px;background:#fff;
-  border:1px solid #ece9e1;border-radius:10px;margin-bottom:14px;
-}
-.clav{width:26px;height:26px;border-radius:7px;background:#e7e1fa;color:#5b4b8f;
-  font-size:10px;font-weight:600;display:grid;place-items:center;flex:none}
+/* 门店切换：白卡里的玻璃色嵌套块 */
+.clinic{display:flex;align-items:center;gap:6px;padding:5px 6px;border-radius:11px;
+  background:#f6f4f7;margin-bottom:13px}
+.clav{width:24px;height:24px;border-radius:7px;flex:none;display:grid;place-items:center;
+  background:#c5b9f7;color:#3b2a6b;font-size:10px;font-weight:600}
 .cltx{min-width:0;flex:1}
-.cltx b{display:block;font-size:11px;font-weight:600;letter-spacing:-.1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.cltx i{display:block;font-size:9px;font-style:normal;color:#a6a39b;margin-top:1px}
-.clinic svg{color:#b3b0a8}
+.cltx b{display:block;font-size:9px;font-weight:600;letter-spacing:-.2px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cltx i{display:block;font-size:8px;font-style:normal;color:#97939f;margin-top:1px}
+.clinic>svg{color:#a9a5b0;flex:none}
 
-.eyebrow{font-size:8.5px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;
-  color:#b6b3aa;padding:0 7px;margin:0 0 5px}
-
+.eyebrow{font-size:8px;font-weight:600;letter-spacing:.11em;text-transform:uppercase;
+  color:#b0acb8;padding:0 4px;margin:0 0 5px}
 .nav{display:flex;flex-direction:column;gap:1px}
-.nav a{display:flex;align-items:center;gap:9px;padding:6.5px 8px;border-radius:8px;
-  font-size:11.5px;color:#43434a;text-decoration:none;letter-spacing:-.05px}
-.nav a svg{color:#8e8b84}
-.nav a .ct{margin-left:auto;font-size:9px;color:#b0ada5}
-.nav a.on{background:#e6f2a8;color:#23280f;font-weight:600}
-.nav a.on svg{color:#3f4816}
-.nav a.on .ct{color:#5f6a2a}
+.nav a{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:8px;
+  font-size:10.5px;color:#4a4655;text-decoration:none;letter-spacing:-.1px}
+.nav a svg{color:#a09ca9}
+.nav a .ct{margin-left:auto;font-size:9px;color:#aca8b6}
+/* 当前项：淡紫胶囊 */
+.nav a.on{background:#ded3fb;color:#2b2250;font-weight:600}
+.nav a.on svg{color:#6d5aa8}
+.nav a.on .ct{color:#6d5aa8}
 
-.assist{margin-top:auto;background:#e9f3af;border-radius:13px;padding:11px 11px 12px}
-.assist .ah{display:flex;align-items:center;gap:6px;font-size:11px;font-weight:600;color:#2b3110}
-.assist p{margin:6px 0 9px;font-size:9.5px;line-height:1.4;color:#5d6533}
-.assist button{background:#fff;border:0;border-radius:7px;padding:4px 9px;font-size:9px;
-  font-weight:600;color:#2b3110;box-shadow:0 1px 2px rgba(40,45,10,.12)}
-
-.nav2{margin-top:12px;padding-top:9px;border-top:1px solid #ece9e1}
-.me{display:flex;align-items:center;gap:8px;margin-top:10px;padding:8px 4px 2px;border-top:1px solid #ece9e1}
-.meav{width:26px;height:26px;border-radius:50%;background:linear-gradient(135deg,#d8d1c2,#8b8172);flex:none;
-  display:grid;place-items:center;color:#fff;font-size:8.5px;font-weight:600}
+.assist{margin-top:auto;background:#deeebf;border-radius:13px;padding:9px 9px 10px}
+.assist .ah{display:flex;align-items:center;gap:6px;font-size:11px;font-weight:600;color:#2c3a14}
+.assist p{margin:5px 0 8px;font-size:9px;line-height:1.45;color:#5a6a35}
+.assist button{background:#fff;border:0;border-radius:8px;padding:5px 10px;font-size:9px;
+  font-weight:600;color:#2c3a14;box-shadow:0 1px 2px rgba(45,60,15,.13)}
+.nav2{margin-top:14px;padding-top:10px;border-top:1px solid #f0eef3}
+.me{display:flex;align-items:center;gap:8px;margin-top:11px;padding:6px 3px 3px;border-top:1px solid #f0eef3}
+.meav{width:26px;height:26px;border-radius:50%;flex:none;display:grid;place-items:center;
+  background:linear-gradient(135deg,#ded8c8,#9a907e);color:#fff;font-size:8.5px;font-weight:600}
 .metx{flex:1;min-width:0}
 .metx b{display:block;font-size:10.5px;font-weight:600}
-.metx i{display:block;font-size:8.5px;font-style:normal;color:#a6a39b}
-.me svg{color:#b3b0a8}
+.metx i{display:block;font-size:7px;font-style:normal;color:#a09ca9;white-space:nowrap}
+.me>svg{color:#b0acb8;flex:none}
 
-/* ---------------- 主区 ---------------- */
-.main{flex:1;min-width:0;display:flex;flex-direction:column;padding:19px 21px 16px}
-.top{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:13px}
-.top h1{margin:0;font-size:24px;font-weight:600;letter-spacing:-.5px}
-.top p{margin:4px 0 0;font-size:10.5px;color:#8d8d92;letter-spacing:-.05px}
-.top p b{font-weight:500;color:#6d6d73}
-.topr{display:flex;align-items:center;gap:7px}
-.search{display:flex;align-items:center;gap:7px;width:236px;height:32px;padding:0 9px;
-  background:#fff;border:1px solid #ece9e1;border-radius:999px;color:#a6a39b;font-size:10px}
-.search .kbd{margin-left:auto;font-size:8.5px;border:1px solid #e7e4dc;border-radius:4px;
-  padding:0.5px 4px;color:#b0ada5}
-.ico{width:32px;height:32px;border-radius:50%;background:#fff;border:1px solid #ece9e1;
-  display:grid;place-items:center;color:#4a4a50}
-.primary{display:flex;align-items:center;gap:6px;height:32px;padding:0 13px;border:0;border-radius:999px;
+/* ---------------- 主区：标题与工具栏直接落在玻璃上 ---------------- */
+.main{flex:1;min-width:0;display:flex;flex-direction:column}
+.top{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;padding:0 2px}
+.top h1{margin:0;font-size:23px;line-height:1.2;font-weight:600;letter-spacing:-.5px;color:#17171a}
+.top p{margin:3px 0 0;font-size:10.5px;color:#8b8794;letter-spacing:-.05px}
+.top p b{font-weight:500;color:#6f6b79}
+.topr{display:flex;align-items:center;gap:8px;padding-top:3px}
+.search{display:flex;align-items:center;gap:7px;width:236px;height:32px;padding:0 10px;border-radius:999px;
+  background:#fff;color:#b0acb8;font-size:10px;box-shadow:0 1px 2px rgba(45,35,70,.05)}
+.search .kbd{margin-left:auto;font-size:8.5px;border:1px solid #eeecf2;border-radius:4px;padding:0.5px 4px}
+.ico{width:32px;height:32px;border-radius:50%;background:#fff;display:grid;place-items:center;
+  color:#55505f;box-shadow:0 1px 2px rgba(45,35,70,.05)}
+.primary{display:flex;align-items:center;gap:6px;height:32px;padding:0 14px;border:0;border-radius:999px;
   background:#17171a;color:#fff;font-size:10.5px;font-weight:600;letter-spacing:-.1px}
 
-.bar{display:flex;align-items:center;gap:7px;margin-bottom:13px}
-.rnd{width:26px;height:26px;border-radius:50%;background:#fff;border:1px solid #ece9e1;
-  display:grid;place-items:center;color:#55555b}
-.dateb{height:29px;padding:0 6px;border:0;background:transparent;
-  font-size:11.5px;font-weight:600;color:#1c1c20;letter-spacing:-.2px}
-.today{height:29px;padding:0 12px;border-radius:999px;background:#fff;border:1px solid #ece9e1;
-  font-size:10.5px;color:#33333a}
-.barr{margin-left:auto;display:flex;align-items:center;gap:6px}
-.sel{display:flex;align-items:center;gap:5px;height:29px;padding:0 10px;border-radius:999px;
-  background:#fff;border:1px solid #ece9e1;font-size:10px;color:#3c3c43}
-.seg{display:flex;align-items:center;gap:1px;height:29px;padding:3px;border-radius:999px;
-  background:#efebe1;margin-left:3px}
-.seg b,.seg span{display:flex;align-items:center;height:100%;padding:0 9px;border-radius:999px;
-  font-size:10px;font-weight:400;color:#75736c}
-.seg b{background:#fff;color:#1d1d21;font-weight:600;box-shadow:0 1px 2px rgba(0,0,0,.09)}
+.bar{display:flex;align-items:center;gap:7px;padding:10px 2px 10px}
+.rnd{width:27px;height:27px;border-radius:50%;background:#fff;display:grid;place-items:center;
+  color:#5a5566;box-shadow:0 1px 2px rgba(45,35,70,.06)}
+.dateb{height:30px;padding:0 14px;border-radius:999px;background:#fff;font-size:11px;font-weight:600;
+  color:#1c1c22;letter-spacing:-.2px;box-shadow:0 1px 2px rgba(45,35,70,.06)}
+.today{height:30px;padding:0 13px;border-radius:999px;background:#fff;font-size:11px;color:#332f3d;
+  box-shadow:0 1px 2px rgba(45,35,70,.06)}
+.barr{margin-left:auto;display:flex;align-items:center;gap:7px}
+.sel{display:flex;align-items:center;gap:5px;height:30px;padding:0 11px;border-radius:999px;
+  background:#fff;font-size:10px;color:#413d4c;box-shadow:0 1px 2px rgba(45,35,70,.06)}
+.seg{display:flex;align-items:center;gap:1px;height:30px;padding:3px;border-radius:999px;
+  background:#f4f2f6;margin-left:4px}
+.seg b,.seg span{display:flex;align-items:center;height:100%;padding:0 10px;border-radius:999px;
+  font-size:10px;font-weight:400;color:#7b7686}
+.seg b{background:#fff;color:#1d1d24;font-weight:600;box-shadow:0 1px 2px rgba(45,35,70,.08)}
 
-.board{flex:1;min-height:0;display:flex;gap:12px}
+.board{flex:1;min-height:0;display:flex;gap:14px}
 
-/* ---------------- 日历 ---------------- */
-.cal{flex:1;min-width:0;display:flex;flex-direction:column;background:#fff;
-  border:1px solid #ece9e1;border-radius:14px;overflow:hidden}
-.phead{display:grid;grid-template-columns:52px repeat(4,1fr);align-items:center;
-  height:54px;flex:none;border-bottom:1px solid #f4f1ea}
-.ph{display:flex;align-items:center;gap:7px;padding:0 8px;min-width:0}
-.pav{width:25px;height:25px;border-radius:50%;flex:none;display:grid;place-items:center;
-  color:#fff;font-size:8px;font-weight:600;box-shadow:0 0 0 1.5px #fff,0 0 0 2.5px #eeeae1}
-.pa1{background:linear-gradient(135deg,#f2c39d,#c07a52)}
-.pa2{background:linear-gradient(135deg,#c3d8f2,#6f95c8)}
-.pa3{background:linear-gradient(135deg,#e6d4c0,#a97f57)}
-.pa4{background:linear-gradient(135deg,#f0c2d0,#b96a83)}
+/* ---------------- 日历：第二块白卡 ---------------- */
+.cal{flex:1;min-width:0;display:flex;flex-direction:column;overflow:hidden}
+.phead{display:grid;grid-template-columns:25px repeat(4,1fr);align-items:center;
+  height:49px;flex:none;border-bottom:1px solid #f4f2f6}
+.gmt{font-size:7px;color:#c4c0cc;letter-spacing:.02em;padding-left:3px}
+.ph{display:flex;align-items:center;gap:6px;padding:0 6px;min-width:0}
+.pav{width:22px;height:22px;border-radius:50%;flex:none;display:grid;place-items:center;color:#fff;
+  font-size:7.5px;font-weight:600;box-shadow:0 0 0 1.5px #fff,0 0 0 2.5px #eeebf2}
+.pa1{background:linear-gradient(135deg,#f0bf9a,#bd7550)}
+.pa2{background:linear-gradient(135deg,#bed5f0,#6b91c4)}
+.pa3{background:linear-gradient(135deg,#e4d1bc,#a67a53)}
+.pa4{background:linear-gradient(135deg,#eebfcd,#b56680)}
 .pi{min-width:0;flex:1}
-.pi b{display:block;font-size:10px;font-weight:600;letter-spacing:-.15px;white-space:nowrap;
+.pi b{display:block;font-size:9px;font-weight:600;letter-spacing:-.15px;white-space:nowrap;
   overflow:hidden;text-overflow:ellipsis}
-.pi i{display:block;font-size:8px;font-style:normal;color:#a6a39b;margin-top:1px}
-.pbar{display:block;height:2px;border-radius:2px;background:#f0eee7;margin-top:4px;overflow:hidden}
+.pi i{display:block;font-size:7.5px;font-style:normal;color:#a49fb0;margin-top:0;letter-spacing:-.1px}
+.pbar{display:block;height:2px;border-radius:2px;background:#f2f0f5;margin-top:3px;overflow:hidden}
 .pbar s{display:block;height:100%;background:#cbdd8c;border-radius:2px;text-decoration:none}
 
-.grid{flex:1;min-height:0;padding-top:3px;display:grid;grid-template-columns:52px repeat(4,1fr);position:relative;overflow:hidden}
+.grid{flex:1;min-height:0;padding-top:6px;display:grid;grid-template-columns:25px repeat(4,1fr);
+  position:relative;overflow:hidden}
 .times{position:relative}
-.tm{position:absolute;right:8px;transform:translateY(-50%);font-size:8px;color:#b3b0a8;letter-spacing:-.1px}
-.tm.first{transform:translateY(1px)}
-.col{position:relative;min-width:0;
-  background-image:repeating-linear-gradient(to bottom,#f2efe7 0 1px,transparent 1px var(--hour))}
-.col+.col{border-left:1px solid #f6f4ee}
+.tm{position:absolute;left:3px;transform:translateY(-50%);font-size:7.5px;color:#b6b1c0;letter-spacing:-.15px}
+.tm.first{transform:translateY(2px)}
+.col{position:relative;min-width:0}
+/* 小时刻度：细虚线，由遮罩切出来，不占 DOM */
+.col::before{content:"";position:absolute;inset:0;pointer-events:none;
+  background-image:repeating-linear-gradient(to bottom,transparent 0 calc(var(--hour) - 1px),#e8e5ee calc(var(--hour) - 1px) var(--hour));
+  -webkit-mask-image:repeating-linear-gradient(90deg,#000 0 4px,transparent 4px 9px);
+  mask-image:repeating-linear-gradient(90deg,#000 0 4px,transparent 4px 9px)}
 
-.ev{position:absolute;left:4px;right:4px;border-radius:7px;border:1px solid #eeebe3;
-  background:#fff;padding:4px 6px;overflow:hidden}
-.ev .t{font-size:7.5px;color:#94918a;letter-spacing:-.1px;line-height:1.5}
-.ev .n{font-size:9.5px;font-weight:600;color:#232327;letter-spacing:-.2px;line-height:1.15;
+.ev{position:absolute;left:3px;right:3px;border-radius:6px;border:1px solid #f4f0f7;
+  background:#fff;padding:3px 6px;overflow:hidden;min-height:26px}
+.ev .t{font-size:7.5px;color:#a29db0;letter-spacing:-.1px;line-height:1.5}
+.ev .n{font-size:9.5px;font-weight:600;color:#23232c;letter-spacing:-.2px;line-height:1.15;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.ev .c{font-size:8px;color:#8a877f;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.ev.g{background:#e5f1dd;border-color:#d4e6c7}
-.ev.g .n{color:#28351f}
-.ev.p{background:#ded3fb;border-color:#bca8f6;box-shadow:0 1px 3px rgba(124,83,244,.18)}
-.ev.p::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:#7c53f4}
-.ev.p .t{color:#6f5fa0}
-.ev.p .n,.ev.p .c{color:#2f2258}
-.ev.plain{background:transparent;border:0;padding:1px 6px 0 6px}
-.ev.plain .n{font-size:8px;font-weight:400;color:#aaa79f;letter-spacing:0}
-.ev .bd{position:absolute;top:4px;right:4px;color:#a99a6a}
-.ev.p .bd{color:#7c53f4}
+.ev .c{font-size:8px;color:#8d8899;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ev.g{background:#eff5e4;border-color:#e4ecd5}
+.ev.g .n{color:#2a3a1c}
+.ev.p{background:#c9b6f7;border-color:#b8a2f0;box-shadow:0 1px 3px rgba(140,90,230,.16)}
+.ev.p::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:#8b5cf6}
+.ev.p .t{color:#6f5aa0}
+.ev.p .n,.ev.p .c{color:#2e2158}
+.ev.plain{background:#fbf3f4;border-color:#f7edee;padding:3px 6px}
+.ev.plain .n{font-size:8px;font-weight:400;color:#b8b3c0;letter-spacing:-.1px}
+.ev .bd{position:absolute;top:4px;right:5px;color:#b3a874}
+.ev.p .bd{color:#8b5cf6}
 
-.now{position:absolute;left:2px;right:0;height:1.5px;background:#df4339;z-index:4}
-.now b{position:absolute;left:1px;top:-6.5px;background:#df4339;color:#fff;font-size:7px;
-  font-weight:600;padding:1.5px 4px;border-radius:3px;letter-spacing:-.1px}
+.now{position:absolute;left:0;right:0;height:1.5px;background:#e0453c;z-index:4}
+.now b{position:absolute;left:5px;top:-6.5px;background:#e0453c;color:#fff;font-size:7px;font-weight:600;
+  padding:1.5px 4px;border-radius:3px;letter-spacing:-.1px}
 
-/* ---------------- 详情 ---------------- */
-.panel{width:var(--panel);flex:none;display:flex;flex-direction:column;background:#fff;
-  border:1px solid #ece9e1;border-radius:14px;overflow:hidden}
-.pan-h{display:flex;align-items:center;gap:7px;padding:11px 12px;border-bottom:1px solid #f4f1ea;flex:none}
-.pan-h b{font-size:11px;font-weight:600;letter-spacing:-.1px}
-.state{font-size:8px;font-weight:600;background:#eef4d2;color:#4d5a20;border-radius:999px;padding:2.5px 7px}
+/* ---------------- 详情：第三块白卡 ---------------- */
+.panel{width:var(--panel);flex:none;display:flex;flex-direction:column;overflow:hidden}
+.pan-h{display:flex;align-items:center;gap:7px;padding:14px 13px 12px;flex:none}
+.pan-h b{font-size:11.5px;font-weight:600;letter-spacing:-.15px}
+.state{font-size:8px;font-weight:600;background:#eef3e0;color:#55661f;border-radius:999px;padding:2.5px 7px}
 .pan-h .sp{margin-left:auto;display:flex;gap:5px}
-.mini{width:22px;height:22px;border-radius:6px;border:0;background:#f5f3ec;color:#55555b;display:grid;place-items:center}
-.pan-b{flex:1;min-height:0;display:flex;flex-direction:column;overflow-y:auto;overflow-x:hidden;padding:11px 12px 0}
+.mini{width:22px;height:22px;border-radius:7px;border:0;background:#f5f3f7;color:#5f5a6b;
+  display:grid;place-items:center}
+.pan-b{flex:1;min-height:0;display:flex;flex-direction:column;overflow-y:auto;overflow-x:hidden;padding:0 10px}
 .pan-b>*{flex:none}
 
-.client{background:#e7e1fa;border-radius:12px;padding:10px}
-.cltop{display:flex;align-items:center;gap:8px}
-.cav{width:33px;height:33px;border-radius:50%;flex:none;display:grid;place-items:center;
-  background:linear-gradient(135deg,#f6d2bb,#c67f5f);color:#fff;font-size:9.5px;font-weight:600;
-  box-shadow:0 0 0 2px rgba(255,255,255,.7)}
-.cltop b{display:block;font-size:11.5px;font-weight:600;letter-spacing:-.15px}
-.cltop i{display:block;font-size:8px;font-style:normal;color:#6f6889;margin-top:1px}
+.client{background:#c5b9f7;border-radius:13px;padding:9px}
+.cltop{display:flex;align-items:center;gap:9px}
+.cav{width:30px;height:30px;border-radius:50%;flex:none;display:grid;place-items:center;
+  background:linear-gradient(135deg,#f4cdb4,#c47c5c);color:#fff;font-size:9px;font-weight:600;
+  box-shadow:0 0 0 2px rgba(255,255,255,.65)}
+.cltop b{display:block;font-size:12px;font-weight:600;letter-spacing:-.2px;color:#241a4a}
+.cltop i{display:block;font-size:8px;font-style:normal;color:#5b4b8c;margin-top:1px}
 .cbtns{margin-left:auto;display:flex;gap:5px}
-.cbtn{width:21px;height:21px;border-radius:50%;background:#fff;border:0;display:grid;place-items:center;color:#4a4360}
-.chips{display:flex;gap:5px;margin-top:9px}
+.cbtn{width:21px;height:21px;border-radius:50%;background:rgba(255,255,255,.85);border:0;
+  display:grid;place-items:center;color:#4b3f74}
+.chips{display:flex;gap:5px;margin-top:10px}
 .chip{font-size:8px;font-weight:600;border-radius:999px;padding:2.5px 8px;letter-spacing:-.05px}
 .chip.d{background:#1d1d1f;color:#fff}
-.chip.l{background:#e6f2a8;color:#3f4a12}
+.chip.l{background:#deeebf;color:#3d4a14}
 
-.rows{margin:13px 0 0;display:flex;flex-direction:column;gap:12px}
-.row{display:flex;gap:8px;align-items:flex-start}
-.ri{width:17px;height:17px;color:#8a8780;display:grid;place-items:center;flex:none;margin-top:1px}
-.rk{display:block;font-size:8px;color:#b3b0a8;letter-spacing:.02em;line-height:1.6}
-.rv{display:block;font-size:10px;color:#2b2b30;line-height:1.35;letter-spacing:-.1px}
-.rv em{font-style:normal;color:#a9a69e}
+.rows{margin:10px 0 0;display:flex;flex-direction:column;gap:9px;padding:0 1px}
+.row{display:flex;gap:9px;align-items:flex-start}
+.ri{width:17px;height:17px;color:#9d98a8;display:grid;place-items:center;flex:none;margin-top:1px}
+.rk{display:block;font-size:8px;color:#b5b0be;letter-spacing:.02em;line-height:1.6}
+.rv{display:block;font-size:10px;color:#2b2b34;line-height:1.35;letter-spacing:-.1px}
+.rv em{font-style:normal;color:#ada8b8}
 
-.cut{border-top:1px solid #f4f1ea;margin:14px 0 14px;padding-top:12px}
-.cuth{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+/* 术前清单：白卡里的玻璃色嵌套块 */
+.cut{background:#f8f2f6;border-radius:13px;margin:10px 0 0;padding:8px 9px 9px}
+.cuth{display:flex;align-items:center;justify-content:space-between;margin-bottom:4px}
 .cuth b{font-size:10.5px;font-weight:600;letter-spacing:-.1px}
-.cnt{font-size:8px;color:#6d6a63;background:#f5f3ec;border-radius:999px;padding:2px 7px}
-.ck{display:flex;gap:7px;align-items:flex-start;padding:4.5px 0}
-.cc{width:13px;height:13px;border-radius:50%;background:#e9f2c4;display:grid;place-items:center;
-  flex:none;margin-top:1px;color:#5b6f1e}
-.ck.off .cc{background:transparent;border:1.5px dashed #d2cec3;color:transparent}
-.ck b{display:block;font-size:9.5px;font-weight:500;color:#2b2b30;letter-spacing:-.1px}
-.ck i{display:block;font-size:8.5px;font-style:normal;color:#a9a69e;margin-top:0.5px}
+.cnt{font-size:8px;color:#6d687c;background:#fff;border-radius:999px;padding:2px 7px}
+.ck{display:flex;gap:6px;align-items:flex-start;padding:1.5px 0}
+.cc{width:12px;height:12px;border-radius:50%;background:#dceeb4;display:grid;place-items:center;
+  flex:none;margin-top:1px;color:#5c7020}
+.ck.off .cc{background:transparent;border:1.5px dashed #cfc9d6;color:transparent}
+.ck b{display:block;font-size:9px;font-weight:500;color:#2b2b34;letter-spacing:-.1px}
+.ck i{display:block;font-size:8px;font-style:normal;color:#a5a0b0;margin-top:0.5px}
 
-.bill{border-top:1px solid #f4f1ea;padding:9px 12px 11px;margin:auto -12px 0;display:flex;flex-direction:column;gap:4px}
-.bl{display:flex;justify-content:space-between;font-size:9px;color:#5f5c56;letter-spacing:-.05px}
-.bl.due{font-size:10.5px;font-weight:600;color:#17171a;border-top:1px solid #f4f1ea;
-  margin-top:4px;padding-top:6px}
-.pay{display:flex;align-items:center;gap:5px;margin-top:7px}
-.pay .vi{width:17px;height:11px;border-radius:2px;background:#eef;border:1px solid #dcd8ce;
-  display:grid;place-items:center;font-size:6px;font-weight:700;color:#4a5a9a;flex:none}
-.pay span{font-size:8px;color:#a9a69e}
-.co{margin-left:auto;display:flex;align-items:center;gap:5px;height:27px;padding:0 9px;border:0;
-  border-radius:7px;background:#17171a;color:#fff;font-size:9px;font-weight:600}
+.bill{padding:8px 1px 0;display:flex;flex-direction:column;gap:3px;margin-top:auto}
+.bl{display:flex;justify-content:space-between;font-size:9px;color:#6b6676;letter-spacing:-.05px;padding:0 1px}
+.bl.due{font-size:11px;font-weight:600;color:#17171a;padding-top:7px}
+.pay{display:flex;align-items:center;gap:5px;margin-top:9px;padding-bottom:12px}
+.pay .vi{width:17px;height:11px;border-radius:2px;background:#eef0f6;border:1px solid #e2dfe8;
+  display:grid;place-items:center;font-size:5.5px;font-weight:700;color:#4a5a9a;flex:none}
+.pay span{font-size:8px;color:#a5a0b0}
+.co{margin-left:auto;display:flex;align-items:center;gap:5px;height:27px;padding:0 10px;border:0;
+  border-radius:8px;background:#17171a;color:#fff;font-size:9px;font-weight:600}
 
 /* ---------------- 提示条 ---------------- */
-.toast{position:absolute;left:50%;transform:translateX(-50%);bottom:17px;width:410px;
-  display:flex;align-items:center;gap:9px;padding:8px 9px 8px 11px;border-radius:13px;
-  background:#1c1c1e;color:#fff;box-shadow:0 14px 34px rgba(12,10,20,.32)}
+.toast{position:absolute;left:43.2%;bottom:22px;width:350px;display:flex;align-items:center;gap:9px;padding:8px 9px 8px 11px;
+  border-radius:13px;background:#111119;color:#fff;box-shadow:0 14px 34px rgba(20,16,32,.34)}
 .tk{width:24px;height:24px;border-radius:50%;flex:none;display:grid;place-items:center;
   background:linear-gradient(135deg,#7cc47f,#2f7d4f);color:#fff}
 .tt{min-width:0}
 .tt b{display:block;font-size:10px;font-weight:600;letter-spacing:-.1px}
-.tt i{display:block;font-size:8px;font-style:normal;color:#b6b6ba;margin-top:1px;letter-spacing:-.05px}
+.tt i{display:block;font-size:8px;font-style:normal;color:#b9b9c0;margin-top:1px;letter-spacing:-.05px}
 .ta{margin-left:auto;display:flex;gap:5px}
-.tb{height:23px;padding:0 8px;border-radius:6px;border:1px solid #3a3a3d;background:#242427;
+.tb{height:23px;padding:0 8px;border-radius:6px;border:1px solid #33333c;background:#1d1d25;
   color:#f2f2f3;font-size:8.5px;font-weight:500}
       `
     }
