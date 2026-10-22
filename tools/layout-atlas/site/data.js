@@ -325,7 +325,7 @@ body{
 }
 svg{display:block;flex:none}
 .app{
-  display:flex;height:calc(100vh - 32px);min-height:640px;
+  position:relative;display:flex;height:calc(100vh - 32px);min-height:640px;
   background:#f8f6f0;border-radius:var(--radius);overflow:hidden;
   box-shadow:0 18px 44px rgba(24,20,40,.10),0 1px 0 rgba(255,255,255,.7) inset;
 }
