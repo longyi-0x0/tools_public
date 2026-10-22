@@ -1,8 +1,9 @@
 /**
  * 装配：两栏外壳 + 开奖层。
  *
- * 侧栏列出当前视图的对象，底部 tabbar 在「抽奖」「池」「组」之间切；主区是详情页
- * （标题 + 小节 + 行）。写账本的动作只有 settle 与 undoRound 两条路，界面不碰账本。
+ * 侧栏只有两列：「抽奖」是一棵树——组是父节点，抽奖挂在组下面，没进组的抽奖单独列在
+ * 「未分组」下；「池」是平铺的条目仓库。组不是文件夹，是去重范围，删组不删抽奖。
+ * 写账本的动作只有 settle 与 undoRound 两条路，界面不碰账本。
  */
 
 import { createStore } from './store.js';
@@ -21,8 +22,10 @@ ensureStarter();
 const app = document.getElementById('app');
 const stageHost = document.getElementById('stage');
 
-const VIEWS = [['draws', '抽奖'], ['pools', '池'], ['groups', '组']];
+const VIEWS = [['draws', '抽奖'], ['pools', '池']];
 let view = 'draws';
+/** 选中组时主区展示组详情；为 null 时按当前抽奖展示。 */
+let groupFocus = null;
 
 const stage = createStage({
   host: stageHost,
@@ -52,40 +55,19 @@ function shell() {
   return node;
 }
 
-function itemsOf(key) {
-  if (key === 'pools') return store.state.pools;
-  if (key === 'groups') return store.state.groups;
-  return store.state.draws;
-}
+/* ---------- 侧栏 ---------- */
 
 function sidebar() {
-  const items = itemsOf(view);
-  const currentId = currentIdOf();
-
   const aside = el('aside', 'sidebar');
 
   const head = el('header', 'side-head');
-  head.append(el('h1', 'side-title', labelOfView(view)));
+  head.append(el('h1', 'side-title', view === 'pools' ? '池' : '抽奖'));
   const tools = el('div', 'side-tools');
   tools.append(button('＋', addOf(view), 'icon-button'));
   head.append(tools);
   aside.append(head);
 
-  if (items.length === 0) {
-    aside.append(el('p', 'side-empty', `还没有${labelOfView(view)}`));
-  } else {
-    const list = el('ol', 'side-list');
-    for (const item of items) {
-      const li = el('li');
-      li.append(button(
-        nameOf(item),
-        () => selectIn(view, item.id),
-        `side-item${item.id === currentId ? ' active' : ''}`,
-      ));
-      list.append(li);
-    }
-    aside.append(list);
-  }
+  aside.append(view === 'pools' ? poolList() : drawTree());
 
   const tabbar = el('nav', 'tabbar');
   for (const [key, label] of VIEWS) {
@@ -100,13 +82,89 @@ function sidebar() {
   return aside;
 }
 
+function poolList() {
+  const pools = store.state.pools;
+  if (pools.length === 0) return el('p', 'side-empty', '还没有池');
+
+  const current = currentPoolId();
+  const list = el('ol', 'side-list');
+  for (const pool of pools) {
+    const li = el('li');
+    li.append(button(
+      nameOf(pool),
+      () => selectPool(pool.id),
+      `side-item${pool.id === current ? ' active' : ''}`,
+    ));
+    list.append(li);
+  }
+  return list;
+}
+
+/**
+ * 抽奖树：组是父节点，抽奖是子节点；没进组（或挂的组已经不存在）的抽奖
+ * 落到「未分组」那一段。组的数量写在自己那一行右边，一眼看出哪层是空壳。
+ */
+function drawTree() {
+  const { groups, draws } = store.state;
+  const list = el('ol', 'side-tree');
+
+  if (groups.length === 0 && draws.length === 0) {
+    list.append(el('li', undefined, el('p', 'side-empty', '还没有抽奖')));
+  }
+
+  for (const group of groups) {
+    const members = draws.filter((draw) => draw.groupId === group.id);
+    const li = el('li', 'tree-group');
+    const row = button(
+      group.name || '未命名组',
+      () => selectGroup(group.id),
+      `side-item side-group${groupFocus === group.id ? ' active' : ''}`,
+    );
+    row.append(el('span', 'side-count', String(members.length)));
+    li.append(row);
+    if (members.length > 0) li.append(treeBranch(members));
+    list.append(li);
+  }
+
+  const loose = draws.filter((draw) => !draw.groupId
+    || !groups.some((group) => group.id === draw.groupId));
+  if (loose.length > 0) {
+    const li = el('li', 'tree-group');
+    li.append(el('p', 'side-caption', groups.length > 0 ? '未分组' : '全部抽奖'));
+    li.append(treeBranch(loose));
+    list.append(li);
+  }
+
+  const add = el('li');
+  add.append(button('＋ 新建组', addGroup, 'side-add'));
+  list.append(add);
+
+  return list;
+}
+
+function treeBranch(draws) {
+  const branch = el('ul', 'side-branch');
+  for (const draw of draws) {
+    const li = el('li');
+    li.append(button(
+      nameOf(draw),
+      () => selectDraw(draw.id),
+      `side-item side-draw${isCurrentDraw(draw.id) ? ' active' : ''}`,
+    ));
+    branch.append(li);
+  }
+  return branch;
+}
+
+/* ---------- 主区 ---------- */
+
 function mainOf() {
   const main = el('main', 'main');
   const workbench = el('div', 'workbench');
   const scroller = el('div', 'scroller');
 
   if (view === 'pools') {
-    const pool = store.state.pools.find((item) => item.id === currentIdOf());
+    const pool = store.state.pools.find((item) => item.id === currentPoolId());
     scroller.append(pool
       ? poolPage({
         store,
@@ -118,13 +176,10 @@ function mainOf() {
         },
       })
       : emptyDetail('还没有池', '点侧栏上面的 ＋ 建一个。'));
-  } else if (view === 'groups') {
-    const group = store.state.groups.find((item) => item.id === currentIdOf());
-    scroller.append(group
-      ? groupPage(group)
-      : emptyDetail('还没有组', '组只是去重范围：同组的抽奖，中过的人不会在另一场再中。'));
+  } else if (focusedGroup()) {
+    scroller.append(groupPage(focusedGroup()));
   } else {
-    const draw = store.state.draws.find((item) => item.id === currentIdOf());
+    const draw = store.state.draws.find((item) => item.id === currentDrawId());
     scroller.append(draw
       ? drawPage({
         store,
@@ -142,7 +197,10 @@ function mainOf() {
   return main;
 }
 
-/** 组详情：名字 + 组里的抽奖 + 删组。删组不删抽奖，只是那层去重范围没了。 */
+/**
+ * 组详情：名字、组里的抽奖、删组。抽奖在组里点得进去——树和详情说的是同一件事，
+ * 不该一个能点一个只能看。
+ */
 function groupPage(group) {
   const members = store.state.draws.filter((draw) => draw.groupId === group.id);
 
@@ -154,21 +212,19 @@ function groupPage(group) {
     }));
     render();
   }, 'detail-title'));
-  head.append(el('p', 'detail-sub', `${members.length} 个抽奖属于这个组`));
+  head.append(el('p', 'detail-sub', `${members.length} 个抽奖 · 同组共享一片去重范围`));
 
   const body = el('div', 'detail-body');
 
-  const list = section('组里的抽奖', '同一个组共用一片用量：谁在这个组里中过，换一场也不会再中。');
+  const list = section('组里的抽奖', '谁在这个组里中过，换一场也不会再中。组里不放条目，只划去重范围。');
   if (members.length === 0) {
     list.append(el('p', 'empty', '还没有抽奖归到这个组。'));
   } else {
     for (const draw of members) {
-      const line = el('div', 'row');
-      line.append(el('span', 'row-label', draw.name || '未命名'));
-      line.append(el('span', 'row-sub', draw.slots.map((slot) => slot.key).join(' / ')));
-      list.append(line);
+      list.append(drawRow(draw));
     }
   }
+  list.append(actions(button('在这个组里新建抽奖', () => addDraw(group.id), 'quiet')));
   body.append(list);
 
   body.append(section(
@@ -181,6 +237,7 @@ function groupPage(group) {
         groups: state.groups.filter((item) => item.id !== group.id),
         draws: state.draws.map((draw) => (draw.groupId === group.id ? { ...draw, groupId: null } : draw)),
       }));
+      groupFocus = null;
       render();
     }, 'danger')),
   ));
@@ -188,6 +245,19 @@ function groupPage(group) {
   const detail = el('div', 'detail');
   detail.append(head, body);
   return detail;
+}
+
+/** 组里的一行抽奖：名字、槽位摘要，右边一个入口。 */
+function drawRow(draw) {
+  const line = el('div', 'row');
+  const left = el('div', 'row-main');
+  left.append(el('span', 'row-label', nameOf(draw)));
+  left.append(el('span', 'row-sub', draw.slots.map((slot) => slot.key).join(' / ')));
+  line.append(left);
+  const right = el('div', 'row-value');
+  right.append(button('打开', () => selectDraw(draw.id), 'quiet'));
+  line.append(right);
+  return line;
 }
 
 function emptyDetail(title, note) {
@@ -202,48 +272,62 @@ function emptyDetail(title, note) {
 /* ---------- 选择与新建 ---------- */
 
 let poolSelection = null;
-let groupSelection = null;
 
-function currentIdOf() {
-  if (view === 'pools') {
-    if (poolSelection && store.state.pools.some((pool) => pool.id === poolSelection)) return poolSelection;
-    return store.state.pools[0]?.id ?? null;
-  }
-  if (view === 'groups') {
-    if (groupSelection && store.state.groups.some((group) => group.id === groupSelection)) return groupSelection;
-    return store.state.groups[0]?.id ?? null;
-  }
+function currentPoolId() {
+  if (poolSelection && store.state.pools.some((pool) => pool.id === poolSelection)) return poolSelection;
+  return store.state.pools[0]?.id ?? null;
+}
+
+function currentDrawId() {
   const state = store.state;
-  if (state.currentDrawId && state.draws.some((draw) => draw.id === state.currentDrawId)) return state.currentDrawId;
+  if (state.currentDrawId && state.draws.some((draw) => draw.id === state.currentDrawId)) {
+    return state.currentDrawId;
+  }
   return state.draws[0]?.id ?? null;
 }
 
-function selectIn(key, id) {
-  if (key === 'pools') poolSelection = id;
-  else if (key === 'groups') groupSelection = id;
-  else store.update((state) => ({ ...state, currentDrawId: id }));
+function isCurrentDraw(id) {
+  return groupFocus === null && currentDrawId() === id;
+}
+
+/** 选中的组；组被删掉后自动失效，不会把主区卡在一个不存在的组上。 */
+function focusedGroup() {
+  if (!groupFocus) return null;
+  return store.state.groups.find((group) => group.id === groupFocus) ?? null;
+}
+
+function selectPool(id) {
+  poolSelection = id;
+  render();
+}
+
+function selectGroup(id) {
+  groupFocus = id;
+  render();
+}
+
+function selectDraw(id) {
+  groupFocus = null;
+  store.update((state) => ({ ...state, currentDrawId: id }));
   render();
 }
 
 function addOf(key) {
-  if (key === 'pools') return addPool;
-  if (key === 'groups') return addGroup;
-  return addDraw;
-}
-
-function labelOfView(key) {
-  return key === 'pools' ? '池' : key === 'groups' ? '组' : '抽奖';
+  return key === 'pools' ? addPool : addDraw;
 }
 
 function nameOf(item) {
   return item.name || '未命名';
 }
 
-function addDraw() {
+/** 新建抽奖。从组页进来时直接落在这个组里，不用再去详情页改归属。 */
+function addDraw(groupId = null) {
   const draw = createDraw({
     name: `抽奖 ${store.state.draws.length + 1}`,
+    groupId: groupId ?? focusedGroup()?.id ?? null,
     slots: [createSlot({ key: 'slot1', poolId: store.state.pools[0]?.id ?? '' })],
   });
+  groupFocus = null;
   store.update((state) => ({ ...state, draws: [...state.draws, draw], currentDrawId: draw.id }));
   render();
 }
@@ -258,7 +342,8 @@ function addPool() {
 function addGroup() {
   const group = createGroup({ name: `组 ${store.state.groups.length + 1}` });
   store.update((state) => ({ ...state, groups: [...state.groups, group] }));
-  groupSelection = group.id;
+  view = 'draws';
+  groupFocus = group.id;
   render();
 }
 

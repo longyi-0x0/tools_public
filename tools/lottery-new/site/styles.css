@@ -847,3 +847,99 @@ html[data-theme='dark'] {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ---------- 侧栏：一排裸行，不是一排按钮 ---------- */
+
+/*
+ * .button 的边框与内距写在本文件后半段，单靠 .side-item 压不住它。
+ * 这里用 .sidebar .button.side-* 提权，把侧栏行还原成扁平行——
+ * 分隔只靠缩进竖线与留白，跟主区「不画卡片」是同一条规矩。
+ */
+
+.sidebar .button.side-item,
+.sidebar .button.side-add {
+  display: block;
+  width: 100%;
+  padding: 7px 12px;
+  border: 0;
+  border-radius: 7px;
+  background: none;
+  text-align: left;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.sidebar .button.side-item:hover,
+.sidebar .button.side-add:hover {
+  color: var(--text);
+  background: var(--fill);
+}
+
+.sidebar .button.side-item.active {
+  color: var(--text);
+  font-weight: 600;
+  background: var(--fill);
+}
+
+/* 树：组是父节点，抽奖缩进挂在下面的分支里；未分组单列一段。 */
+
+.side-tree {
+  list-style: none;
+  margin: 0;
+  padding: 0 10px 14px;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.sidebar .button.side-group {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.side-group::before {
+  content: "";
+  flex: none;
+  width: 5px;
+  height: 5px;
+  border-radius: 1px;
+  background: currentColor;
+  opacity: 0.32;
+}
+
+.side-count {
+  margin-left: auto;
+  font-size: 11.5px;
+  font-weight: 400;
+  color: var(--faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.side-branch {
+  list-style: none;
+  margin: 0 0 4px 23px;
+  padding: 0 0 0 9px;
+  border-left: 1px solid var(--line);
+}
+
+.sidebar .button.side-draw {
+  padding: 6px 10px;
+  font-size: 14px;
+}
+
+.side-caption {
+  margin: 0;
+  padding: 10px 12px 2px;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  color: var(--faint);
+}
+
+.sidebar .button.side-add {
+  margin-top: 6px;
+  font-size: 13px;
+  color: var(--faint);
+}
