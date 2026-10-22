@@ -525,7 +525,520 @@ svg{display:block;flex:none}
 .tb{height:23px;padding:0 8px;border-radius:6px;border:1px solid #33333c;background:#1d1d25;
   color:#f2f2f3;font-size:8.5px;font-weight:500}
       `
+    },
+    {
+      id: "advisor-inbox",
+      name: "顾问收件箱",
+      group: "shell",
+      tags: ["仪表盘", "三栏", "侧栏", "清单", "还原稿"],
+      summary: "灰画布上浮着一块浅灰外壳，壳内所有内容区都是白卡；侧栏直接沉在壳上不挂卡，中间是待办清单卡，右列是本周统计图卡与活动流卡。",
+      note: "按参考图做的整屏还原稿，底色、字号、间距、状态一并复刻，没抽成骨架 —— 要能摘下来复用的骨架别抄这条。另外「侧栏沉底 + 内容浮起」这套层成立的前提是导航属于建筑结构；若导航本身也要能换掉，就得给它也挂一张卡。",
+      previewVw: 1080,
+      params: [
+        { name: "side", label: "侧栏宽", min: 140, max: 220, step: 2, value: 174, unit: "px" },
+        { name: "main-col", label: "主列宽", min: 420, max: 506, step: 2, value: 506, unit: "px" },
+        { name: "side-col", label: "右列宽", min: 190, max: 226, step: 2, value: 226, unit: "px" },
+        { name: "gap", label: "列间距", min: 8, max: 19, step: 1, value: 19, unit: "px" },
+        { name: "row", label: "清单行高", min: 34, max: 52, step: 2, value: 42, unit: "px" },
+        { name: "r-card", label: "卡片圆角", min: 4, max: 20, step: 1, value: 12, unit: "px" },
+      ],
+      html: `
+<div class="stage">
+<div class="shell">
+
+  <aside class="side">
+    <div class="brand">
+      <span class="mark">R</span><b>Retainr</b>
+      <svg class="collapse" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M14 4v16"/></svg>
+    </div>
+
+    <nav class="nav">
+      <a class="item on" href="#">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></svg>
+        Dashboard</a>
+      <a class="item" href="#">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="9" cy="8" r="3"/><path d="M3.5 19c.6-3 2.8-4.6 5.5-4.6S14 16 14.6 19"/><path d="M16 6.5a3 3 0 0 1 0 5.6M18 19c-.2-1.6-.7-2.9-1.6-3.8"/></svg>
+        Escalations<span class="badge">8</span></a>
+      <a class="item" href="#">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="8" cy="9" r="2.6"/><circle cx="16" cy="9" r="2.6"/><path d="M3 18c.5-2.4 2.4-3.8 5-3.8s4.5 1.4 5 3.8M13.6 14.6c2.4.1 4.1 1.5 4.4 3.4"/></svg>
+        Clients</a>
+      <a class="item" href="#">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M20 13.5c0 3.6-3.6 6.5-8 6.5-1 0-2-.15-2.9-.42L5 21l.9-3.2C4.7 16.6 4 15.1 4 13.5 4 9.9 7.6 7 12 7s8 2.9 8 6.5Z"/></svg>
+        Conversations</a>
+    </nav>
+
+    <p class="glabel">Build</p>
+    <nav class="nav" style="margin-top:0">
+      <a class="item" href="#">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M12 3 4.5 6.2v5.3c0 4 3.1 7.6 7.5 9.3 4.4-1.7 7.5-5.3 7.5-9.3V6.2L12 3Z"/><path d="M9.3 11.8h5.4"/></svg>
+        Advisors</a>
+      <a class="item" href="#">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M4 5.5C5.6 4.6 7.4 4.2 9.2 4.4c1.2.1 2.3.5 2.8 1 .5-.5 1.6-.9 2.8-1 1.8-.2 3.6.2 5.2 1.1v12c-1.6-.9-3.4-1.3-5.2-1.1-1.2.1-2.3.5-2.8 1-.5-.5-1.6-.9-2.8-1-1.8-.2-3.6.2-5.2 1.1v-12Z"/><path d="M12 5.4v12"/></svg>
+        Knowledge</a>
+      <a class="item" href="#">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M12 3 3.5 8 12 13l8.5-5L12 3Z"/><path d="m3.5 13 8.5 5 8.5-5"/></svg>
+        Frameworks</a>
+    </nav>
+
+    <p class="glabel">Practice</p>
+    <nav class="nav" style="margin-top:0">
+      <a class="item" href="#">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><rect x="3.5" y="4" width="17" height="16" rx="3"/><path d="M7.5 15V12M12 15V9M16.5 15v-4"/></svg>
+        Insights</a>
+      <a class="item" href="#">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3" y="5.5" width="18" height="13" rx="3"/><path d="M3 10h18" stroke-linecap="round"/></svg>
+        Billing</a>
+    </nav>
+
+    <div class="sidefoot">
+      <a class="item" href="#">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="9"/><path d="M9.6 9.4A2.5 2.5 0 0 1 12 8c1.4 0 2.4.9 2.4 2.1 0 1.7-2.4 1.8-2.4 3.4" stroke-linecap="round"/><circle cx="12" cy="16.6" r=".9" fill="currentColor" stroke="none"/></svg>
+        Help and docs</a>
+      <a class="item" href="#">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="3"/><path d="M19 12c0-.5-.06-1-.16-1.5l2-1.5-2-3.4-2.3 1a7 7 0 0 0-2.6-1.5L13.6 3H9.9l-.4 2.4a7 7 0 0 0-2.6 1.5l-2.3-1-2 3.4 2 1.5a7 7 0 0 0 0 3l-2 1.5 2 3.4 2.3-1a7 7 0 0 0 2.6 1.5l.4 2.4h3.7l.4-2.4a7 7 0 0 0 2.6-1.5l2.3 1 2-3.4-2-1.5c.1-.5.16-1 .16-1.5Z"/></svg>
+        Settings</a>
+    </div>
+  </aside>
+
+  <main class="content">
+    <div class="topbar">
+      <div class="search">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m16.5 16.5 3.5 3.5"/></svg>
+        <span>Search clients, advisors, conversations</span>
+        <span class="kbd">⌘K</span>
+      </div>
+      <div class="people">
+        <div class="icobtn">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M6.5 9.5a5.5 5.5 0 0 1 11 0c0 3.4.7 5 1.4 5.9.4.5 0 1.1-.6 1.1H5.8c-.7 0-1-.6-.7-1.1.7-.9 1.4-2.5 1.4-5.9Z"/><path d="M10 19.5c.4.7 1.1 1.1 2 1.1s1.6-.4 2-1.1"/></svg>
+          <i class="dot"></i>
+        </div>
+        <div class="avatar mine a3">N</div>
+      </div>
+    </div>
+
+    <div class="head">
+      <div>
+        <h1>Good afternoon, Nizam</h1>
+        <p class="sub">Friday, Oct 2 · Your advisors answered 39 of 47 conversations this week without you.</p>
+      </div>
+      <div class="hactions">
+        <button class="btn">
+          <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+          Create advisor</button>
+        <button class="btn red">Review 8 escalations
+          <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="m9 5 7 7-7 7"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <div class="stats">
+      <div class="stat">
+        <div class="lb">Active clients</div>
+        <div class="row"><span class="num">18</span><span class="dl">+2 this month</span></div>
+      </div>
+      <div class="stat">
+        <div class="lb">Advisors</div>
+        <div class="row"><span class="num">12</span><span class="dl">9 live</span></div>
+      </div>
+      <div class="stat">
+        <div class="lb">Conversations this week</div>
+        <div class="row"><span class="num">47</span><span class="dl">+12%</span></div>
+      </div>
+      <div class="stat">
+        <div class="lb"><i style="background:#6fa0c0"></i>Answered without you</div>
+        <div class="row"><span class="num">83%</span><span class="dl">39 of 47</span></div>
+      </div>
+      <div class="stat">
+        <div class="lb"><i style="background:#d2482c"></i>Need you</div>
+        <div class="row"><span class="num">8</span><span class="dl">3 high impact</span></div>
+      </div>
+    </div>
+
+    <div class="cols">
+      <div class="colmain">
+        <div class="tabbar">
+          <div class="tab on">Needs you <b>8</b></div>
+          <div class="tab">Waiting on clients <b>5</b></div>
+          <div class="tab">Resolved today <b>6</b></div>
+          <div class="sortbtn">
+            <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 6h9M4 12h9M4 18h6"/><path d="M17 5v14l3-3"/></svg>
+            By impact
+            <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="m6 9 6 6 6-6"/></svg>
+          </div>
+        </div>
+
+        <div class="card main">
+          <div class="ihead">
+            <div class="avatar a1">P</div>
+            <div>
+              <div><span class="nm">Ploverdesk</span><span class="firm">Growth Strategy Advisor</span></div>
+              <div class="imo">A pricing decision the advisor will not make alone</div>
+            </div>
+            <div class="meta">
+              <span class="pill">High impact</span>
+              <span class="time">12 min ago</span>
+              <svg class="chev" width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="m6 15 6-6 6 6"/></svg>
+            </div>
+          </div>
+
+          <div class="ibody">
+            <div>
+              <p class="eyebrow">Client question</p>
+              <p class="q">Should we change our pricing from $49 to $79?</p>
+              <div class="asker">
+                <div class="avatar a4">IA</div>
+                <div><b>Imogen Achterberg</b><i>Head of Growth</i></div>
+              </div>
+            </div>
+
+            <div>
+              <p class="eyebrow">What the AI already knows</p>
+              <div class="kv"><span>Trial conversion</span><b>8% to 5%</b></div>
+              <div class="kv"><span>Trials</span><b>2,400</b></div>
+              <div class="kv"><span>Avg activation</span><b>31%</b></div>
+            </div>
+
+            <div>
+              <div class="why">
+                <h4>
+                  <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M10 13a4 4 0 0 0 5.7 0l2.3-2.3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 11a4 4 0 0 0-5.7 0L6 13.3a4 4 0 0 0 5.7 5.7l1-1"/></svg>
+                  Why this needs you</h4>
+                <p>A price change has significant revenue impact.</p>
+              </div>
+              <div class="conf">
+                <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 20V15M12 20V9M19 20V4"/></svg>
+                Medium confidence
+              </div>
+            </div>
+          </div>
+
+          <div class="acts">
+            <button class="btn red">Review and respond
+              <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M7 17 17 7M8 7h9v9"/></svg>
+            </button>
+            <div class="ghost">
+              <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="m5 13 4 4L19 7"/></svg>
+              Approve AI draft
+            </div>
+            <div class="link">
+              <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4l2.5 2"/></svg>
+              Open conversation
+            </div>
+          </div>
+
+          <div class="rows">
+            <div class="row">
+              <div class="avatar a7">M</div>
+              <div><b>Marrowby <span style="font-weight:500;color:#b0aba8;font-size:8.5px">Mirembe Pelham</span></b><i>Wants a second opinion on a channel budget split</i></div>
+              <span class="pill">High impact</span><span class="time">Yesterday</span>
+              <svg class="chev" width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="m6 9 6 6 6-6"/></svg>
+            </div>
+            <div class="row">
+              <div class="avatar a2">F</div>
+              <div><b>Fennick <span style="font-weight:500;color:#b0aba8;font-size:8.5px">Anneke Grovers</span></b><i>Asked to talk to you about positioning</i></div>
+              <span class="pill">Asked for you</span><span class="time">Yesterday</span>
+              <svg class="chev" width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="m6 9 6 6 6-6"/></svg>
+            </div>
+            <div class="row">
+              <div class="avatar a5">C</div>
+              <div><b>Cinderbook <span style="font-weight:500;color:#b0aba8;font-size:8.5px">Leopold Varga</span></b><i>AI confidence is low on an acquisition recommendation</i></div>
+              <span class="pill blue">Low confidence</span><span class="time">1 h ago</span>
+              <svg class="chev" width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="m6 9 6 6 6-6"/></svg>
+            </div>
+            <div class="row">
+              <div class="avatar a6">W</div>
+              <div><b>Wrenfield <span style="font-weight:500;color:#b0aba8;font-size:8.5px">Saskia Dunleavy</span></b><i>Recommended cohort analysis is 6 days overdue</i></div>
+              <span class="pill gray">Stalled</span><span class="time">Sep 26</span>
+              <svg class="chev" width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="m6 9 6 6 6-6"/></svg>
+            </div>
+            <div class="row">
+              <div class="avatar a1">Q</div>
+              <div><b>Quillpost <span style="font-weight:500;color:#b0aba8;font-size:8.5px">Ludovic Thackeray</span></b><i>Asked for legal wording on a reseller contract</i></div>
+              <span class="pill gray">Outside scope</span><span class="time">3 h ago</span>
+              <svg class="chev" width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="m6 9 6 6 6-6"/></svg>
+            </div>
+          </div>
+
+          <div class="foot">
+            <span>Showing 6 of 8</span>
+            <b>See all escalations&nbsp;&nbsp;›</b>
+          </div>
+        </div>
+      </div>
+
+      <div class="colside">
+        <div class="panelhead"><b>This week</b><span>Sep 26 to Oct 2</span></div>
+
+        <div class="card chart">
+          <div class="cv"><span class="big">47</span><span class="lb">conversations</span><span class="up">+12%</span></div>
+          <div class="legend">
+            <span><i style="background:#6fa0c0"></i>Answered by AI</span>
+            <span><i style="background:#d2482c"></i>Needed you</span>
+          </div>
+          <div class="plot">
+            <div class="gridline" style="left:12px"></div>
+            <div class="gridline" style="left:43px"></div>
+            <div class="gridline" style="left:71px"></div>
+            <div class="gridline" style="left:100px"></div>
+            <div class="gridline" style="left:130px"></div>
+            <div class="gridline" style="left:159px"></div>
+            <div class="gridline" style="left:188px"></div>
+
+            <div class="bar b" style="left:6px;height:34px"></div>
+            <div class="bar b" style="left:36px;height:16px"></div>
+            <div class="bar c" style="left:64px;bottom:72px;height:9px"></div>
+            <div class="bar b" style="left:64px;height:56px"></div>
+            <div class="bar c" style="left:93px;bottom:81px;height:17px"></div>
+            <div class="bar b" style="left:93px;height:65px"></div>
+            <div class="bar c" style="left:123px;bottom:64px;height:9px"></div>
+            <div class="bar b" style="left:123px;height:48px"></div>
+            <div class="bar c" style="left:152px;bottom:56px;height:8px"></div>
+            <div class="bar b" style="left:152px;height:40px"></div>
+            <div class="bar c" style="left:181px;bottom:72px;height:25px"></div>
+            <div class="bar b" style="left:181px;height:56px"></div>
+
+            <span class="xlab" style="left:13px">26</span>
+            <span class="xlab" style="left:43px">27</span>
+            <span class="xlab" style="left:71px">28</span>
+            <span class="xlab" style="left:100px">29</span>
+            <span class="xlab" style="left:130px">30</span>
+            <span class="xlab" style="left:159px">1</span>
+            <span class="xlab" style="left:188px">2</span>
+          </div>
+        </div>
+
+        <div class="card activity">
+          <div class="ahead"><b>Client activity</b><span>All activity
+            <svg width="7" height="7" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="m9 5 7 7-7 7"/></svg></span>
+          </div>
+          <div class="alist">
+            <div class="arow"><div class="avatar a1">P</div><div><b>Ploverdesk</b><i>Asked about a price change</i></div><span class="time">12m</span></div>
+            <div class="arow"><div class="avatar a5">C</div><div><b>Cinderbook</b><i>Completed activation analysis</i></div><span class="time">1h</span></div>
+            <div class="arow"><div class="avatar a7">M</div><div><b>Marrowby</b><i>Created 2 actions from a recommendation</i></div><span class="time">2h</span></div>
+            <div class="arow"><div class="avatar a1">Q</div><div><b>Quillpost</b><i>Asked for contract wording</i></div><span class="time">3h</span></div>
+            <div class="arow"><div class="avatar a2">F</div><div><b>Fennick</b><i>Applied the Positioning framework</i></div><span class="time">6h</span></div>
+            <div class="arow"><div class="avatar a4">W</div><div><b>Wrenfield</b><i>Opened the Pricing Playbook</i></div><span class="time">1d</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+</div>
+</div>
+      `,
+      css: `
+.stage{position:relative;width:100%;height:100%;display:flex;justify-content:center;align-items:flex-start}
+
+/* ---------- 外壳（承载层） ---------- */
+.shell{
+  position:relative;flex:0 0 946px;margin:61px 0 0;
+  height:calc(100vh - 121px);min-height:560px;border-radius:20px;
+  background:#e5e3e6;
+  box-shadow:0 3px 10px rgba(40,30,35,.055);
+  display:flex;overflow:hidden;
+}
+
+/* ---------- 侧栏（沉底，不挂卡） ---------- */
+.side{
+  width:var(--side);flex:0 0 var(--side);
+  padding:12px 22px 14px 11px;
+  display:flex;flex-direction:column;
+}
+.brand{display:flex;align-items:center;gap:8px;height:29px;padding:0 4px}
+.mark{
+  width:19px;height:19px;border-radius:6px;background:#23202a;color:#fff;
+  font:600 10px/19px -apple-system,sans-serif;text-align:center;flex:0 0 19px;
+}
+.brand b{font-size:11px;font-weight:600;letter-spacing:-.01em}
+.brand .collapse{margin-left:auto;color:#aeaaab}
+
+.nav{display:flex;flex-direction:column;gap:1px;margin-top:13px}
+.item{
+  display:flex;align-items:center;gap:7px;height:27px;padding:0 8px;border-radius:8px;
+  color:#54524f;font-size:10px;font-weight:500;text-decoration:none;
+}
+.item svg{flex:0 0 13px;color:#6e6a67}
+.item.on{background:#fdfcfe;color:#26231f;box-shadow:0 1px 2px rgba(40,30,35,.09)}
+.item.on svg{color:#3d3a37}
+.badge{
+  margin-left:auto;min-width:12px;height:12px;border-radius:4px;background:#d2482c;
+  color:#fff;font-size:7.5px;font-weight:600;line-height:12px;text-align:center;padding:0 3px;
+}
+.glabel{
+  margin:12px 0 4px;padding-left:8px;
+  font-size:7px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:#a9a5a3;
+}
+.sidefoot{margin-top:auto;display:flex;flex-direction:column;gap:3px}
+
+/* ---------- 内容列 ---------- */
+.content{flex:1;padding:12px 16px 16px 0;display:flex;flex-direction:column;min-width:0}
+.topbar{height:29px;display:flex;align-items:center;justify-content:space-between}
+.search{
+  width:236px;height:29px;border-radius:15px;background:#fdfcfe;
+  display:flex;align-items:center;gap:7px;padding:0 9px 0 11px;
+  box-shadow:0 1px 2px rgba(40,30,35,.05);
+  color:#a8a3a0;
+}
+.search span{font-size:8.5px;white-space:nowrap;overflow:hidden}
+.kbd{
+  margin-left:auto;font-size:7.5px;color:#aaa5a2;background:#f0eeef;
+  border-radius:3px;padding:1.5px 4px;flex:0 0 auto;
+}
+.people{display:flex;align-items:center;gap:5px}
+.icobtn{
+  width:24px;height:24px;border-radius:50%;background:#fdfcfe;position:relative;
+  display:flex;align-items:center;justify-content:center;color:#4b4845;
+  box-shadow:0 1px 2px rgba(40,30,35,.07);
+}
+.dot{position:absolute;right:1px;top:1px;width:6px;height:6px;border-radius:50%;background:#d2482c;box-shadow:0 0 0 1.5px #fcfbfc}
+.avatar{
+  border-radius:50%;display:flex;align-items:center;justify-content:center;
+  color:#fff;font-weight:600;overflow:hidden;flex:0 0 auto;letter-spacing:.02em;
+}
+.a1{background:linear-gradient(150deg,#d8b39c,#8d6a58)}
+.a2{background:linear-gradient(150deg,#b9c3cf,#6d7b8b)}
+.a3{background:linear-gradient(150deg,#cbb6a8,#7c6553)}
+.a4{background:linear-gradient(150deg,#c9a9a0,#6f5049)}
+.a5{background:linear-gradient(150deg,#b8b0a2,#6b6355)}
+.a6{background:linear-gradient(150deg,#cdb59b,#7a6350)}
+.a7{background:linear-gradient(150deg,#8f8d8a,#3c3a38)}
+.mine{width:24px;height:24px;font-size:8px;box-shadow:0 1px 2px rgba(40,30,35,.12)}
+
+/* ---------- 页头 ---------- */
+.head{margin-top:16px;height:31px;display:flex;align-items:flex-start;justify-content:space-between}
+h1{margin:0;font-size:17px;font-weight:600;letter-spacing:-.012em;color:#211e1b;line-height:18px}
+.sub{margin:3px 0 0;font-size:9.5px;color:#a29e9c;line-height:13px}
+.hactions{display:flex;gap:11px;padding-top:1px}
+.btn{
+  height:25px;border-radius:8px;border:0;cursor:pointer;
+  font:500 9.5px/1 -apple-system,sans-serif;
+  display:inline-flex;align-items:center;gap:5px;padding:0 11px;
+  background:#fdfcfe;color:#2f2c29;box-shadow:0 1px 2px rgba(40,30,35,.07);
+}
+.btn.red{background:#d2482c;color:#fff;box-shadow:0 1px 2px rgba(160,50,25,.28);padding:0 11px;height:26px}
+
+/* ---------- 统计条 ---------- */
+.stats{
+  margin-top:17px;height:64px;border-radius:var(--r-card);background:#fdfcfe;
+  box-shadow:0 1px 2px rgba(40,30,35,.05);
+  display:grid;grid-template-columns:repeat(5,150px);align-items:center;
+  padding:0 3px;
+}
+.stat{padding:0 14px}
+.stat .lb{display:flex;align-items:center;gap:4px;font-size:9px;color:#a9a4a1;white-space:nowrap}
+.stat .lb i{width:5px;height:5px;border-radius:50%;display:block;flex:0 0 5px}
+.stat .row{margin-top:3px;display:flex;align-items:baseline;gap:5px}
+.stat .num{font-size:19px;font-weight:600;letter-spacing:-.02em;color:#211e1b;line-height:1}
+.stat .dl{font-size:8px;color:#9d9895;white-space:nowrap}
+
+/* ---------- 两列 ---------- */
+.cols{margin-top:15px;flex:1;min-height:0;display:grid;grid-template-columns:var(--main-col) minmax(var(--side-col),1fr);gap:var(--gap);padding-right:5px}
+.colmain{display:flex;flex-direction:column;min-width:0}
+.colside{display:flex;flex-direction:column;min-width:0}
+.card{background:#fdfcfe;border-radius:var(--r-card);box-shadow:0 1px 2px rgba(40,30,35,.05)}
+
+/* tab 行落在壳上 */
+.tabbar{height:25px;display:flex;align-items:center;gap:3px}
+.tab{
+  height:25px;border-radius:8px;display:flex;align-items:center;gap:4px;padding:0 9px;
+  font-size:9.5px;font-weight:500;color:#918d8a;
+}
+.tab b{font-weight:600;color:#7d7976}
+.tab.on{background:#fdfcfe;color:#26231f;box-shadow:0 1px 2px rgba(40,30,35,.08)}
+.tab.on b{color:#26231f}
+.sortbtn{
+  margin-left:auto;height:23px;border-radius:7px;background:#fdfcfe;
+  display:flex;align-items:center;gap:4px;padding:0 7px;font-size:9px;color:#5d5955;
+  box-shadow:0 1px 2px rgba(40,30,35,.06);
+}
+
+.main{flex:1;margin-top:3px;padding:14px 14px 0;display:flex;flex-direction:column;min-height:0;overflow:hidden}
+
+/* 展开项 */
+.ihead{display:grid;grid-template-columns:32px 1fr auto;gap:10px;align-items:start;
+       height:54px;border-bottom:1px solid #eceaea}
+.ihead > div:nth-child(2){padding-top:4px}
+.ihead .avatar{width:32px;height:32px;font-size:9px}
+.nm{font-size:10.5px;font-weight:600;color:#211e1b;letter-spacing:-.005em}
+.firm{font-size:8.5px;color:#aca7a4;margin-left:5px;font-weight:500}
+.imo{font-size:9.5px;color:#6c6864;margin-top:2px}
+.meta{display:flex;align-items:center;gap:8px;padding-top:12px}
+.time{font-size:8.5px;color:#a9a4a1;white-space:nowrap}
+.chev{color:#9d9895}
+
+.ibody{display:grid;grid-template-columns:165px 132px 153px;gap:10px;height:76px}
+.eyebrow{font-size:7px;line-height:10px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:#a09c99;margin:0;white-space:nowrap}
+.q{margin:9px 0 0;font-size:11px;line-height:15px;font-weight:600;color:#211e1b;letter-spacing:-.01em}
+.asker{display:flex;align-items:center;gap:6px;margin-top:8px}
+.asker .avatar{width:19px;height:19px;font-size:7px}
+.asker b{font-size:9px;font-weight:600;color:#37342f;display:block;line-height:11px}
+.asker i{font-size:8px;font-style:normal;color:#aca7a4;line-height:10px}
+.kv{display:flex;justify-content:space-between;font-size:8.5px;color:#a29d99;padding:2.5px 0}
+.kv b{font-weight:600;color:#3d3a36;font-size:8.5px}
+.why{background:#f8e6de;border-radius:8px;padding:10px 10px 11px}
+.why h4{margin:0;display:flex;align-items:center;gap:5px;font-size:9px;font-weight:600;color:#a4574a}
+.why p{margin:5px 0 0;font-size:9.5px;line-height:13.5px;color:#4c4642}
+.conf{display:flex;align-items:center;gap:4px;font-size:8px;color:#96918e;margin-top:3px}
+
+.acts{display:flex;align-items:flex-start;gap:7px;height:45px;padding:13px 20px 0 7px;border-bottom:1px solid #eceaea}
+.acts .btn{height:25px;font-size:9.5px;padding:0 11px}
+.ghost{
+  height:25px;border-radius:7px;background:#fdfcfe;box-shadow:0 0 0 1px #eae7e8 inset;
+  display:flex;align-items:center;gap:5px;padding:0 10px;font-size:9.5px;color:#3a3733;font-weight:500;
+}
+.link{margin-left:auto;display:flex;align-items:center;gap:4px;font-size:8.5px;color:#5d5955;text-decoration:underline;text-underline-offset:2px;text-decoration-color:#d2cecc}
+
+/* 折叠行 */
+.rows{flex:1;min-height:0;overflow:hidden;padding-top:4px}
+.row{display:grid;grid-template-columns:20px 1fr auto auto 9px;gap:9px;align-items:center;height:var(--row)}
+.row .avatar{width:20px;height:20px;font-size:7px}
+.row b{font-size:10px;font-weight:600;color:#26231f;display:block;letter-spacing:-.005em;line-height:12px}
+.row i{font-size:8.5px;font-style:normal;color:#aca7a4;display:block;margin-top:1px;line-height:10px}
+.pill{
+  font-size:6.5px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;
+  padding:3px 4.5px;border-radius:4px;background:#f8e4dc;color:#b35c46;white-space:nowrap;
+}
+.pill.blue{background:#e7eff5;color:#54809c}
+.pill.gray{background:#efedec;color:#8e8985}
+.row .time{font-size:8.5px}
+
+.foot{flex:none;display:flex;align-items:center;justify-content:space-between;height:34px;font-size:8.5px;color:#a9a4a1}
+.foot b{font-size:8.5px;color:#3d3a37;font-weight:600}
+
+/* ---------- 右栏 ---------- */
+.panelhead{height:39px;display:flex;align-items:flex-end;justify-content:space-between;padding-bottom:12px}
+.panelhead b{font-size:10px;font-weight:600;color:#211e1b}
+.panelhead span{font-size:8px;color:#b3aeab}
+
+.chart{height:164px;padding:11px 13px 0;display:flex;flex-direction:column}
+.cv{display:flex;align-items:baseline;gap:5px}
+.cv .big{font-size:20px;font-weight:600;letter-spacing:-.03em;line-height:20px;color:#1f1c19}
+.cv .lb{font-size:8.5px;color:#a8a3a0}
+.cv .up{margin-left:auto;font-size:8.5px;color:#8f948e}
+.legend{display:flex;gap:10px;margin-top:8px;font-size:7.5px;color:#a8a3a0}
+.legend i{width:5px;height:5px;border-radius:50%;display:inline-block;margin-right:4px;vertical-align:1px}
+
+.plot{position:relative;height:100px;margin-top:1px}
+.gridline{position:absolute;top:0;bottom:13px;width:1px;background:#f2f0f1}
+.bar{position:absolute;width:14px;border-radius:7px;bottom:13px}
+.bar.b{background:#6fa0c0}
+.bar.c{background:#d0482c}
+.xlab{position:absolute;bottom:-5px;width:20px;text-align:center;font-size:7.5px;color:#b3aeab;transform:translateX(-50%)}
+
+.activity{padding:11px 13px 0;margin-top:7px;flex:1;display:flex;flex-direction:column;min-height:0;overflow:hidden}
+.ahead{display:flex;align-items:baseline;justify-content:space-between}
+.ahead b{font-size:9.5px;font-weight:600;color:#211e1b}
+.ahead span{font-size:8px;color:#8a8582;display:flex;align-items:center;gap:3px}
+.alist{margin-top:4px;display:flex;flex-direction:column}
+.arow{display:grid;grid-template-columns:20px 1fr auto;gap:8px;align-items:center;height:34px}
+.arow .avatar{width:20px;height:20px;font-size:7px}
+.arow b{font-size:9px;font-weight:600;color:#26231f;display:block;line-height:11px}
+.arow i{font-size:8px;font-style:normal;color:#aca7a4;display:block;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:10px}
+.arow .time{font-size:8px;color:#b3aeab}
+      `
     }
+  
   ]
 };
 
