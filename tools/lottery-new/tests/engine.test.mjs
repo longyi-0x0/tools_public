@@ -3,16 +3,18 @@ import assert from 'node:assert/strict';
 
 import { createPool, indexPools } from '../site/src/domain/pool.js';
 import { createDraw } from '../site/src/domain/draw.js';
-import { decide, slotOrder } from '../site/src/domain/engine.js';
+import { decide, slotOrder, scopeOf, remainOf } from '../site/src/domain/engine.js';
 import { createLedger, apply, usageOf } from '../site/src/domain/ledger.js';
 
 function poolsOf(defs) {
   return indexPools(defs.map((def) => createPool(def)));
 }
 
+const many = (n = 10) => Array.from({ length: n }, (_, i) => ({ id: `e${i}`, stock: 1 }));
+
 test('单池抽一个，命中必在展示样本里', () => {
-  const pools = poolsOf([{ id: 'p1', entries: [{ id: 'a' }, { id: 'b' }, { id: 'c' }, { id: 'd' }] }]);
-  const draw = createDraw({ id: 'd1', slots: [{ key: 'only', poolId: 'p1' }], form: { type: 'wheel' } });
+  const pools = poolsOf([{ id: 'p1', entries: many() }]);
+  const draw = createDraw({ id: 'd1', slots: [{ key: 'only', poolId: 'p1' }] });
 
   for (let i = 0; i < 20; i += 1) {
     const round = decide({ draw, pools, ledger: createLedger(), seed: `s${i}` });
@@ -22,8 +24,8 @@ test('单池抽一个，命中必在展示样本里', () => {
 });
 
 test('同一个 seed 必得同一组结果', () => {
-  const pools = poolsOf([{ id: 'p1', entries: Array.from({ length: 30 }, (_, i) => ({ id: `e${i}` })) }]);
-  const draw = createDraw({ id: 'd1', slots: [{ key: 'only', poolId: 'p1' }], form: { type: 'wheel' } });
+  const pools = poolsOf([{ id: 'p1', entries: many(30) }]);
+  const draw = createDraw({ id: 'd1', slots: [{ key: 'only', poolId: 'p1' }] });
 
   const a = decide({ draw, pools, ledger: createLedger(), seed: 'fixed', now: 1 });
   const b = decide({ draw, pools, ledger: createLedger(), seed: 'fixed', now: 1 });
@@ -33,13 +35,8 @@ test('同一个 seed 必得同一组结果', () => {
 });
 
 test('不放回：一轮抽三个互不相同的条目', () => {
-  const pools = poolsOf([{ id: 'p1', entries: Array.from({ length: 10 }, (_, i) => ({ id: `e${i}` })) }]);
-  const draw = createDraw({
-    id: 'd1',
-    slots: [{ key: 'only', poolId: 'p1' }],
-    form: { type: 'wheel' },
-    rule: { only: { count: 3, replacement: 'without' } },
-  });
+  const pools = poolsOf([{ id: 'p1', entries: many() }]);
+  const draw = createDraw({ id: 'd1', slots: [{ key: 'only', poolId: 'p1', count: 3 }] });
 
   const round = decide({ draw, pools, ledger: createLedger(), seed: 's' });
   assert.equal(round.picks.length, 3);
@@ -47,16 +44,12 @@ test('不放回：一轮抽三个互不相同的条目', () => {
 });
 
 test('库存抽干后不再出结果，样本随之为空', () => {
-  const pools = poolsOf([
-    { id: 'p1', entries: [{ id: 'a', stock: 1 }, { id: 'b', stock: 1 }] },
-  ]);
-  const draw = createDraw({ id: 'd1', slots: [{ key: 'only', poolId: 'p1' }], form: { type: 'wheel' } });
+  const pools = poolsOf([{ id: 'p1', entries: [{ id: 'a', stock: 1 }, { id: 'b', stock: 1 }] }]);
+  const draw = createDraw({ id: 'd1', slots: [{ key: 'only', poolId: 'p1' }] });
 
   let ledger = createLedger();
   for (let i = 0; i < 2; i += 1) {
-    const round = decide({ draw, pools, ledger, seed: `s${i}` });
-    assert.equal(round.picks.length, 1);
-    ledger = apply(ledger, round).ledger;
+    ledger = apply(ledger, decide({ draw, pools, ledger, seed: `s${i}` })).ledger;
   }
 
   const third = decide({ draw, pools, ledger, seed: 's3' });
@@ -67,13 +60,12 @@ test('库存抽干后不再出结果，样本随之为空', () => {
 
 test('两个池同时抽：各出各的结果', () => {
   const pools = poolsOf([
-    { id: 'people', entries: [{ id: 'u1' }, { id: 'u2' }] },
-    { id: 'prize', entries: [{ id: 'g1' }, { id: 'g2' }] },
+    { id: 'people', entries: many(4) },
+    { id: 'prize', entries: many(4) },
   ]);
   const draw = createDraw({
     id: 'd1',
     slots: [{ key: 'who', poolId: 'people' }, { key: 'what', poolId: 'prize' }],
-    form: { type: 'wheel' },
     mode: 'independent',
   });
 
@@ -84,13 +76,11 @@ test('两个池同时抽：各出各的结果', () => {
 });
 
 test('同一池两个槽位按顺序抽：后者不会重复前者', () => {
-  const pools = poolsOf([{ id: 'p1', entries: Array.from({ length: 8 }, (_, i) => ({ id: `e${i}` })) }]);
+  const pools = poolsOf([{ id: 'p1', entries: many(8) }]);
   const draw = createDraw({
     id: 'd1',
     slots: [{ key: 'first', poolId: 'p1' }, { key: 'second', poolId: 'p1' }],
-    form: { type: 'wheel' },
     mode: 'a-then-b',
-    rule: { first: { count: 1 }, second: { count: 1 } },
   });
 
   for (let i = 0; i < 20; i += 1) {
@@ -104,19 +94,87 @@ test('b-then-a 反的是槽位计算顺序', () => {
   const draw = createDraw({
     id: 'd1',
     slots: [{ key: 'first', poolId: 'p1' }, { key: 'second', poolId: 'p2' }],
-    form: { type: 'wheel' },
     mode: 'b-then-a',
   });
   assert.deepEqual(slotOrder(draw).map((s) => s.key), ['second', 'first']);
 });
 
-test('老虎机必中：出一个结果，三列同一个', () => {
-  const pools = poolsOf([{ id: 'p1', entries: Array.from({ length: 10 }, (_, i) => ({ id: `e${i}` })) }]);
+test('名额是整场累计：开三轮，三轮加起来就是名额', () => {
+  const pools = poolsOf([{ id: 'p1', entries: many(12) }]);
   const draw = createDraw({
     id: 'd1',
-    slots: [{ key: 'only', poolId: 'p1' }],
+    slots: [{ key: 'only', poolId: 'p1', quota: 3, count: 2 }],
+  });
+
+  let ledger = createLedger();
+  const first = decide({ draw, pools, ledger, seed: 's1' });
+  assert.equal(first.picks.length, 2);
+  ledger = apply(ledger, first).ledger;
+
+  const second = decide({ draw, pools, ledger, seed: 's2' });
+  assert.equal(second.picks.length, 1, '只剩一个名额就只能出 1 个');
+  ledger = apply(ledger, second).ledger;
+
+  const third = decide({ draw, pools, ledger, seed: 's3' });
+  assert.equal(third.picks.length, 0);
+  assert.deepEqual(third.sample.only, []);
+  assert.equal(remainOf(ledger, 'd1', draw.slots[0]), 0);
+});
+
+test('组作用域：同组前一场中过的人不进后一场的候选', () => {
+  const pools = poolsOf([{ id: 'p1', entries: [{ id: 'a', stock: 1 }, { id: 'b', stock: 1 }] }]);
+  const slot = { key: 'only', poolId: 'p1', scope: 'group' };
+  const drawA = createDraw({ id: 'dA', groupId: 'g1', slots: [slot] });
+  const drawB = createDraw({ id: 'dB', groupId: 'g1', slots: [slot] });
+
+  const first = decide({ draw: drawA, pools, ledger: createLedger(), seed: 's1' });
+  const ledger = apply(createLedger(), first).ledger;
+
+  const second = decide({ draw: drawB, pools, ledger, seed: 's2' });
+  assert.equal(second.picks.length, 1);
+  assert.notEqual(second.picks[0].entryId, first.picks[0].entryId);
+});
+
+test('本场作用域：换一场仍可抽到同一个人', () => {
+  const pools = poolsOf([{ id: 'p1', entries: [{ id: 'a', stock: 1 }, { id: 'b', stock: 1 }] }]);
+  const slot = { key: 'only', poolId: 'p1', scope: 'draw' };
+  const drawA = createDraw({ id: 'dA', groupId: 'g1', slots: [slot] });
+  const drawB = createDraw({ id: 'dB', groupId: 'g1', slots: [slot] });
+
+  const first = decide({ draw: drawA, pools, ledger: createLedger(), seed: 's1' });
+  const ledger = apply(createLedger(), first).ledger;
+
+  const second = decide({ draw: drawB, pools, ledger, seed: 's2' });
+  assert.equal(second.picks.length, 1, '本场作用域下另一个人的库存还在');
+  // 两场各抽一个，合起来正好把两个人抽完
+  assert.equal(new Set([first.picks[0].entryId, second.picks[0].entryId]).size, 2);
+});
+
+test('全部作用域：不同组也算同一片用量', () => {
+  const pools = poolsOf([{ id: 'p1', entries: [{ id: 'a', stock: 1 }, { id: 'b', stock: 1 }] }]);
+  const slot = { key: 'only', poolId: 'p1', scope: 'always' };
+  const drawA = createDraw({ id: 'dA', groupId: 'g1', slots: [slot] });
+  const drawB = createDraw({ id: 'dB', groupId: 'g2', slots: [slot] });
+
+  const first = decide({ draw: drawA, pools, ledger: createLedger(), seed: 's1' });
+  const ledger = apply(createLedger(), first).ledger;
+
+  const second = decide({ draw: drawB, pools, ledger, seed: 's2' });
+  assert.equal(second.picks.length, 1);
+  assert.notEqual(second.picks[0].entryId, first.picks[0].entryId);
+});
+
+test('没有组的抽奖，组作用域按本场算', () => {
+  const draw = createDraw({ id: 'd1', slots: [{ key: 'only', poolId: 'p1', scope: 'group' }] });
+  assert.equal(scopeOf(draw.slots[0], draw), 'draw');
+});
+
+test('老虎机必中：出一个结果，三列同一个', () => {
+  const pools = poolsOf([{ id: 'p1', entries: many() }]);
+  const draw = createDraw({
+    id: 'd1',
+    slots: [{ key: 'only', poolId: 'p1', hitRate: 1 }],
     form: { type: 'slot', options: { columns: 3 } },
-    rule: { only: { hitRate: 1 } },
   });
 
   const round = decide({ draw, pools, ledger: createLedger(), seed: 's' });
@@ -127,12 +185,11 @@ test('老虎机必中：出一个结果，三列同一个', () => {
 });
 
 test('老虎机必不中：没有结果，各列互不相同', () => {
-  const pools = poolsOf([{ id: 'p1', entries: Array.from({ length: 10 }, (_, i) => ({ id: `e${i}` })) }]);
+  const pools = poolsOf([{ id: 'p1', entries: many() }]);
   const draw = createDraw({
     id: 'd1',
-    slots: [{ key: 'only', poolId: 'p1' }],
+    slots: [{ key: 'only', poolId: 'p1', hitRate: 0 }],
     form: { type: 'slot', options: { columns: 3 } },
-    rule: { only: { hitRate: 0 } },
   });
 
   const round = decide({ draw, pools, ledger: createLedger(), seed: 's' });
@@ -145,9 +202,8 @@ test('候选不足两个时老虎机凑不出失败态，只能中', () => {
   const pools = poolsOf([{ id: 'p1', entries: [{ id: 'e0' }] }]);
   const draw = createDraw({
     id: 'd1',
-    slots: [{ key: 'only', poolId: 'p1' }],
+    slots: [{ key: 'only', poolId: 'p1', hitRate: 0 }],
     form: { type: 'slot' },
-    rule: { only: { hitRate: 0 } },
   });
 
   const round = decide({ draw, pools, ledger: createLedger(), seed: 's' });
@@ -160,7 +216,6 @@ test('槽位引用的池不存在时不抛错，该槽位无结果', () => {
   const draw = createDraw({
     id: 'd1',
     slots: [{ key: 'who', poolId: 'p1' }, { key: 'what', poolId: 'missing' }],
-    form: { type: 'wheel' },
   });
 
   const round = decide({ draw, pools, ledger: createLedger(), seed: 's' });
@@ -171,4 +226,15 @@ test('槽位引用的池不存在时不抛错，该槽位无结果', () => {
 test('未知形式直接抛错', () => {
   const draw = createDraw({ id: 'd1', slots: [{ key: 'a', poolId: 'p1' }], form: { type: 'nope' } });
   assert.throws(() => decide({ draw, pools: {}, ledger: createLedger(), seed: 's' }), /未知形式/);
+});
+
+test('开轮时定格候选：之后改池不动这一轮', () => {
+  const pools = poolsOf([{ id: 'p1', entries: many(6) }]);
+  const draw = createDraw({ id: 'd1', slots: [{ key: 'only', poolId: 'p1' }] });
+  const round = decide({ draw, pools, ledger: createLedger(), seed: 's' });
+
+  pools.p1.entries.length = 0;
+  assert.equal(round.snapshot.mode, 'full');
+  assert.equal(round.snapshot.boards.only.entries.length, 6);
+  assert.equal(round.picks.length, 1);
 });

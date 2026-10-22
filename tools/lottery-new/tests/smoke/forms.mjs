@@ -65,9 +65,8 @@ async function runPlan(plan) {
 {
   const draw = createDraw({
     id: 'd',
-    slots: [{ key: 'slot1', poolId: 'p1' }],
+    slots: [{ key: 'slot1', poolId: 'p1', count: 3 }],
     form: { type: 'wheel' },
-    rule: { slot1: { count: 3 } },
   });
   const { round, plan } = planFor(draw);
   log.length = 0;
@@ -112,9 +111,8 @@ async function runPlan(plan) {
 {
   const draw = createDraw({
     id: 'd',
-    slots: [{ key: 'slot1', poolId: 'p1' }],
+    slots: [{ key: 'slot1', poolId: 'p1', hitRate: 1 }],
     form: { type: 'slot', options: { columns: 3 } },
-    rule: { slot1: { hitRate: 1 } },
   });
   const { round, plan } = planFor(draw);
   log.length = 0;
@@ -130,9 +128,8 @@ async function runPlan(plan) {
 {
   const draw = createDraw({
     id: 'd',
-    slots: [{ key: 'slot1', poolId: 'p1' }],
+    slots: [{ key: 'slot1', poolId: 'p1', hitRate: 0 }],
     form: { type: 'slot', options: { columns: 3 } },
-    rule: { slot1: { hitRate: 0 } },
   });
   const { round, plan } = planFor(draw);
   log.length = 0;

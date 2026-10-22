@@ -20,7 +20,6 @@ test('转盘：一个池一个盘，停位指向命中的那条', () => {
   const draw = createDraw({
     id: 'd1',
     slots: [{ key: 'who', poolId: 'p1' }, { key: 'what', poolId: 'p2' }],
-    form: { type: 'wheel' },
     mode: 'independent',
   });
 
@@ -37,12 +36,7 @@ test('转盘：一个池一个盘，停位指向命中的那条', () => {
 
 test('转盘：一次抽几个就转几次', () => {
   const pools = indexPools([createPool({ id: 'p1', entries: many })]);
-  const draw = createDraw({
-    id: 'd1',
-    slots: [{ key: 'only', poolId: 'p1' }],
-    form: { type: 'wheel' },
-    rule: { only: { count: 3 } },
-  });
+  const draw = createDraw({ id: 'd1', slots: [{ key: 'only', poolId: 'p1', count: 3 }] });
 
   const { round, view } = roundOf(draw, pools);
   const plan = planOf(round, view);
@@ -54,10 +48,10 @@ test('转盘：抽取顺序决定是同时转还是依次转', () => {
   const pools = indexPools([createPool({ id: 'p1', entries: many }), createPool({ id: 'p2', entries: many })]);
   const slots = [{ key: 'a', poolId: 'p1' }, { key: 'b', poolId: 'p2' }];
 
-  const together = roundOf(createDraw({ id: 'd1', slots, form: { type: 'wheel' }, mode: 'independent' }), pools);
+  const together = roundOf(createDraw({ id: 'd1', slots, mode: 'independent' }), pools);
   assert.equal(planOf(together.round, together.view).sequential, false);
 
-  const oneByOne = roundOf(createDraw({ id: 'd1', slots, form: { type: 'wheel' }, mode: 'a-then-b' }), pools);
+  const oneByOne = roundOf(createDraw({ id: 'd1', slots, mode: 'a-then-b' }), pools);
   assert.equal(planOf(oneByOne.round, oneByOne.view).sequential, true);
 });
 
@@ -75,9 +69,8 @@ test('老虎机：中奖时三列同一个索引', () => {
   const pools = indexPools([createPool({ id: 'p1', entries: many })]);
   const draw = createDraw({
     id: 'd1',
-    slots: [{ key: 'only', poolId: 'p1' }],
+    slots: [{ key: 'only', poolId: 'p1', hitRate: 1 }],
     form: { type: 'slot', options: { columns: 3 } },
-    rule: { only: { hitRate: 1 } },
   });
 
   const { round, view } = roundOf(draw, pools);
@@ -93,9 +86,8 @@ test('老虎机：未中奖时各列互不相同', () => {
   const pools = indexPools([createPool({ id: 'p1', entries: many })]);
   const draw = createDraw({
     id: 'd1',
-    slots: [{ key: 'only', poolId: 'p1' }],
+    slots: [{ key: 'only', poolId: 'p1', hitRate: 0 }],
     form: { type: 'slot', options: { columns: 3 } },
-    rule: { only: { hitRate: 0 } },
   });
 
   const { round, view } = roundOf(draw, pools);
@@ -107,7 +99,7 @@ test('老虎机：未中奖时各列互不相同', () => {
 
 test('池已抽干时没有盘可装', () => {
   const pools = indexPools([createPool({ id: 'p1', entries: [{ id: 'e0' }, { id: 'e1' }] })]);
-  const draw = createDraw({ id: 'd1', slots: [{ key: 'only', poolId: 'p1' }], form: { type: 'wheel' } });
+  const draw = createDraw({ id: 'd1', slots: [{ key: 'only', poolId: 'p1' }] });
 
   let ledger = createLedger();
   for (let i = 0; i < 2; i += 1) {

@@ -3,14 +3,21 @@
  *
  * 尺寸一律用容器查询单位，预览框和投影上是同一套比例。这一层只做两件事：
  * 把已定的结果演出来，演完交给外面入账。它自己不抽奖、不写账本。
+ *
+ * 结果在按下的那一刻就定了，动画只是把已定的事实演出来；演完自动入账，
+ * 不给主持人第二次点击的机会——现场多一次确认，就多一次漏点。
  */
 
 import { el, button } from './dom.js';
-import { createSession } from '../domain/session.js';
+import { createSession, progressOf } from '../domain/session.js';
+import { topSettled } from '../domain/ledger.js';
 import { planOf, mountForm } from '../forms/registry.js';
 import { labelOf } from './labels.js';
 
-export function createStage({ host, onSettled, onUndo }) {
+/**
+ * `mountOptions` 只给测试用：冒烟里换一份假库，真跑时不传。
+ */
+export function createStage({ host, onSettled, onUndo, mountOptions = {} }) {
   const frame = el('div', 'stage-frame');
 
   const top = el('div', 'stage-top');
@@ -23,7 +30,8 @@ export function createStage({ host, onSettled, onUndo }) {
   const reveal = el('div', 'stage-reveal');
   const lead = el('div', 'reveal-lead', '');
   const names = el('div', 'reveal-names');
-  reveal.append(lead, names);
+  const seedLine = el('div', 'reveal-seed', '');
+  reveal.append(lead, names, seedLine);
 
   const bar = el('div', 'stage-bar');
   const startBtn = button('开始（空格）', spin, 'primary');
@@ -51,7 +59,7 @@ export function createStage({ host, onSettled, onUndo }) {
   function open(draw, state) {
     ctx = { draw, pools: state.pools, rounds: state.rounds };
     name.textContent = draw.name || '抽奖';
-    meta.textContent = metaOf(draw, state.pools);
+    meta.textContent = metaOf(draw, state.rounds);
     boards.replaceChildren();
     showReveal(null);
     host.hidden = false;
@@ -72,17 +80,18 @@ export function createStage({ host, onSettled, onUndo }) {
     showReveal(null);
 
     const pools = Object.fromEntries(ctx.pools.map((pool) => [pool.id, pool]));
+    const ledger = { rounds: ctx.rounds };
     const session = createSession({
       draw: ctx.draw,
       pools,
-      ledger: { rounds: ctx.rounds },
+      ledger,
       seed: `${Date.now()}:${Math.random()}`,
     });
     const plan = planOf(session.round, session.view);
 
     if (plan.boards.length === 0 || plan.boards.every((board) => board.spins.length === 0)) {
       lead.textContent = '抽不动了';
-      names.replaceChildren(el('div', 'reveal-lost', '这个池的候选已空'));
+      names.replaceChildren(el('div', 'reveal-lost', '这个池没有可用候选，或者名额已经出满'));
       reveal.classList.add('on');
       busy = false;
       startBtn.disabled = false;
@@ -93,7 +102,7 @@ export function createStage({ host, onSettled, onUndo }) {
 
     boards.replaceChildren();
     form?.dispose();
-    form = await mountForm(boards, plan);
+    form = await mountForm(boards, plan, mountOptions);
     await form.run();
 
     showReveal(session.round, pools);
@@ -108,10 +117,14 @@ export function createStage({ host, onSettled, onUndo }) {
       reveal.classList.remove('on');
       lead.textContent = '';
       names.replaceChildren();
+      seedLine.textContent = '';
       return;
     }
     reveal.classList.add('on');
-    lead.textContent = round.slots.length > 1 ? round.slots.map((slot) => pools[slot.poolId]?.name ?? '').join(' + ') : '';
+    lead.textContent = round.slots.length > 1
+      ? round.slots.map((slot) => pools[slot.poolId]?.name ?? '').join(' + ')
+      : '';
+    seedLine.textContent = `种子 ${round.seed}`;
 
     if (!round.win || round.picks.length === 0) {
       names.replaceChildren(el('div', 'reveal-lost', '未中奖'));
@@ -122,13 +135,21 @@ export function createStage({ host, onSettled, onUndo }) {
   }
 
   function render() {
-    undoBtn.disabled = ctx === null || ctx.rounds.length === 0;
+    const ledger = { rounds: ctx?.rounds ?? [] };
+    undoBtn.disabled = !ctx || topSettled(ledger) === null;
   }
 
-  function metaOf(draw, pools) {
-    if (draw.slots.length < 2) return '';
-    const mode = draw.mode === 'independent' ? '同时抽' : '依次抽';
-    return `${draw.slots.length} 个池 · ${mode}`;
+  function metaOf(draw, rounds) {
+    const progress = progressOf({ rounds }, draw);
+    const remain = progress
+      .filter((item) => Number.isFinite(item.quota))
+      .map((item) => `剩 ${item.remain} 名`);
+    const parts = [];
+    if (draw.slots.length > 1) {
+      parts.push(`${draw.slots.length} 个池`, draw.mode === 'independent' ? '同时抽' : '依次抽');
+    }
+    parts.push(...remain);
+    return parts.join(' · ');
   }
 
   return { open, close, isOpen: () => !host.hidden };

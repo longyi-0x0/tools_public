@@ -2,11 +2,10 @@
  * 冒烟：把 site/index.html 塞进 jsdom，跑一遍主页装配。
  *
  * 单测（`npm test`）只覆盖不碰 DOM 的那部分，这里补上真实 DOM 里的一趟：
- * 三块面板在不在、池能不能建、条目能不能存、记录能不能撤销。
+ * 三个视图在不在、池能不能建、条目能不能存、名额与作用域有没有渲染出来。
  * 开奖层要 canvas，jsdom 给不了，那一段只在浏览器里看。
  *
- * 需要 jsdom：在 lottery-new/ 下 `npm i -D jsdom`，然后
- * `node tests/smoke/index.mjs`。不进 `npm test`，也不随工具发布。
+ * 需要 jsdom：`node tests/smoke/index.mjs`（不进 `npm test`，不随工具发布）。
  */
 
 import { readFileSync } from 'node:fs';
@@ -44,32 +43,69 @@ await import(pathToFileURL(resolve(root, 'site/src/main.js')).href);
 
 const app = window.document.getElementById('app');
 const text = app.textContent ?? '';
+const KEY = 'lottery-new:state.v2';
 
 assert.ok(app.querySelector('.shell'), '外壳要是两栏');
 assert.ok(app.querySelector('.sidebar .side-list'), '侧栏要有列表');
 assert.ok(app.querySelector('.main .detail'), '主区要有详情页');
 assert.ok(text.includes('中奖记录'), '抽奖详情里要有记录一节');
-assert.ok(window.localStorage.getItem('lottery-new:state.v1'), '起始状态要落盘');
+assert.ok(text.includes('名额'), '槽位要能配名额');
+assert.ok(text.includes('作用域'), '槽位要能配作用域');
+assert.ok(window.localStorage.getItem(KEY), '起始状态要落盘');
 
-const state = JSON.parse(window.localStorage.getItem('lottery-new:state.v1'));
+const state = JSON.parse(window.localStorage.getItem(KEY));
+assert.equal(state.version, 2);
 assert.equal(state.pools.length, 1);
 assert.equal(state.draws.length, 1);
+assert.equal(state.groups.length, 1);
 assert.equal(state.draws[0].form.type, 'wheel');
+assert.equal(state.draws[0].slots[0].scope, 'draw', '槽位规则内联在槽位上');
+assert.equal(state.draws[0].rule, undefined, '不再有独立的规则表');
 
-// 切到池视图，往条目框里写几条，确认存得进去、名字保得住。
+// 切到池视图，往条目框里写几条，确认存得进去、名字与工号都保得住。
 const poolTab = [...app.querySelectorAll('.tab')].find((tab) => tab.textContent === '池');
 assert.ok(poolTab, 'tabbar 要有池这一页');
 poolTab.click();
 
 const textarea = app.querySelector('textarea');
 assert.ok(textarea, '池页要有条目编辑框');
-textarea.value = '张三,1,1\n李四,2,3\n王五';
+textarea.value = '张三,1,1,E001\n李四,2,3,E002\n王五';
 textarea.dispatchEvent(new window.Event('change'));
 
-const after = JSON.parse(window.localStorage.getItem('lottery-new:state.v1'));
+const after = JSON.parse(window.localStorage.getItem(KEY));
 assert.equal(after.pools[0].entries.length, 3);
 assert.deepEqual(after.pools[0].entries.map((entry) => entry.label), ['张三', '李四', '王五']);
 assert.equal(after.pools[0].entries[1].stock, 3, '份数要按第三列写进去');
-assert.equal(after.pools[0].entries[0].weight, 1);
+assert.equal(after.pools[0].entries[0].extKey, 'E001', '第四列是外部主键');
+assert.equal(after.pools[0].entries[2].extKey, '王五', '没填主键时用名字兜底');
 
-console.log('冒烟通过：两栏外壳齐备，视图切换与条目存储都成立');
+// 组视图在不在。
+const groupTab = [...app.querySelectorAll('.tab')].find((tab) => tab.textContent === '组');
+assert.ok(groupTab, 'tabbar 要有组这一页');
+groupTab.click();
+assert.ok(app.textContent.includes('组里的抽奖'), '组详情要列出成员');
+
+// 旧存档：v1 的规则表要迁到槽位上，原文留 .backup。
+window.localStorage.clear();
+window.localStorage.setItem('lottery-new:state.v1', JSON.stringify({
+  pools: [{ id: 'p1', name: '名单', entries: [{ id: 'e1', label: '甲' }] }],
+  draws: [{
+    id: 'd1',
+    name: '旧抽奖',
+    slots: [{ key: 'slot1', poolId: 'p1' }],
+    form: { type: 'wheel', options: {} },
+    mode: 'independent',
+    rule: { slot1: { count: 2, replacement: 'without', weighted: true, hitRate: 1, pickLimit: 5 } },
+  }],
+  rounds: [],
+  currentDrawId: 'd1',
+}));
+
+const { createStore } = await import(pathToFileURL(resolve(root, 'site/src/store.js')).href);
+const migrated = createStore().state;
+assert.equal(migrated.version, 2);
+assert.equal(migrated.draws[0].slots[0].count, 2, '旧 count 要搬进槽位');
+assert.equal(migrated.draws[0].slots[0].quota, 5, '旧 pickLimit 搬成名额');
+assert.ok(window.localStorage.getItem('lottery-new:state.v1.backup'), '旧存档要留备份');
+
+console.log('冒烟通过：三个视图齐备，条目与主键落盘，旧存档可迁移');
