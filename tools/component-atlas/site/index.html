@@ -1,0 +1,595 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>组件图册</title>
+<link rel="icon" href="data:,">
+<!--
+  组件图册 —— 工具页本体。外面那一层（品牌、账号、明暗）是工具箱的壳，不在这里。
+
+  这不是组件库，是一本设计参考册：翻它是为了回答「这个部件还能长什么样」。
+
+  页面由四块组成：
+    .bar    顶栏 —— 工具名 + 条目计数 + 搜索 + 明暗切换
+    .rail   左栏 —— 分类树，带计数；点一个节点只看这一支
+    .grid   主区 —— 卡片墙，每张卡上一个**活的**预览，不是截图
+    .drawer 抽屉 —— 点卡后从右滑出：大预览 + 状态切换 + 参数滑块 + 度量 + 代码
+
+  三条实现要点，决定了整套能不能成立：
+    1. 分类不写在条目里。条目只有扁平的 tags，树是下面这份 TREE —— 两边互不认识，
+       靠一条命中规则连起来：path 上每个标签都得在条目的 tags 里（与工具箱壳
+       catalog.ts 里那条 path.every 是同一条）。
+    2. 预览用 <iframe sandbox srcdoc>，不给 allow-scripts。组件的 CSS 漏不出来，
+       本页的字体与变量也漏不进预览 —— 预览那套基础样式（BASE）单独一份，
+       放在 data.js 里，每次拼进 iframe。状态与明暗从外层写进 <body> 的
+       data-state / data-theme，组件的 css 自己去接。
+    3. 每条组件可调的都写成 CSS 变量，滑块只改变量值，不碰代码。所以「调参」和
+       「看代码」永远一致：代码里写的就是 var(--r)，滑块改的就是 --r。
+
+  内容全在 data.js —— 加一条不用动这里，除非树上还没有那个节点。
+-->
+<style>
+  /* ---------- 主题：两套色板，跟系统走，也可本页切换 ---------- */
+  :root{
+    --bg:#f6f3ee; --bg-card:#fffdf9; --bg-sink:#efeae1; --line:#e0d9cb;
+    --ink:#3d3830; --ink-2:#7a7264; --ink-3:#a2988a;
+    --accent:#8a6a3d; --accent-soft:#f0e6d4; --stage:#fff;
+    --radius:10px;
+  }
+  [data-theme="dark"]{
+    --bg:#1a1815; --bg-card:#232019; --bg-sink:#14120f; --line:#332e26;
+    --ink:#ece5d8; --ink-2:#a89e8c; --ink-3:#7a7264;
+    --accent:#d0a768; --accent-soft:#2e2718;
+    /* 预览窗的底色要跟 iframe 里那层的底色一致（BASE 的暗色底 #1c1a17），
+       否则组件缩在窗里、四周露出的就是一块白 —— 暗色下最显眼的那种破相 */
+    --stage:#1c1a17;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0}
+  body{
+    background:var(--bg); color:var(--ink);
+    font:400 14px/1.6 -apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;
+    display:flex; flex-direction:column; overflow:hidden;
+  }
+  button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+  input{font:inherit}
+
+  /* ---------- 顶栏 ---------- */
+  .bar{
+    flex:0 0 auto; display:flex; align-items:center; gap:16px;
+    padding:12px 20px; border-bottom:1px solid var(--line); background:var(--bg-card);
+  }
+  .bar h1{margin:0;font-size:15px;font-weight:500;white-space:nowrap}
+  .bar h1 small{color:var(--ink-3);font-size:12px;margin-left:6px;font-weight:400}
+  .search{
+    flex:1 1 auto; max-width:420px; padding:7px 12px; border-radius:999px;
+    border:1px solid var(--line); background:var(--bg); color:var(--ink); outline:none;
+  }
+  .search:focus{border-color:var(--accent)}
+  .search::placeholder{color:var(--ink-3)}
+  .ghost-btn{
+    padding:6px 12px;border:1px solid var(--line);border-radius:999px;color:var(--ink-2);
+    font-size:12px;white-space:nowrap;
+  }
+  .ghost-btn:hover{border-color:var(--accent);color:var(--accent)}
+  .ghost-btn.on{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
+
+  /* ---------- 主体：左树 / 右卡片墙 ---------- */
+  .body{flex:1 1 auto;display:flex;min-height:0}
+  .rail{
+    flex:0 0 190px;border-right:1px solid var(--line);padding:12px 10px;
+    overflow:auto;background:var(--bg-card);
+  }
+  .rail-title{font-size:11px;color:var(--ink-3);padding:0 8px 8px;letter-spacing:.05em}
+  .rail-item{
+    display:flex;align-items:center;gap:4px;width:100%;
+    padding:6px 10px 6px 0;border-radius:8px;color:var(--ink-2);font-size:13px;text-align:left;
+  }
+  .rail-item:hover{background:var(--bg-sink)}
+  .rail-item.on{background:var(--accent-soft);color:var(--accent)}
+  /* 空节点压暗：树是先铺开再填内容的，一屏 0 计数太吵 —— 但它们得在，人才知道还能收什么 */
+  .rail-item.zero{opacity:.45}
+  .rail-item.zero.on{opacity:1}
+  .rail-item b{font-weight:400;font-size:11px;color:var(--ink-3);margin-left:auto;padding-right:8px}
+  .rail-item.on b{color:var(--accent)}
+  .rail-name{flex:1 1 auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .twist{
+    flex:0 0 14px;width:14px;text-align:center;color:var(--ink-3);font-size:9px;line-height:1;
+  }
+  .rail-note{margin-top:18px;padding:10px;font-size:11px;line-height:1.7;color:var(--ink-3);border-top:1px solid var(--line)}
+
+  .grid{
+    flex:1 1 auto;overflow:auto;padding:18px 20px 32px;
+    display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:18px;align-content:start;
+  }
+  .card{
+    background:var(--bg-card);border:1px solid var(--line);border-radius:var(--radius);
+    overflow:hidden;cursor:pointer;transition:border-color .15s,transform .15s;
+  }
+  .card:hover{border-color:var(--accent);transform:translateY(-2px)}
+  .card h3{margin:0;font-size:14px;font-weight:500;display:flex;align-items:center;gap:8px}
+  .card h3 em{
+    font-style:normal;font-size:11px;color:var(--ink-3);border:1px solid var(--line);
+    border-radius:999px;padding:1px 7px;
+  }
+  .card p{margin:6px 0 0;font-size:12.5px;color:var(--ink-2);line-height:1.65}
+  .card-meta{padding:11px 14px 13px}
+
+  /* ---------- 预览窗：iframe 按 previewVw×previewVh 渲染，再等比塞进窗里 ---------- */
+  .stage{position:relative;overflow:hidden;background:var(--stage);border-bottom:1px solid var(--line)}
+  .stage.card-stage{height:164px}
+  .stage.big-stage{height:240px}
+  .stage.actual{overflow:auto}
+  .stage iframe{position:absolute;border:0;transform-origin:0 0;background:#fff}
+  /* 卡片上的缩略预览不吃点击：iframe 里的事件传不到外面，不让出来的话点在预览上
+     就打不开详情，而一眼看上去整张卡都是可以点的。详情里那个大预览留着能选能输。 */
+  .card .stage iframe{pointer-events:none}
+
+  /* ---------- 抽屉：详情页 ---------- */
+  .scrim{position:absolute;inset:0;background:rgba(0,0,0,.28);z-index:8;display:none}
+  .scrim.on{display:block}
+  .drawer{
+    position:absolute;top:0;right:0;bottom:0;width:min(560px,100%);z-index:9;
+    background:var(--bg-card);border-left:1px solid var(--line);
+    transform:translateX(100%);transition:transform .22s ease;
+    display:flex;flex-direction:column;
+  }
+  .drawer.on{transform:none}
+  .drawer-head{
+    flex:0 0 auto;display:flex;align-items:center;gap:12px;padding:14px 18px;
+    border-bottom:1px solid var(--line);
+  }
+  .drawer-head h2{margin:0;font-size:15px;font-weight:500;flex:1 1 auto}
+  .drawer-body{flex:1 1 auto;overflow:auto;padding:16px 18px 40px}
+
+  .seg{display:flex;gap:6px;margin:12px 0;flex-wrap:wrap;align-items:center}
+  .seg button{padding:5px 11px;border:1px solid var(--line);border-radius:999px;font-size:12px;color:var(--ink-2)}
+  .seg button.on{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
+  .seg .push{margin-left:auto}
+
+  /* 度量：给设计师的那把尺子 */
+  .metrics{
+    display:flex;flex-wrap:wrap;gap:6px 8px;margin:14px 0 0;padding:12px 14px;
+    background:var(--bg-sink);border:1px solid var(--line);border-radius:8px;
+  }
+  .metrics span{font-size:12px;color:var(--ink-3)}
+  .metrics span b{font-weight:400;color:var(--ink-2);font-variant-numeric:tabular-nums}
+
+  .field{margin:14px 0}
+  .field-head{display:flex;justify-content:space-between;font-size:12px;color:var(--ink-2);margin-bottom:4px}
+  .field-head b{font-weight:400;color:var(--accent);font-variant-numeric:tabular-nums}
+  .field input[type=range]{width:100%;accent-color:var(--accent)}
+
+  .tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);margin:20px 0 0}
+  .tabs button{padding:7px 13px;font-size:12.5px;color:var(--ink-3);border-bottom:2px solid transparent;margin-bottom:-1px}
+  .tabs button.on{color:var(--accent);border-bottom-color:var(--accent)}
+  pre{
+    margin:0;padding:14px;overflow:auto;max-height:290px;background:var(--bg-sink);
+    border:1px solid var(--line);border-top:0;border-radius:0 0 8px 8px;
+    font:400 12px/1.7 "SF Mono",Menlo,Consolas,monospace;color:var(--ink);
+  }
+  .shot{padding:14px;background:var(--bg-sink);border:1px solid var(--line);border-top:0;border-radius:0 0 8px 8px}
+  .shot img{max-width:100%;display:block;margin:0 auto;border-radius:6px}
+  .row-actions{display:flex;gap:8px;margin-top:10px}
+  .note{margin:18px 0 0;padding:12px 14px;border-left:3px solid var(--accent);background:var(--bg-sink);
+        font-size:12.5px;color:var(--ink-2);line-height:1.75}
+  .source{margin:16px 0 0;font-size:12.5px;color:var(--ink-2)}
+  .source a{color:var(--accent)}
+  .empty{padding:60px 0;text-align:center;color:var(--ink-3);grid-column:1/-1}
+</style>
+</head>
+<body>
+
+<header class="bar">
+  <h1>组件图册<small id="count"></small></h1>
+  <input class="search" id="search" placeholder="搜名字、标签或说明…" autocomplete="off">
+  <button class="ghost-btn" id="theme">切换明暗</button>
+</header>
+
+<div class="body">
+  <nav class="rail" id="rail"></nav>
+  <main class="grid" id="grid"></main>
+</div>
+
+<div class="scrim" id="scrim"></div>
+<aside class="drawer" id="drawer">
+  <div class="drawer-head">
+    <h2 id="drawer-title"></h2>
+    <button class="ghost-btn" id="close">关闭</button>
+  </div>
+  <div class="drawer-body" id="drawer-body"></div>
+</aside>
+
+<script src="data.js" charset="utf-8"></script>
+<script>
+/* TREE:BEGIN
+   分类树。与条目分家：条目只有扁平的 tags，这棵树说「拿这些标签怎么组成侧栏」。
+   改这里不动 data.js 一行；给条目打这里已有的标签也不动这里一行。
+   id 是标签用的，name 只是显示名 —— 改名字不用动任何条目。 */
+const TREE = [
+  { id: "部件", name: "部件", children: [
+      { id: "输入", name: "输入", children: [
+          { id: "单行输入框", name: "单行输入框" },
+          { id: "多行文本框", name: "多行文本框" },
+          { id: "搜索框",     name: "搜索框" }
+      ]},
+      { id: "选择", name: "选择", children: [
+          { id: "下拉", name: "下拉" }, { id: "开关", name: "开关" }, { id: "勾选", name: "勾选" }
+      ]},
+      { id: "展示", name: "展示", children: [
+          { id: "卡片", name: "卡片" }, { id: "徽标", name: "徽标" }, { id: "头像", name: "头像" }
+      ]},
+      { id: "操作", name: "操作", children: [
+          { id: "按钮", name: "按钮" }, { id: "提示条", name: "提示条" }, { id: "弹层", name: "弹层" }
+      ]}
+  ]},
+  { id: "风格", name: "风格", children: [
+      { id: "极简", name: "极简" }, { id: "填充", name: "填充" }, { id: "描边", name: "描边" },
+      { id: "玻璃", name: "玻璃" }, { id: "新拟态", name: "新拟态" }, { id: "渐变", name: "渐变" }
+  ]},
+  { id: "场景", name: "场景", children: [
+      { id: "表单", name: "表单" }, { id: "设置", name: "设置" }, { id: "搜索", name: "搜索" }
+  ]}
+];
+/* TREE:END */
+
+/* ==========================================================================
+   页面行为
+   —— 数据那一份（BASE 与 CATALOG）在 data.js，这里只负责把它们画出来
+   ========================================================================== */
+
+const state = {
+  query: "",
+  /* 选中：null 是「全部」，-1 是「未归档」，数组是一条标签 id 链 */
+  pick: null,
+  openId: null,
+  fold: new Set(),
+  /* 每条正在被试的参数、状态与是否看原尺寸：id -> { vars:{}, stateId, actual } */
+  draft: {}
+};
+
+const $ = (id) => document.getElementById(id);
+const railEl = $("rail"), gridEl = $("grid"), drawerEl = $("drawer"), scrimEl = $("scrim");
+
+function draftOf(item) {
+  if (!state.draft[item.id]) {
+    const vars = {};
+    (item.params || []).forEach((p) => { vars[p.name] = p.value; });
+    state.draft[item.id] = { vars, stateId: (item.states[0] || {}).id || "default", actual: false };
+  }
+  return state.draft[item.id];
+}
+
+/* ---------- 命中：与工具箱壳 catalog.ts 里那条 path.every 是同一条 ---------- */
+function hit(item, path) {
+  return path.every((tag) => item.tags.includes(tag));
+}
+
+function itemsAt(path) {
+  return CATALOG.items.filter((it) => hit(it, path));
+}
+
+function treeIds(nodes) {
+  const ids = new Set();
+  (function walk(list) {
+    for (const n of list) { ids.add(n.id); if (n.children) walk(n.children); }
+  })(nodes);
+  return ids;
+}
+const KNOWN = treeIds(TREE);
+
+function isUnfiled(item) {
+  if (!item.tags || item.tags.length === 0) return true;
+  return !item.tags.some((t) => KNOWN.has(t));
+}
+
+/* ---------- 预览 ---------- */
+function theme() {
+  return document.documentElement.dataset.theme === "dark" ? "dark" : "light";
+}
+
+/* 组成一份预览文档。BASE 每次都带上；状态与明暗写进 <body>，组件的 css 自己去接。 */
+function buildDoc(item, draft) {
+  const vars = (item.params || [])
+    .map((p) => `--${p.name}:${draft.vars[p.name]}${p.unit};`)
+    .join("");
+  return `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">`
+       + `<style>${BASE}:root{${vars}}</style></head>`
+       + `<body data-state="${draft.stateId}" data-theme="${theme()}">`
+       + `${item.html}<style>${item.css}</style></body></html>`;
+}
+
+/* 等比塞进窗：部件有确定的自身尺寸，按 previewVw×previewVh 渲染后缩到正好塞进去，
+   居中、不裁。看原尺寸时 scale 取 1 —— 缩放态下量不准，要拿它当尺子就得看真实像素。 */
+function paint(frame, stage, item, draft) {
+  const cw = stage.clientWidth || 1;
+  const ch = stage.clientHeight || 1;
+  const vw = item.previewVw, vh = item.previewVh;
+  const scale = draft.actual ? 1 : Math.min(cw / vw, ch / vh);
+  frame.style.width = vw + "px";
+  frame.style.height = vh + "px";
+  frame.style.transform = "scale(" + scale + ")";
+  frame.style.left = Math.max(0, (cw - vw * scale) / 2) + "px";
+  frame.style.top = Math.max(0, (ch - vh * scale) / 2) + "px";
+  stage.classList.toggle("actual", draft.actual);
+  const doc = buildDoc(item, draft);
+  if (frame.dataset.doc !== doc) {
+    frame.dataset.doc = doc;
+    frame.srcdoc = doc;
+  }
+}
+
+function fresh() {
+  const f = document.createElement("iframe");
+  f.setAttribute("sandbox", "");       /* 不给 allow-scripts：组件里跑不了脚本 */
+  f.setAttribute("scrolling", "no");
+  return f;
+}
+
+/* ---------- 左栏：把 TREE 编成带计数的侧栏树 ---------- */
+function renderRail() {
+  const key = (path) => path.join("/");
+  let html = '<div class="rail-title">分类</div>';
+  html += railRow("全部", [], CATALOG.items.length, null, 0);
+  TREE.forEach((node) => { html += railNode(node, [], 0); });
+  const unfiled = CATALOG.items.filter(isUnfiled).length;
+  html += railRow("未归档", [], unfiled, -1, 0);
+  html += '<div class="rail-note">后面的数是这一支里的条数，不随搜索变化。点三角折叠。</div>';
+  railEl.innerHTML = html;
+
+  railEl.querySelectorAll("[data-path]").forEach((b) => {
+    b.onclick = () => {
+      state.pick = b.dataset.path === "" ? null
+        : (b.dataset.path === "-1" ? -1 : b.dataset.path.split("|"));
+      render();
+    };
+  });
+  railEl.querySelectorAll("[data-fold]").forEach((t) => {
+    t.onclick = (e) => {
+      e.stopPropagation();
+      const k = t.dataset.fold;
+      if (state.fold.has(k)) state.fold.delete(k); else state.fold.add(k);
+      render();
+    };
+  });
+}
+
+function railNode(node, parentPath, depth) {
+  const path = [...parentPath, node.id];
+  const k = path.join("/");
+  const count = itemsAt(path).length;
+  let html = railRow(node.name, path, count, k, depth, node.children);
+  if (node.children && !state.fold.has(k)) {
+    node.children.forEach((c) => { html += railNode(c, path, depth + 1); });
+  }
+  return html;
+}
+
+function railRow(name, path, count, foldKey, depth, children) {
+  const picked = foldKey === null ? state.pick === null
+    : foldKey === -1 ? state.pick === -1
+    : Array.isArray(state.pick) && state.pick.join("/") === foldKey;
+  const pad = 8 + depth * 13;
+  const twist = children
+    ? '<span class="twist" data-fold="' + esc(foldKey) + '">' + (state.fold.has(foldKey) ? "▶" : "▼") + '</span>'
+    : '<span class="twist"></span>';
+  return '<button class="rail-item' + (picked ? " on" : "") + (count === 0 ? " zero" : "") + '" style="padding-left:' + pad + 'px"'
+       + ' data-path="' + (foldKey === null ? "" : foldKey === -1 ? "-1" : path.join("|")) + '">'
+       + twist + '<span class="rail-name">' + esc(name) + '</span><b>' + count + '</b></button>';
+}
+
+/* ---------- 筛选 ---------- */
+function visible() {
+  const q = state.query.trim().toLowerCase();
+  let list = CATALOG.items;
+  if (state.pick === -1) list = list.filter(isUnfiled);
+  else if (Array.isArray(state.pick)) list = itemsAt(state.pick);
+  if (!q) return list;
+  return list.filter((it) =>
+    [it.name, it.summary, it.id, (it.tags || []).join(" "), it.note || ""]
+      .join(" ").toLowerCase().includes(q));
+}
+
+/* ---------- 卡片墙 ---------- */
+function renderGrid() {
+  const list = visible();
+  $("count").textContent = CATALOG.items.length + " 条";
+  if (list.length === 0) {
+    /* 整册空与「这一支/这个词没有」要说不同的话 */
+    gridEl.innerHTML = CATALOG.items.length === 0
+      ? '<div class="empty">这本册子还没有条目。</div>'
+      : '<div class="empty">没有命中的条目，换个词或换一支试试。</div>';
+    return;
+  }
+  gridEl.innerHTML = "";
+  list.forEach((item) => {
+    const card = document.createElement("article");
+    card.className = "card";
+    card.dataset.id = item.id;
+    card.innerHTML = '<div class="stage card-stage"></div>'
+      + '<div class="card-meta"><h3>' + esc(item.name)
+      + '</h3><p>' + esc(item.summary) + '</p></div>';
+    card.onclick = () => open(item);
+    gridEl.appendChild(card);
+    const stage = card.querySelector(".stage");
+    const frame = fresh();
+    stage.appendChild(frame);
+    paint(frame, stage, item, draftOf(item));
+  });
+}
+
+/* ---------- 详情抽屉 ---------- */
+let openTab = "html";
+
+function open(item) {
+  state.openId = item.id;
+  openTab = "html";
+  $("drawer-title").textContent = item.name;
+  renderDrawer();
+  drawerEl.classList.add("on");
+  scrimEl.classList.add("on");
+}
+
+function renderDrawer() {
+  const item = CATALOG.items.find((i) => i.id === state.openId);
+  if (!item) return;
+  const draft = draftOf(item);
+  const body = $("drawer-body");
+
+  let html = '<div class="stage big-stage" id="big-stage"></div>';
+
+  /* 状态切换 + 原尺寸 */
+  html += '<div class="seg" id="state-seg">';
+  (item.states || []).forEach((s) => {
+    html += '<button data-state="' + esc(s.id) + '"'
+         + (draft.stateId === s.id ? ' class="on"' : '') + '>' + esc(s.label) + '</button>';
+  });
+  html += '<button class="push ghost-btn' + (draft.actual ? ' on' : '') + '" id="actual">1:1 原尺寸</button>';
+  html += '</div>';
+
+  html += '<p style="margin:0;font-size:12.5px;color:var(--ink-2)">' + esc(item.summary) + '</p>';
+
+  /* 度量：给设计师的那把尺子 */
+  if (item.metrics && item.metrics.length) {
+    html += '<div class="metrics">';
+    item.metrics.forEach((m) => {
+      html += '<span>' + esc(m.label) + ' <b>' + esc(m.value) + '</b></span>';
+    });
+    html += '</div>';
+  }
+
+  /* 参数滑块 */
+  if (item.params && item.params.length) {
+    html += '<div id="params">';
+    item.params.forEach((p) => {
+      html += '<div class="field"><div class="field-head"><span>' + esc(p.label)
+           + '</span><b>' + draft.vars[p.name] + (p.unit || "") + '</b></div>'
+           + '<input type="range" min="' + p.min + '" max="' + p.max
+           + '" step="' + p.step + '" value="' + draft.vars[p.name] + '" data-param="' + p.name + '"></div>';
+    });
+    html += '</div>';
+  }
+
+  /* 代码页签 */
+  html += '<div class="tabs" id="tabs">'
+    + tabBtn("html", "HTML") + tabBtn("css", "CSS")
+    + (item.ref ? tabBtn("ref", "参考图") : "")
+    + tabBtn("data", "条目数据")
+    + '</div><div id="pane"></div>'
+    + '<div class="row-actions"><button class="ghost-btn" id="copy">复制这段代码</button></div>';
+
+  if (item.note) html += '<div class="note">' + esc(item.note) + '</div>';
+  if (item.source) html += '<div class="source">出处：<a href="' + esc(item.source.url)
+    + '" target="_blank" rel="noopener">' + esc(item.source.title) + '</a></div>';
+
+  body.innerHTML = html;
+
+  const stage = $("big-stage");
+  const frame = fresh();
+  stage.appendChild(frame);
+  paint(frame, stage, item, draft);
+
+  /* 状态切换：把 data-state 重新写进预览的 body，重绘。纯 CSS，不需要脚本权限。 */
+  $("state-seg").querySelectorAll("[data-state]").forEach((b) => {
+    b.onclick = () => { draft.stateId = b.dataset.state; renderDrawer(); };
+  });
+  /* 原尺寸：scale 取 1，按真实像素看 */
+  $("actual").onclick = () => { draft.actual = !draft.actual; renderDrawer(); };
+
+  /* 滑块：只改变量，重绘预览 —— 代码不必改，因为代码里写的就是 var(--xx) */
+  body.querySelectorAll("[data-param]").forEach((r) => {
+    r.oninput = () => {
+      const name = r.dataset.param;
+      draft.vars[name] = Number(r.value);
+      const p = item.params.find((x) => x.name === name);
+      r.closest(".field").querySelector("b").textContent = r.value + (p.unit || "");
+      paint(frame, stage, item, draft);
+    };
+  });
+
+  /* 页签内容 */
+  const text = openTab === "html" ? item.html
+    : openTab === "css" ? item.css
+    : JSON.stringify(item, null, 2);
+  const pane = $("pane");
+  if (openTab === "ref") {
+    pane.className = "shot";
+    pane.innerHTML = '<img src="' + esc(item.ref) + '" alt="参考图">';
+  } else {
+    pane.className = "";
+    pane.innerHTML = "<pre>" + esc(text) + "</pre>";
+  }
+  $("tabs").querySelectorAll("button").forEach((b) => {
+    b.onclick = () => { openTab = b.dataset.tab; renderDrawer(); };
+  });
+  $("copy").onclick = () => {
+    navigator.clipboard.writeText(text).then(() => {
+      $("copy").textContent = "已复制";
+      setTimeout(() => { $("copy").textContent = "复制这段代码"; }, 1400);
+    });
+  };
+}
+
+function tabBtn(id, label) {
+  return '<button data-tab="' + id + '"' + (openTab === id ? ' class="on"' : '') + '>' + label + '</button>';
+}
+
+function close() {
+  drawerEl.classList.remove("on");
+  scrimEl.classList.remove("on");
+  state.openId = null;
+}
+
+function esc(s) {
+  return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+}
+
+function render() { renderRail(); renderGrid(); }
+
+/* ---------- 绑定 ---------- */
+$("search").oninput = (e) => { state.query = e.target.value; renderGrid(); };
+$("close").onclick = close;
+scrimEl.onclick = close;
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") close(); });
+
+/* 明暗：工具页自己一套（预览在 iframe 里，拿不到壳的 data-theme）。
+   切完要重画 —— 预览的 data-theme 是拼 srcdoc 时写死的。 */
+$("theme").onclick = () => {
+  const next = theme() === "dark" ? "light" : "dark";
+  document.documentElement.dataset.theme = next;
+  try { localStorage.setItem("component-atlas.theme", next); } catch (e) {}
+  render();
+  if (state.openId) renderDrawer();
+};
+try {
+  const saved = localStorage.getItem("component-atlas.theme");
+  if (saved) document.documentElement.dataset.theme = saved;
+  else if (window.matchMedia("(prefers-color-scheme: dark)").matches) {
+    document.documentElement.dataset.theme = "dark";
+  }
+} catch (e) {}
+
+/* 窗宽变了，所有预览按新宽度重算缩放 */
+let resizeTimer = null;
+window.addEventListener("resize", () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => {
+    document.querySelectorAll(".card").forEach((card) => {
+      const item = CATALOG.items.find((i) => i.id === card.dataset.id);
+      if (!item) return;
+      const stage = card.querySelector(".stage");
+      paint(stage.querySelector("iframe"), stage, item, draftOf(item));
+    });
+    if (state.openId) {
+      const item = CATALOG.items.find((i) => i.id === state.openId);
+      const stage = $("big-stage");
+      if (item && stage) paint(stage.querySelector("iframe"), stage, item, draftOf(item));
+    }
+  }, 120);
+});
+
+render();
+</script>
+</body>
+</html>

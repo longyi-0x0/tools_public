@@ -26,6 +26,7 @@
 | id | 形态 | tags |
 | --- | --- | --- |
 | clean-architecture-zh | 单文件 web | books |
+| component-atlas | 目录 h5 | books |
 | layout-atlas | 目录 h5 | books |
 | motion-lexicon | 单文件 web | books |
 | plantuml / react-lab / regex-tester / html-css-js | 单文件 web | dev |
