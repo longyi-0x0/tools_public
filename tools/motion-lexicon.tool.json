@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 2,
+  "type": "tool",
+  "id": "motion-lexicon",
+  "name": "动效词汇表",
+  "description": "244 个动效术语的可交互参考库：先点、拖、悬停看效果，再查名称、适用场景与代码写法。",
+  "kind": "web",
+  "entry": "https://pursuerlin.github.io/motion-lexicon/",
+  "capabilities": [],
+  "tags": [
+    "books"
+  ]
+}
