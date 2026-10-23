@@ -37,21 +37,22 @@ const CATALOG = {
       id: "composer-expand",
       name: "收放式会话输入框",
       tags: ["部件", "输入", "会话输入框", "风格", "极简", "场景", "对话"],
-      summary: "空着时是一条胶囊，只有语音、占位和附件；一开始打字就向上展开成卡片，顶部浮出被引用的角色，底部升起工具条。",
-      note: "工具条那四样是按使用频率排的：语音在最左，因为在这个 App 里说话是主路径，不是打字的备选；模型选择紧跟其后，因为「换谁回答」是每一次提问的属性，不该藏进设置页；附件和发送靠右，收尾动作。空态刻意不给发送键 —— 没有内容就没有可发的东西，少一个键少一次误触。代价是四样挤一行，窄屏上先被挤掉的是模型名的字数。",
+      summary: "空着时是一条胶囊，只有语音、占位和附件；一开始打字就向上展开成卡片，顶部浮出被引用的角色，底部升起工具条。写超过两行，右上角浮出放大键。",
+      note: "工具条那四样是按使用频率排的：语音在最左，因为在这个 App 里说话是主路径，不是打字的备选；模型选择紧跟其后，因为「换谁回答」是每一次提问的属性，不该藏进设置页；附件和发送靠右，收尾动作。空态刻意不给发送键 —— 没有内容就没有可发的东西，少一个键少一次误触。超过两行时盒子长到四行封顶，再往上顶就撞键盘了，所以从那时起「继续写」交给右上角那个放大键（微信的路子）：先给一个小小的全屏入口，而不是让输入框无限长高。放大键放右上角是因为左上角已经给了引用 —— 那个位置更常用。",
       previewVw: 380,
       previewVh: 270,
       states: [
         { id: "filled", label: "有内容" },
+        { id: "long",   label: "超过两行" },
         { id: "empty",  label: "空态" }
       ],
       metrics: [
         { label: "空态",     value: "52px 高 · 圆角 24" },
-        { label: "展开",     value: "约 200px 高" },
+        { label: "两行",     value: "149px · 超两行 197px" },
         { label: "内距",     value: "12 / 14" },
         { label: "工具条",   value: "键 22px · 间隔 10" },
         { label: "发送钮",   value: "32px · 距右边 14" },
-        { label: "引用胶囊", value: "26px 高 · 字 13" }
+        { label: "头行",     value: "26px（引用 / 放大键）" }
       ],
       params: [
         { name: "r",   label: "圆角",     min: 12, max: 32, step: 1, value: 24, unit: "px" },
@@ -61,22 +62,35 @@ const CATALOG = {
       html: `
 <div class="composer">
 
-  <!-- 引用：这一条提问挂在哪个角色／哪条消息上。可移出，所以带叉。 -->
-  <div class="quote">
-    <svg class="qava" viewBox="0 0 24 24" aria-hidden="true">
-      <circle cx="12" cy="12" r="12" fill="#c3d9f0"/>
-      <circle cx="12" cy="9.4" r="3.5" fill="#fff"/>
-      <path d="M4.9 21.6a7.1 7.1 0 0 1 14.2 0z" fill="#fff"/>
-    </svg>
-    <span class="qtext">资深产品经理</span>
-    <svg class="qx" viewBox="0 0 24 24" aria-hidden="true">
-      <circle cx="12" cy="12" r="12" fill="currentColor" opacity=".3"/>
-      <path d="M8.6 8.6l6.8 6.8M15.4 8.6l-6.8 6.8" stroke="#fff" stroke-width="2.2" stroke-linecap="round"/>
-    </svg>
+  <!-- 头部一行：引用在左，放大在右。放大键只在内容超过两行时出现（微信的做法）。 -->
+  <div class="head">
+    <div class="quote">
+      <svg class="qava" viewBox="0 0 24 24" aria-hidden="true">
+        <circle cx="12" cy="12" r="12" fill="#c3d9f0"/>
+        <circle cx="12" cy="9.4" r="3.5" fill="#fff"/>
+        <path d="M4.9 21.6a7.1 7.1 0 0 1 14.2 0z" fill="#fff"/>
+      </svg>
+      <span class="qtext">资深产品经理</span>
+      <svg class="qx" viewBox="0 0 24 24" aria-hidden="true">
+        <circle cx="12" cy="12" r="12" fill="currentColor" opacity=".3"/>
+        <path d="M8.6 8.6l6.8 6.8M15.4 8.6l-6.8 6.8" stroke="#fff" stroke-width="2.2" stroke-linecap="round"/>
+      </svg>
+    </div>
+
+    <!-- 放大：去全屏写的入口。放在右上角，因为左上角已经给了附件／引用。 -->
+    <span class="expand">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M14.5 4H20v5.5M20 4l-5.6 5.6M9.5 20H4v-5.5M4 20l5.6-5.6"/>
+      </svg>
+    </span>
   </div>
 
-  <!-- 正文：换行照留，末尾那根是插入光标 -->
-  <div class="text">抽奖这版的概念太绕，帮我看看还能怎么收：<br>1. 组抽奖、分区抽奖，第一次见分不清<br>2. 顶部三个入口在做同一件事<br>3. 空态和加载态分不清<span class="caret"></span></div>
+  <!-- 两行以内：就这么多 -->
+  <div class="text text-s">抽奖这版的概念太绕，帮我看看还能怎么收：<br>1. 组抽奖、分区抽奖，第一次见分不清</div>
+
+  <!-- 超过两行：盒子长到四行封顶，再多的被裁住，右上角那个键就在这时候出现 -->
+  <div class="text text-l">抽奖这版的概念太绕，帮我看看还能怎么收：<br>1. 组抽奖、分区抽奖，第一次见分不清<br>2. 顶部三个入口在做同一件事<br>3. 空态和加载态分不清<br>4. 中奖名单只能看不能导出<br>5. 分享出去的落地页没有返回入口<br>6. 抽奖记录里看不到奖品库存<br>你找一下问题吧<span class="caret"></span></div>
 
   <!-- 工具条：空态只留语音与附件，中间那段占位顶上去当提示 -->
   <div class="bar">
@@ -127,15 +141,24 @@ body{align-items:flex-end;padding:16px 18px 20px;background:#f5f5f7}
   background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.05);
 }
 
-/* ── 引用胶囊 ───────────────────────────────────────────── */
-.quote{align-self:flex-start;display:flex;align-items:center;gap:6px;
+/* ── 头部：引用在左，放大在右 ───────────────────────────── */
+.head{display:flex;align-items:center;gap:10px}
+.quote{display:flex;align-items:center;gap:6px;flex:0 1 auto;min-width:0;
        height:26px;padding:0 8px 0 3px;border-radius:999px;background:#efeff2}
 .qava{width:20px;height:20px;flex:0 0 auto;border-radius:50%}
-.qtext{font-size:13px;line-height:1;color:#5c5c63;white-space:nowrap}
+.qtext{font-size:13px;line-height:1;color:#5c5c63;white-space:nowrap;
+       overflow:hidden;text-overflow:ellipsis}
 .qx{width:14px;height:14px;flex:0 0 auto}
+
+/* 放大键：默认不出现。它在右上角，是因为左上角已经被引用／附件占着，
+   而这两个的位置比它更常用（引用决定上下文，附件是入口）。 */
+.expand{display:none;flex:0 0 auto;margin-left:auto;width:26px;height:26px;
+        align-items:center;justify-content:center;color:#6e6e73}
+.expand svg{width:16px;height:16px}
 
 /* ── 正文 ───────────────────────────────────────────────── */
 .text{font-size:15px;line-height:1.62;color:#141416}
+.text-l{display:none}
 .caret{display:inline-block;width:2px;height:15px;margin-left:1px;
        vertical-align:-2px;background:#2e9e6b}
 
@@ -161,13 +184,24 @@ body{align-items:flex-end;padding:16px 18px 20px;background:#f5f5f7}
 .ph{display:none;flex:1 1 auto;font-size:15px;color:#9e9ea3;white-space:nowrap;
     overflow:hidden;text-overflow:ellipsis}
 
+/* ── 超过两行：盒子长到四行封顶，多出来的裁住，放大键这时才出现 ──
+   四行是微信那个位置的上限 —— 再长就顶到键盘了，所以它把「继续写」交给全屏。
+   底部那道渐变不是装饰：没有它，第 4 行会被腰斩成半个字，看着像坏了。 */
+body[data-state="long"] .text-s{display:none}
+body[data-state="long"] .text-l{
+  display:block;max-height:calc(1.62em * 4);overflow:hidden;
+  -webkit-mask-image:linear-gradient(180deg,#000 80%,transparent 100%);
+  mask-image:linear-gradient(180deg,#000 80%,transparent 100%);
+}
+body[data-state="long"] .expand{display:flex}
+
 /* ── 空态：收成一条胶囊，向上生长的是它，底边不动 ────────── */
 body[data-state="empty"] .composer{
   flex-direction:row;align-items:center;height:52px;padding:0 var(--pad);
 }
 /* 横排时 .bar 得自己撑满整行，否则它的宽度就是内容宽，加号会停在半路 */
 body[data-state="empty"] .bar{flex:1 1 auto}
-body[data-state="empty"] .quote,
+body[data-state="empty"] .head,
 body[data-state="empty"] .text{display:none}
 body[data-state="empty"] .model,
 body[data-state="empty"] .send{display:none}
@@ -185,6 +219,7 @@ body[data-theme="dark"] .mtext{color:#f2f2f7}
 body[data-theme="dark"] .mlogo{color:#f2f2f7}
 body[data-theme="dark"] .mlogo .half{fill:#1c1c1e}
 body[data-theme="dark"] .chev{color:#8e8e93}
+body[data-theme="dark"] .expand{color:#9a9aa0}
 body[data-theme="dark"] .ico{color:#f2f2f7}
 body[data-theme="dark"] .send{background:#f2f2f7;color:#1c1c1e}
 `
