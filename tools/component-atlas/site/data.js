@@ -30,29 +30,31 @@ input{font:inherit;color:inherit;background:none;border:0;outline:none;width:100
 const CATALOG = {
   items: [
     {
-      /* 会话输入框：一条组件，两种形态。
+      /* 会话输入框：一条组件，四种形态。
        * 空着是 52px 的胶囊（语音 · 占位 · 附件），一有内容就向上展开成卡片，
-       * 顶部浮出被引用的角色，底部升起工具条（语音 · 模型 · 附件 · 发送）。
-       * 两种形态靠 body[data-state] 切，纯 CSS —— 预览 iframe 里没有脚本。 */
+       * 顶部浮出被引用的角色、底部升起工具条；过两行右上角浮出放大键，点开是
+       * 整页写作（模型、附件、发送全撤掉）。全靠 body[data-state] 切，
+       * 纯 CSS —— 预览 iframe 里没有脚本。 */
       id: "composer-expand",
       name: "收放式会话输入框",
       tags: ["部件", "输入", "会话输入框", "风格", "极简", "场景", "对话"],
-      summary: "空着时是一条胶囊，只有语音、占位和附件；一开始打字就向上展开成卡片，顶部浮出被引用的角色，底部升起工具条。写超过两行，右上角浮出放大键。",
-      note: "工具条那四样是按使用频率排的：语音在最左，因为在这个 App 里说话是主路径，不是打字的备选；模型选择紧跟其后，因为「换谁回答」是每一次提问的属性，不该藏进设置页；附件和发送靠右，收尾动作。空态刻意不给发送键 —— 没有内容就没有可发的东西，少一个键少一次误触。超过两行时盒子长到四行封顶，再往上顶就撞键盘了，所以从那时起「继续写」交给右上角那个放大键（微信的路子）：先给一个小小的全屏入口，而不是让输入框无限长高。放大键放右上角是因为左上角已经给了引用 —— 那个位置更常用。",
+      summary: "空着时是一条胶囊，只有语音、占位和附件；一开始打字就向上展开成卡片，顶部浮出被引用的角色，底部升起工具条。写超过两行，右上角浮出放大键，点开整页交给写作。",
+      note: "工具条那四样是按使用频率排的：语音在最左，因为在这个 App 里说话是主路径，不是打字的备选；模型选择紧跟其后，因为「换谁回答」是每一次提问的属性，不该藏进设置页；附件和发送靠右，收尾动作。空态刻意不给发送键 —— 没有内容就没有可发的东西，少一个键少一次误触。超过两行时盒子长到四行封顶，再往上顶就撞键盘了，所以从那时起「继续写」交给右上角那个放大键（微信的路子）：先给一个小小的全屏入口，而不是让输入框无限长高。放大键放右上角是因为左上角已经给了引用 —— 那个位置更常用。全屏之后反而做减法：模型、附件、发送全撤掉，只留一个收起和右下角两个键 —— 那一刻的目的是写，不是决定发到哪。",
       previewVw: 380,
-      previewVh: 270,
+      previewVh: 400,
       states: [
         { id: "filled", label: "有内容" },
         { id: "long",   label: "超过两行" },
+        { id: "full",   label: "全屏写" },
         { id: "empty",  label: "空态" }
       ],
       metrics: [
         { label: "空态",     value: "52px 高 · 圆角 24" },
         { label: "两行",     value: "149px · 超两行 197px" },
+        { label: "全屏",     value: "整页 · 收起键 30px" },
         { label: "内距",     value: "12 / 14" },
         { label: "工具条",   value: "键 22px · 间隔 10" },
-        { label: "发送钮",   value: "32px · 距右边 14" },
-        { label: "头行",     value: "26px（引用 / 放大键）" }
+        { label: "发送钮",   value: "32px · 距右边 14" }
       ],
       params: [
         { name: "r",   label: "圆角",     min: 12, max: 32, step: 1, value: 24, unit: "px" },
@@ -130,6 +132,35 @@ const CATALOG = {
     </span>
   </div>
 
+</div>
+
+<!-- 点放大之后：整页交给写作。卡片没了、模型与附件没了、发送也没了
+     （它在键盘上），只留一个收起、一片白、和右下角两个键。 -->
+<div class="full" aria-hidden="true">
+  <span class="fold">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+         stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M6 9.5l6 6 6-6"/>
+    </svg>
+  </span>
+
+  <div class="fulltext">抽奖这版的概念太绕，帮我看看还能怎么收：<br>1. 组抽奖、分区抽奖，第一次见分不清<br>2. 顶部三个入口在做同一件事<br>3. 空态和加载态分不清<br>4. 中奖名单只能看不能导出<br>5. 分享出去的落地页没有返回入口<br>6. 抽奖记录里看不到奖品库存<br>你找一下问题吧<span class="caret"></span></div>
+
+  <div class="fulltools">
+    <svg class="ftool" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+         stroke-width="1.7" stroke-linecap="round">
+      <circle cx="12" cy="12" r="10.4"/>
+      <rect x="10.2" y="6.6" width="3.6" height="6.4" rx="1.8"/>
+      <path d="M8.6 12.1a3.4 3.4 0 0 0 6.8 0M12 15.6v1.9"/>
+    </svg>
+    <svg class="ftool" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+         stroke-width="1.7" stroke-linecap="round">
+      <circle cx="12" cy="12" r="10.4"/>
+      <path d="M8.4 14.4a4.3 4.3 0 0 0 7.2 0"/>
+      <circle cx="9" cy="9.8" r=".9" fill="currentColor" stroke="none"/>
+      <circle cx="15" cy="9.8" r=".9" fill="currentColor" stroke="none"/>
+    </svg>
+  </div>
 </div>`,
       css: `
 /* 底：这层只是把组件放到页面上，用 App 自己的冷灰，不迁就工具页那套暖色 */
@@ -207,6 +238,23 @@ body[data-state="empty"] .model,
 body[data-state="empty"] .send{display:none}
 body[data-state="empty"] .ph{display:block}
 
+/* ── 全屏态：点放大之后，整页交给写作 ──────────────────────
+   变的是三件事：卡片变整页；模型选择与附件消失（它们属于「这一条发去哪」，
+   全屏写作时不打断）；发送也消失 —— 它跟着键盘走，页面里不该再放一个。 */
+.full{display:none;flex:1;flex-direction:column;padding:16px 18px 0;background:#fff}
+.fold{align-self:flex-start;display:grid;place-items:center;width:30px;height:30px;
+      border-radius:50%;background:#f2f2f5;color:#141416}
+.fold svg{width:17px;height:17px}
+.fulltext{flex:1 1 auto;margin-top:22px;overflow:hidden;
+          font-size:15px;line-height:1.62;color:#141416}
+.fulltools{flex:0 0 auto;display:flex;align-items:center;justify-content:flex-end;
+           gap:20px;padding-bottom:16px}
+.ftool{width:34px;height:34px;color:#141416}
+
+body[data-state="full"]{align-items:stretch;padding:0;background:#fff}
+body[data-state="full"] .composer{display:none}
+body[data-state="full"] .full{display:flex}
+
 /* ── 暗色：按 iOS 那套语义推的，不是抄的 ────────────────── */
 body[data-theme="dark"]{background:#0e0e10}
 body[data-theme="dark"] .composer{background:#1c1c1e;box-shadow:0 1px 3px rgba(0,0,0,.5)}
@@ -220,6 +268,12 @@ body[data-theme="dark"] .mlogo{color:#f2f2f7}
 body[data-theme="dark"] .mlogo .half{fill:#1c1c1e}
 body[data-theme="dark"] .chev{color:#8e8e93}
 body[data-theme="dark"] .expand{color:#9a9aa0}
+/* 全屏页在暗色下是纯黑 —— 写作时不该有任何层级抢注意力 */
+body[data-theme="dark"][data-state="full"]{background:#000}
+body[data-theme="dark"] .full{background:#000}
+body[data-theme="dark"] .fold{background:#2c2c2e;color:#f2f2f7}
+body[data-theme="dark"] .fulltext{color:#f2f2f7}
+body[data-theme="dark"] .ftool{color:#f2f2f7}
 body[data-theme="dark"] .ico{color:#f2f2f7}
 body[data-theme="dark"] .send{background:#f2f2f7;color:#1c1c1e}
 `

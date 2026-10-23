@@ -385,6 +385,14 @@ function visible() {
       .join(" ").toLowerCase().includes(q));
 }
 
+/* 卡片上的预览窗按组件自身的宽高比定高。竖长的（整屏、长表单）硬塞进 164px
+   会缩到看不清字；横的仍用默认高度。上下都封了口，免得一条把一面墙撑歪。 */
+function fitCardStage(stage, item) {
+  const w = stage.clientWidth || 300;
+  const h = Math.round(Math.min(300, Math.max(150, w * (item.previewVh / item.previewVw))));
+  stage.style.height = h + "px";
+}
+
 /* ---------- 卡片墙 ---------- */
 function renderGrid() {
   const list = visible();
@@ -407,6 +415,7 @@ function renderGrid() {
     card.onclick = () => open(item);
     gridEl.appendChild(card);
     const stage = card.querySelector(".stage");
+    fitCardStage(stage, item);
     const frame = fresh();
     stage.appendChild(frame);
     paint(frame, stage, item, baseDraft(item));
@@ -573,6 +582,7 @@ window.addEventListener("resize", () => {
       const item = CATALOG.items.find((i) => i.id === card.dataset.id);
       if (!item) return;
       const stage = card.querySelector(".stage");
+      fitCardStage(stage, item);
       paint(stage.querySelector("iframe"), stage, item, baseDraft(item));
     });
     if (state.openId) {
