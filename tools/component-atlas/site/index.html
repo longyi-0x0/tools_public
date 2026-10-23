@@ -208,28 +208,18 @@
    改这里不动 data.js 一行；给条目打这里已有的标签也不动这里一行。
    id 是标签用的，name 只是显示名 —— 改名字不用动任何条目。 */
 const TREE = [
+  /* 树只放已经收到东西的路径。没内容的节点不预留 —— 一屏 0 计数既占地方又误导，
+     真收了新部件再加一行，成本就是这一行。 */
   { id: "部件", name: "部件", children: [
       { id: "输入", name: "输入", children: [
-          { id: "单行输入框", name: "单行输入框" },
-          { id: "多行文本框", name: "多行文本框" },
-          { id: "搜索框",     name: "搜索框" }
-      ]},
-      { id: "选择", name: "选择", children: [
-          { id: "下拉", name: "下拉" }, { id: "开关", name: "开关" }, { id: "勾选", name: "勾选" }
-      ]},
-      { id: "展示", name: "展示", children: [
-          { id: "卡片", name: "卡片" }, { id: "徽标", name: "徽标" }, { id: "头像", name: "头像" }
-      ]},
-      { id: "操作", name: "操作", children: [
-          { id: "按钮", name: "按钮" }, { id: "提示条", name: "提示条" }, { id: "弹层", name: "弹层" }
+          { id: "会话输入框", name: "会话输入框" }
       ]}
   ]},
   { id: "风格", name: "风格", children: [
-      { id: "极简", name: "极简" }, { id: "填充", name: "填充" }, { id: "描边", name: "描边" },
-      { id: "玻璃", name: "玻璃" }, { id: "新拟态", name: "新拟态" }, { id: "渐变", name: "渐变" }
+      { id: "极简", name: "极简" }
   ]},
   { id: "场景", name: "场景", children: [
-      { id: "表单", name: "表单" }, { id: "设置", name: "设置" }, { id: "搜索", name: "搜索" }
+      { id: "对话", name: "对话" }
   ]}
 ];
 /* TREE:END */
@@ -252,12 +242,16 @@ const state = {
 const $ = (id) => document.getElementById(id);
 const railEl = $("rail"), gridEl = $("grid"), drawerEl = $("drawer"), scrimEl = $("scrim");
 
+/* 出厂态：参数取声明里的默认值，状态取第一条。卡片墙永远用它 —— 列表是「这条长什么样」，
+   抽屉才是试验台。不这么分的话，在抽屉里试到「报错」态回列表，整面墙都会变成报错态。 */
+function baseDraft(item) {
+  const vars = {};
+  (item.params || []).forEach((p) => { vars[p.name] = p.value; });
+  return { vars, stateId: (item.states[0] || {}).id || "default", actual: false };
+}
+
 function draftOf(item) {
-  if (!state.draft[item.id]) {
-    const vars = {};
-    (item.params || []).forEach((p) => { vars[p.name] = p.value; });
-    state.draft[item.id] = { vars, stateId: (item.states[0] || {}).id || "default", actual: false };
-  }
+  if (!state.draft[item.id]) state.draft[item.id] = baseDraft(item);
   return state.draft[item.id];
 }
 
@@ -415,7 +409,7 @@ function renderGrid() {
     const stage = card.querySelector(".stage");
     const frame = fresh();
     stage.appendChild(frame);
-    paint(frame, stage, item, draftOf(item));
+    paint(frame, stage, item, baseDraft(item));
   });
 }
 
@@ -579,7 +573,7 @@ window.addEventListener("resize", () => {
       const item = CATALOG.items.find((i) => i.id === card.dataset.id);
       if (!item) return;
       const stage = card.querySelector(".stage");
-      paint(stage.querySelector("iframe"), stage, item, draftOf(item));
+      paint(stage.querySelector("iframe"), stage, item, baseDraft(item));
     });
     if (state.openId) {
       const item = CATALOG.items.find((i) => i.id === state.openId);

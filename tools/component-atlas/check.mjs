@@ -104,7 +104,8 @@ for (const [index, item] of CATALOG.items.entries()) {
     problems.push(`${at}：states 至少要有默认态`);
   } else {
     const stateIds = new Set();
-    for (const s of states) {
+    const hooked = new Set([...((item.css ?? "").matchAll(/data-state="([^"]+)"/g))].map((m) => m[1]));
+    for (const [si, s] of states.entries()) {
       if (typeof s?.id !== "string" || s.id.trim() === "") {
         problems.push(`${at}：states 里有一项缺 id`);
         continue;
@@ -114,13 +115,11 @@ for (const [index, item] of CATALOG.items.entries()) {
       if (typeof s?.label !== "string" || s.label.trim() === "") {
         problems.push(`${at}：状态 ${s.id} 缺 label`);
       }
-    }
-    const css = item.css ?? "";
-    const hooked = new Set([...css.matchAll(/data-state="([^"]+)"/g)].map((m) => m[1]));
-    for (const id of stateIds) {
-      if (id === "default") continue;               /* 默认态可以不写，BASE 那套就是它 */
-      if (!hooked.has(id)) {
-        notes.push(`${at}：声明了状态 ${id}，css 里没有 body[data-state="${id}"] 去接 —— 切过去看不出变化`);
+      /* 第一条就是默认态（口径写在 data.js 末尾），页面打开时就用它，
+         所以它不需要 css 去接；后面的状态必须接得住，否则切过去没反应。 */
+      if (si === 0) continue;
+      if (!hooked.has(s.id)) {
+        notes.push(`${at}：声明了状态 ${s.id}，css 里没有 body[data-state="${s.id}"] 去接 —— 切过去看不出变化`);
       }
     }
   }
