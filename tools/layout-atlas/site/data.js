@@ -1037,6 +1037,313 @@ h1{margin:0;font-size:17px;font-weight:600;letter-spacing:-.012em;color:#211e1b;
 .arow i{font-size:8px;font-style:normal;color:#aca7a4;display:block;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:10px}
 .arow .time{font-size:8px;color:#b3aeab}
       `
+    },
+    {
+      id: "task-ticket-screen",
+      name: "待办票券屏",
+      group: "shell",
+      tags: ["移动端", "首屏", "卡片", "票券", "渐变", "还原稿"],
+      summary: "渐变底上直接浮一排白卡（B 浮起，没有外壳色）：顶上大号问候配能量胶囊，中间是一叠两侧带撕口的票券任务卡，最后一张模糊截断，底栏常驻输入条。",
+      note: "撕边是这张的签名动作，代价是卡片左右各让出 14 的点击面积 —— 要在卡内贴边放勾选框或拖拽把手时别用它，缺口会压在手势上。中间那张模糊卡只是「后面还有」的暗示，真接无限滚动就得换成实卡。「底 → 卡 → 模糊」三段靠的是底足够平，底色一花花，卡就浮不起来了。",
+      previewVw: 858,
+      params: [
+        { name: "card-h", label: "卡高", min: 118, max: 190, step: 2, value: 151, unit: "" },
+        { name: "card-gap", label: "卡间距", min: 8, max: 48, step: 1, value: 29, unit: "" },
+        { name: "card-r", label: "卡圆角", min: 6, max: 48, step: 1, value: 30, unit: "" },
+        { name: "accent-w", label: "色条宽", min: 4, max: 28, step: 1, value: 12, unit: "" },
+        { name: "pill-h", label: "胶囊高", min: 40, max: 66, step: 2, value: 50, unit: "" },
+        { name: "input-h", label: "输入条高", min: 96, max: 150, step: 2, value: 118, unit: "" },
+        { name: "field", label: "提示字号", min: 20, max: 40, step: 1, value: 30, unit: "" },
+      ],
+      html: `
+<div class="stage">
+  <div class="screen">
+
+    <div class="status">
+      <div class="island"></div>
+      <div class="time">09:41</div>
+      <div class="sys">
+        <svg width="63rem" height="27rem" viewBox="0 0 63 27" fill="currentColor" aria-hidden="true">
+          <rect x="0"    y="18" width="9" height="9"  rx="2.6"/>
+          <rect x="18"   y="13" width="9" height="14" rx="2.6"/>
+          <rect x="36"   y="9"  width="9" height="18" rx="2.6"/>
+          <rect x="54"   y="5"  width="9" height="22" rx="2.6"/>
+        </svg>
+        <svg width="52rem" height="26rem" viewBox="0 0 52 26" fill="none" aria-hidden="true">
+          <path d="M2.5 9.5A36 36 0 0 1 49.5 9.5" stroke="currentColor" stroke-width="4.5" stroke-linecap="round"/>
+          <path d="M13 18.5A16 16 0 0 1 39 18.5" stroke="currentColor" stroke-width="4.5" stroke-linecap="round"/>
+          <circle cx="26" cy="23.8" r="3.2"/>
+        </svg>
+        <svg width="50rem" height="25rem" viewBox="0 0 50 25" fill="currentColor" aria-hidden="true">
+          <rect x="0" y="0" width="42" height="25" rx="6.5"/>
+          <path d="M45.5 8.6c2.1.7 3.4 2.3 3.4 4.1s-1.3 3.4-3.4 4.1z" opacity=".5"/>
+        </svg>
+      </div>
+    </div>
+
+    <div class="head">
+      <div class="greet">下午好，Tp</div>
+      <div class="sub">
+        <div class="pill">
+          <span class="dot"></span>
+          <span class="num">39</span>
+          <span class="unit">CEL</span>
+          <svg class="cv" width="16rem" height="11rem" viewBox="0 0 20 12" fill="none" aria-hidden="true">
+            <path d="M2 2.5 10 9.5 18 2.5" stroke="#959b9a" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </div>
+        <div class="note"><span>能量低谷</span><i>·</i><span>建议充电</span></div>
+      </div>
+    </div>
+
+    <div class="acts">
+      <button class="ibtn" aria-label="归档">
+        <svg width="34rem" height="34rem" viewBox="0 0 34 34" fill="none" aria-hidden="true">
+          <rect x="4.2" y="4.2" width="25.6" height="25.6" rx="5" stroke="#3b3d3c" stroke-width="2.6"/>
+          <path d="M4.8 12.6h24.4" stroke="#3b3d3c" stroke-width="2.6" stroke-linecap="round"/>
+          <path d="M13.4 20.4h7.2" stroke="#3b3d3c" stroke-width="2.6" stroke-linecap="round"/>
+        </svg>
+      </button>
+      <div class="avatar"><div class="ph"></div></div>
+    </div>
+
+    <div class="tasks">
+      <article class="task">
+        <div class="tk">
+          <div class="accent"></div>
+          <div class="tk-main">
+            <div class="t">写 Pikko 宣传文章</div>
+            <div class="m"><span>预估</span><span>25</span><span>分钟</span><i>·</i><span>办公</span></div>
+          </div>
+          <div class="tk-tags"><span>FOCUS</span><span>PC</span></div>
+        </div>
+      </article>
+
+      <article class="task">
+        <div class="tk">
+          <div class="accent"></div>
+          <div class="tk-main">
+            <div class="t">新专辑头脑风暴</div>
+            <div class="m"><span>预估</span><span>25</span><span>分钟</span><i>·</i><span>居家</span></div>
+          </div>
+          <div class="tk-tags"><span>CREATE</span><span>OTHER</span></div>
+        </div>
+      </article>
+
+      <div class="ghost">
+        <article class="task">
+          <div class="tk">
+            <div class="accent"></div>
+            <div class="tk-main">
+              <div class="t">整理产品规划里 AI 生成的初稿</div>
+              <div class="m"><span>预估</span><span>40</span><span>分钟</span><i>·</i><span>办公</span></div>
+            </div>
+            <div class="tk-tags"><span>WRITE</span><span>NOTES</span></div>
+          </div>
+        </article>
+      </div>
+    </div>
+
+    <div class="composer">
+      <span class="ph">记下一件待办或想法…</span>
+      <button class="mic" aria-label="录音">
+        <svg width="26rem" height="30rem" viewBox="0 0 26 30" fill="none" aria-hidden="true">
+          <rect x="8" y="1.5" width="10" height="16" rx="5" fill="#f4715a"/>
+          <path d="M3 13.5v1.5a10 10 0 0 0 20 0v-1.5" stroke="#f4715a" stroke-width="2.4" stroke-linecap="round"/>
+          <path d="M13 25v3.5M8.5 28.5h9" stroke="#f4715a" stroke-width="2.4" stroke-linecap="round"/>
+        </svg>
+      </button>
+    </div>
+
+  </div>
+</div>
+      `,
+      css: `
+*{box-sizing:border-box;margin:0;padding:0}
+/* 1rem = 画布上的 1 设计像素。整屏按画布的 94% 等比塞进任意预览窗 —— 纯 CSS，
+   不用脚本（图册的 iframe 不给 allow-scripts）。 */
+html{font-size:min(calc(100vw * .94 / 858),calc(100vh * .94 / 1793));-webkit-text-size-adjust:none}
+
+html,body{height:100%}
+body{
+  overflow:hidden;
+  background:#eceeea;
+  font-family:-apple-system,"SF Pro Text","PingFang SC","Hiragino Sans GB","Microsoft YaHei",system-ui,sans-serif;
+  -webkit-font-smoothing:antialiased;
+  color:#1b1d1c;
+}
+
+/* 舞台：把 858×1793 的画布等比缩放到任意容器里 */
+.stage{
+  position:absolute;inset:0;overflow:hidden;
+  background:radial-gradient(120% 100% at 50% 0%,#f4f5f2 0%,#e6e8e3 70%,#dfe2dc 100%);
+}
+.screen{
+  position:absolute;left:50%;top:50%;
+  width:858rem;height:1793rem;
+  transform:translate(-50%,-50%);
+  overflow:hidden;
+  border-radius:54rem;
+  background:
+    radial-gradient(68% 36% at 108% 6%,#fbf9f2 0%,#f6f4ec 42%,rgba(246,244,236,0) 84%),
+    radial-gradient(52% 20% at 104% 52%,#c6e3cb 0%,#cee7d3 40%,rgba(206,231,211,0) 84%),
+    radial-gradient(70% 24% at -2% 26%,#aed2cc 0%,#bcd8d2 38%,rgba(188,216,210,0) 82%),
+    radial-gradient(42% 20% at -12% 52%,#f3f5ee 0%,#eef1ea 36%,rgba(238,241,234,0) 80%),
+    radial-gradient(58% 26% at 106% 96%,#f8f6f0 0%,#f4f2ec 40%,rgba(244,242,236,0) 84%),
+    linear-gradient(180deg,#dce9e2 0%,#dfeae3 40%,#e2ece5 70%,#e5ede6 100%);
+  box-shadow:0 30rem 70rem rgba(30,40,35,.16),0 2rem 0 rgba(255,255,255,.5) inset;
+}
+
+/* ---------- 状态栏 ---------- */
+.status{
+  position:absolute;left:0;right:0;top:0;height:120rem;
+}
+.island{
+  position:absolute;left:50%;top:31rem;transform:translateX(-50%);
+  width:265rem;height:74rem;border-radius:37rem;background:#000;
+}
+.time{
+  position:absolute;left:111rem;top:44rem;
+  font-size:36rem;font-weight:700;letter-spacing:.01em;color:#000;
+}
+.sys{
+  position:absolute;right:24rem;top:55rem;
+  display:flex;align-items:center;gap:28rem;color:#000;
+}
+
+/* ---------- 问候 ---------- */
+.head{position:absolute;left:53rem;top:251rem}
+.greet{
+  font-size:68rem;font-weight:700;letter-spacing:-.02em;line-height:1;
+  color:#1b1d1c;
+}
+.head .sub{margin-top:26rem;display:flex;align-items:center;gap:20rem}
+
+.pill{
+  display:flex;align-items:center;
+  height:calc(var(--pill-h) * 1rem);padding:0 24rem 0 21rem;border-radius:calc(var(--pill-h) * 1rem / 2);
+  background:#fff;
+  box-shadow:0 2rem 8rem rgba(50,70,60,.06);
+}
+.pill .dot{
+  width:13rem;height:13rem;border-radius:50%;background:#45b3a6;
+  margin-right:14rem;flex:none;
+}
+.pill .num{font-size:27rem;font-weight:700;letter-spacing:.01em;color:#232426}
+.pill .unit{font-size:25rem;font-weight:700;letter-spacing:.06em;color:#232426;margin-left:16rem}
+.pill .cv{margin-left:9rem;display:block}
+
+.note{
+  display:flex;align-items:center;gap:13rem;
+  font-size:26rem;color:#5d6660;letter-spacing:.02em;
+}
+.note i{font-style:normal;color:#8c948e}
+
+/* ---------- 右上动作 ---------- */
+.acts{
+  position:absolute;right:47rem;top:237rem;
+  display:flex;align-items:center;gap:28rem;
+}
+.ibtn{
+  width:70rem;height:70rem;border-radius:50%;
+  background:#fff;border:0;display:grid;place-items:center;
+  box-shadow:0 3rem 10rem rgba(50,70,60,.10);cursor:pointer;
+}
+.avatar{
+  width:76rem;height:76rem;border-radius:50%;
+  padding:4rem;background:#fdfdfb;
+  box-shadow:0 3rem 10rem rgba(50,70,60,.12);
+}
+.avatar .ph{
+  width:100%;height:100%;border-radius:50%;overflow:hidden;
+  background:
+    radial-gradient(60% 55% at 42% 30%,#c9a8e8 0%,rgba(201,168,232,0) 62%),
+    radial-gradient(52% 48% at 60% 42%,#f0e2f6 0%,rgba(240,226,246,0) 60%),
+    radial-gradient(90% 80% at 50% 108%,#2a2140 0%,#3c3358 38%,rgba(60,51,88,0) 72%),
+    linear-gradient(160deg,#6f7590 0%,#8d8ea4 40%,#4a4560 72%,#2b2438 100%);
+  position:relative;
+}
+.avatar .ph::before{                /* 肩 */
+  content:"";position:absolute;left:50%;bottom:-16%;width:96%;height:44%;
+  transform:translateX(-50%);
+  border-radius:50% 50% 0 0;
+  background:linear-gradient(180deg,rgba(46,36,68,.9),rgba(26,20,40,.98));
+}
+.avatar .ph::after{                 /* 头 */
+  content:"";position:absolute;left:50%;bottom:24%;width:46%;height:46%;
+  transform:translateX(-50%);
+  border-radius:50%;
+  background:linear-gradient(160deg,rgba(58,46,84,.86),rgba(28,22,42,.97));
+}
+
+/* ---------- 任务卡 ---------- */
+.tasks{
+  position:absolute;left:45rem;right:45rem;bottom:235rem;
+  display:flex;flex-direction:column;gap:calc(var(--card-gap) * 1rem);
+}
+.task{
+  position:relative;height:calc(var(--card-h) * 1rem);border-radius:calc(var(--card-r) * 1rem);
+  box-shadow:0 9rem 20rem rgba(44,70,56,.13);
+}
+.task::before{
+  content:"";position:absolute;inset:0;border-radius:inherit;background:#fff;
+  /* 两侧撕边：中部挖四个半椭圆缺口（可随卡高自适应） */
+  mask:
+    radial-gradient(ellipse 7rem 9rem at 0 calc(50% - 36rem),#0000 97%,#000 100%) no-repeat,
+    radial-gradient(ellipse 7rem 9rem at 0 calc(50% - 12rem),#0000 97%,#000 100%) no-repeat,
+    radial-gradient(ellipse 7rem 9rem at 0 calc(50% + 12rem),#0000 97%,#000 100%) no-repeat,
+    radial-gradient(ellipse 7rem 9rem at 0 calc(50% + 36rem),#0000 97%,#000 100%) no-repeat,
+    radial-gradient(ellipse 7rem 9rem at 100% calc(50% - 36rem),#0000 97%,#000 100%) no-repeat,
+    radial-gradient(ellipse 7rem 9rem at 100% calc(50% - 12rem),#0000 97%,#000 100%) no-repeat,
+    radial-gradient(ellipse 7rem 9rem at 100% calc(50% + 12rem),#0000 97%,#000 100%) no-repeat,
+    radial-gradient(ellipse 7rem 9rem at 100% calc(50% + 36rem),#0000 97%,#000 100%) no-repeat;
+  mask-composite:intersect;
+}
+.tk{
+  position:relative;z-index:1;
+  height:100%;display:flex;align-items:center;
+  padding:0 40rem 0 34rem;gap:27rem;
+}
+.accent{
+  width:calc(var(--accent-w) * 1rem);height:70rem;border-radius:6rem;flex:none;
+  background:#fdb54e;
+}
+.tk-main{flex:1;min-width:0}
+.tk-main .t{
+  font-size:34rem;font-weight:700;letter-spacing:-.01em;line-height:1.12;color:#1b1d1c;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.tk-main .m{
+  margin-top:20rem;display:flex;align-items:center;gap:20rem;
+  font-size:21rem;line-height:1;color:#9b9b9b;letter-spacing:.01em;
+}
+.tk-main .m i{font-style:normal;color:#b4b4b4}
+.tk-tags{
+  flex:none;display:flex;flex-direction:column;align-items:flex-end;gap:12rem;
+  font-size:16rem;font-weight:600;line-height:1;letter-spacing:.06em;color:#a2a2a2;
+}
+
+/* 模糊的下一张 */
+.ghost{filter:blur(8rem);opacity:.55}
+.ghost .accent{background:#f4a993}
+
+/* ---------- 底部输入条 ---------- */
+.composer{
+  position:absolute;left:45rem;right:45rem;bottom:8rem;height:calc(var(--input-h) * 1rem);
+  border-radius:calc(var(--input-h) * 1rem / 2);
+  background:#fff;
+  box-shadow:0 6rem 20rem rgba(50,70,60,.08);
+  display:flex;align-items:center;justify-content:space-between;
+  padding:0 44rem 0 42rem;
+}
+.composer .ph{
+  font-size:calc(var(--field) * 1rem);color:#b9bdb9;letter-spacing:.02em;
+}
+.mic{
+  width:56rem;height:56rem;border-radius:50%;border:0;flex:none;
+  background:#fdeee9;display:grid;place-items:center;cursor:pointer;
+}
+      `
     }
   
   ]
