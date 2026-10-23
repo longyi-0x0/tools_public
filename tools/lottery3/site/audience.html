@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="color-scheme" content="dark" />
+<title>抽奖 · 大屏</title>
+<link rel="icon" href="data:," />
+<link rel="stylesheet" href="./styles.css" />
+</head>
+<body class="audience-body">
+<!-- 观众屏：只画控制台推过来的东西，自己不抽奖、不存状态。 -->
+<div id="audience" class="aud">
+  <div class="aud-top">
+    <h1 id="aud-title" class="aud-title">等着开始</h1>
+    <p id="aud-sub" class="aud-sub"></p>
+  </div>
+  <div id="aud-boards" class="aud-boards"></div>
+  <div id="aud-reveal" class="aud-reveal">
+    <div id="aud-lead" class="aud-lead"></div>
+    <div id="aud-names" class="aud-names"></div>
+  </div>
+</div>
+<script type="module" src="./src/audience.js"></script>
+</body>
+</html>

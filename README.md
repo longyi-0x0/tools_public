@@ -33,6 +33,7 @@
 | study-hall | 目录 h5 | edu |
 | petal-drift | 目录 h5 | scene |
 | lottery | 目录 h5 | scene |
+| lottery3 | 目录 h5 | scene |
 | link-public | 单文件 web | test |
 | self-check-public | 目录 h5 | test |
 
