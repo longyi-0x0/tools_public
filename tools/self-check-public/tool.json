@@ -2,10 +2,12 @@
   "schemaVersion": 2,
   "type": "tool",
   "name": "自检页（公开）",
-  "description": "打印这次装载的地址、版本与视口，用来核对公开仓库的 H5 发布链路。",
+  "description": "打印这次装载的地址、版本与视口，用来核对公开仓库的 H5 发布链路；模型对话那一节点一下才发请求，顺带验证 llm.chat 能力包。",
   "kind": "h5",
   "entry": "index.html",
-  "capabilities": [],
+  "capabilities": [
+    "llm.chat"
+  ],
   "tags": [
     "test"
   ]

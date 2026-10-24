@@ -64,9 +64,40 @@
 
 外链工具的页面不由我们维护，给它挂版本号只是记了个会过期的数字，所以没有版本层。
 
-`test` 下工具只验证发布链路，不是日常使用工具。
+`test` 下工具只验证发布链路，不是日常使用工具。`self-check-public` 声明了 `llm.chat`：
+打开不调模型，按一下「试一次对话」才发一条最短的请求，顺便把能力包那条链路也验了。
 
 发布器按工具箱清单契约校验字段与入口；契约见仓库文档 `docs/containers/toolbox_app/附录/01-工具清单.md`。
+
+## 能力包
+
+`caps/<id>/` 是注入给工具的能力：一个包一份 `cap.json` 加一个 `dist/`，工具在
+`tool.json` 的 `capabilities` 里声明用哪一条，壳装载后挂在工具页的 `window.__toolbox` 上。
+**工具只能引用本源发布的能力包**——私有工具用不上这里的包，反过来也一样。
+
+| 包 | 能力 id | 给什么 |
+| --- | --- | --- |
+| `xlsx` | `xlsx` | 读一份 .xlsx，交出表名与行 |
+| `llm` | `llm.chat` | 调一次模型：`text` / `stream` / `raw` |
+
+### `llm.chat` 现在是临时形态
+
+**它直连云托管上的 LiteLLM，master key 就写在包里。** 包是发布产物，
+`releases/tools_public/<版本>/caps/llm/index.js` 谁都能下载到，两份凭据等于公开——
+上游的调用额度因此是敞开的，谁拿到谁花。先用着，收口方向是改成 `ctx.call("llm.chat", …)`：
+由 `toolbox_service` 持 key 代发、按用户记账与限流，那时这个包该进私有仓。
+
+```js
+// 能力由壳注入，onload 之后才挂上来：先问，没有再等事件。
+const llm = window.__toolbox.use("llm.chat");
+const 回复 = await llm.stream([{ role: "user", content: "…" }], {
+  onDelta: (片) => 把(片),
+});
+```
+
+- 默认**关思考**（上游模型默认开，思考 token 也是钱）；要推理传 `thinking: "auto"`。
+- 上游最小实例是 0：缩容之后第一次请求要把容器叫醒，几十秒是常态，界面上要给一句提示。
+- 超时默认 90 秒，只掐到响应头；流式开始之后由调用方用 `signal` 决定什么时候停。
 
 ## 发布
 

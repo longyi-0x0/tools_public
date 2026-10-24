@@ -1,0 +1,7 @@
+{
+  "id": "llm",
+  "version": "1.0.0",
+  "provides": {
+    "llm.chat": "index.js"
+  }
+}
