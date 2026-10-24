@@ -1,7 +1,6 @@
 {
   "schemaVersion": 2,
   "type": "tool",
-  "id": "component-atlas",
   "name": "组件图册",
   "description": "同一个部件的不同设计做法，按标签翻到哪层就看到那层：活着的预览、几种状态、明暗两套、可以直接复制走的代码。",
   "order": 0,

@@ -1,7 +1,6 @@
 {
   "schemaVersion": 2,
   "type": "tool",
-  "id": "regex-tester",
   "name": "正则表达式在线测试",
   "description": "输入正则与文本，高亮匹配结果，并附常用表达式参考。",
   "kind": "web",

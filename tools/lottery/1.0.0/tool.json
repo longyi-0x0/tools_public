@@ -1,7 +1,6 @@
 {
   "schemaVersion": 2,
   "type": "tool",
-  "id": "lottery",
   "name": "抽奖台",
   "description": "导入一份 xlsx 就能开抽：大转盘、九宫格、老虎机，每种形态整屏一套界面，可换样式。名额与中奖名单实时结算，可撤销、可导出结果。",
   "kind": "h5",

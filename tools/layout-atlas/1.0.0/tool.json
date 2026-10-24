@@ -1,7 +1,6 @@
 {
   "schemaVersion": 2,
   "type": "tool",
-  "id": "layout-atlas",
   "name": "布局图册",
   "description": "收来的布局片段，每页一个：活着的预览、几根可调的滑块、可以直接复制走的代码。",
   "order": 0,
