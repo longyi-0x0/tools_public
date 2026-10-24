@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="color-scheme" content="light dark" />
+<title>抽奖</title>
+<link rel="icon" href="data:," />
+<script>
+  // 首屏先把主题定下来，免得先闪一下默认配色。
+  try {
+    var theme = localStorage.getItem('lottery3:theme');
+    if (theme) document.documentElement.dataset.theme = theme;
+  } catch (error) {}
+</script>
+<link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+<!-- 准备态：配活动、配环节、管清单都在这里 -->
+<div id="app" class="app"></div>
+<!-- 演出态：主持人上台后盖住主页的那一层 -->
+<div id="show" class="show" hidden></div>
+<!-- 新建向导：从零建一场活动的四步 -->
+<div id="wizard" class="wizard" hidden></div>
+<input id="file" type="file" accept=".xlsx" hidden />
+<script type="module" src="./src/main.js"></script>
+</body>
+</html>

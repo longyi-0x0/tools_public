@@ -19,7 +19,7 @@ cloudbase-framework/
 # 协作助手的本地工作记录，不入库
 .workbuddy/
 
-node_modules/
+node_modules
 dist/
 # 发布脚本的暂存目录
 .release/
