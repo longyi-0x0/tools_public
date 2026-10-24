@@ -8,34 +8,47 @@
 .
 ├── README.md
 └── tools/
-    ├── plantuml.tool.json          # web 简便：单文件
-    ├── study-hall/                 # h5 / 带附属文件：目录
-    │   ├── tool.json
-    │   ├── README.md               # 可选，不发布
-    │   └── site/
-    │       └── index.html
+    ├── regex-tester/               # 外链工具：没有版本层
+    │   └── tool.json
+    ├── lottery/
+    │   └── 1.0.0/                  # 版本层：一个目录一版，可并存
+    │       ├── tool.json
+    │       ├── README.md           # 可选，不发布
+    │       └── site/
+    │           └── index.html
     └── …
 ```
 
-- **单文件** `tools/<id>.tool.json`：仅 `kind: "web"`，文件名主干与字段 `id` 一致。
-- **目录** `tools/<id>/tool.json`：`web` 或 `h5`；`h5` 必须有 `site/`。目录内其它文件（说明、日后的详情页等）本轮发布忽略。
+- 一层目录名就是工具 **id**，版本层可选：
+  - `tools/<id>/tool.json` —— 无版本；
+  - `tools/<id>/<版本>/tool.json` —— 有版本，版本是 `X.Y.Z`。
+- **`tool.json` 里不写 `id`，也不写 `version`**：两者只从目录名取，写了会构建失败。
+  id 与版本各有两个来源时，改目录名漏改一处就留下线上查不出来的错位。
+- 同一个 id 只能走一种形态。既有 `tool.json` 又有版本目录、或者有版本目录还混进别的子目录，都直接失败。
+- `h5` 必须有 `site/`，入口相对 `site/`；`web` 的 `entry` 是 https 地址，不需要 `site/`。
+- 目录内的说明、构建脚本、测试都不发布，只有 `site/` 会被拷进产物。
 - 仓库根可放贡献说明等；发布只扫 `tools/`。
 
 ## 当前工具
 
-| id | 形态 | tags |
-| --- | --- | --- |
-| clean-architecture-zh | 单文件 web | books |
-| component-atlas | 目录 h5 | books |
-| layout-atlas | 目录 h5 | books |
-| motion-lexicon | 单文件 web | books |
-| plantuml / react-lab / regex-tester / html-css-js | 单文件 web | dev |
-| study-hall | 目录 h5 | edu |
-| petal-drift | 目录 h5 | scene |
-| lottery | 目录 h5 | scene |
-| lottery3 | 目录 h5 | scene |
-| link-public | 单文件 web | test |
-| self-check-public | 目录 h5 | test |
+| id | 形态 | 版本 | tags |
+| --- | --- | --- | --- |
+| clean-architecture-zh | web | — | books |
+| component-atlas | h5 | 1.0.0 | books |
+| layout-atlas | h5 | 1.0.0 | books |
+| motion-lexicon | web | — | books |
+| html-css-js | web | — | dev |
+| plantuml | web | — | dev |
+| react-lab | web | — | dev |
+| regex-tester | web | — | dev |
+| study-hall | h5 | 1.0.0 | edu |
+| petal-drift | h5 | 1.0.0 | scene |
+| lottery | h5 | 1.0.0 | scene |
+| lottery3 | h5 | 1.0.0 | scene |
+| link-public | web | — | test |
+| self-check-public | h5 | 1.0.0 | test |
+
+外链工具的页面不由我们维护，给它挂版本号只是记了个会过期的数字，所以没有版本层。
 
 `test` 下工具只验证发布链路，不是日常使用工具。
 
