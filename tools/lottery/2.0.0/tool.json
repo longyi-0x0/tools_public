@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
   "type": "tool",
-  "name": "抽奖",
+  "name": "抽奖台",
   "description": "一场活动下按环节抽奖：先备好名单与奖项，再上台面对观众抽。环节之间共享去重范围，中过的不会再中；名单可导入 xlsx，结果记在本机账本里，可撤销可复算。",
   "kind": "h5",
   "entry": "index.html",
