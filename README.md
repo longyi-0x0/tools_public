@@ -15,11 +15,14 @@
     │   ├── README.md               # 可选，不发布
     │   └── site/
     │       └── index.html
-    ├── lottery/                    # 有两版：才需要版本层
+    ├── lottery/                    # 有三版：才需要版本层
     │   ├── 1.0.0/
     │   │   ├── tool.json
     │   │   └── site/
-    │   └── 2.0.0/
+    │   ├── 2.0.0/
+    │   │   ├── tool.json
+    │   │   └── site/
+    │   └── 3.0.0/
     │       ├── tool.json
     │       └── site/
     └── …
@@ -50,11 +53,12 @@
 | regex-tester | web | — | dev |
 | study-hall | h5 | — | edu |
 | petal-drift | h5 | — | scene |
-| lottery | h5 | 1.0.0 / 2.0.0 | scene |
+| lottery | h5 | 1.0.0 / 2.0.0 / 3.0.0 | scene |
 | link-public | web | — | test |
 | self-check-public | h5 | — | test |
 
-`lottery` 是唯一有版本层的工具：`1.0.0` 是旧的单页抽奖，`2.0.0` 是按环节组织的新版。
+`lottery` 是唯一有版本层的工具：`1.0.0` 是旧的单页抽奖，`2.0.0` 是按环节组织的新版，
+`3.0.0` 修了两条会毁掉现场的问题（彩排按正式入账、导入按位置猜列）并补上名额设置与演出层撤回。
 它的第二版原来是以 `lottery3` 这个独立 id 存在的（没有版本机制时的权宜做法），现已并回 `lottery`，
 两个 id 的差别改由版本表达。
 
