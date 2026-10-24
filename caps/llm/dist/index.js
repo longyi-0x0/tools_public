@@ -39,6 +39,10 @@ export class LlmError extends Error {
  * 一个包给一个能力：`llm.chat` 同时给三种用法，共用同一份「请求怎么拼、
  * 错误怎么翻译」的代码。壳只 import 一次。
  *
+ * 失败时抛的错带 `name = "LlmError"`、`status`（HTTP 状态，没送达是 0）与 `body`
+ * （上游回的那一段原文）。**按 `name` 认，别用 `instanceof`**：能力包在壳那条 JS
+ * 世界里造对象，工具页是另一条，跨窗口 `instanceof` 不可靠。
+ *
  * @returns {{ "llm.chat": { model: string, text: Function, stream: Function, raw: Function } }}
  */
 export function create() {
