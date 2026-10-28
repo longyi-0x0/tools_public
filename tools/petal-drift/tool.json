@@ -1,7 +1,6 @@
 {
   "schemaVersion": 2,
   "type": "tool",
-  "id": "petal-drift",
   "name": "花语",
   "description": "一群飘浮的花瓣掠过草原：所过之处草色由枯转翠、鲜花次第绽开，云影一片片扫过山丘。七套天气、可开 VR，键盘或触摸都行。",
   "kind": "h5",

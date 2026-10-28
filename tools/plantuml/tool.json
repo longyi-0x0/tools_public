@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 2,
+  "type": "tool",
+  "name": "PlantUML",
+  "description": "用文本描述生成 UML 等图表。",
+  "kind": "web",
+  "entry": "https://plantuml.com/zh/",
+  "capabilities": [],
+  "tags": [
+    "dev"
+  ]
+}

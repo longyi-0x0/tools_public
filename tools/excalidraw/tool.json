@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 2,
+  "type": "tool",
+  "name": "Excalidraw",
+  "description": "手绘风格的白板，用来画流程图、线框与随手示意图。",
+  "kind": "web",
+  "entry": "https://excalidraw.com/",
+  "capabilities": [],
+  "tags": [
+    "dev"
+  ]
+}

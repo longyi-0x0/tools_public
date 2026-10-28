@@ -233,6 +233,19 @@
         <ul class="检查" id="检查"></ul>
       </section>
 
+      <section class="分节">
+        <h2>模型对话</h2>
+        <p class="说明">
+          声明了 <code>llm.chat</code>。这一节不自动发请求：点一下才发，一次一条最短的提问。
+          上游缩容到零之后第一次要把容器叫醒，几十秒是常态，读数里的耗时能看出这一点。
+        </p>
+        <dl class="读数" id="模型读数"></dl>
+        <div class="操作">
+          <button id="试模型" type="button">试一次对话</button>
+          <span class="复述" id="模型复述" role="status" aria-live="polite"></span>
+        </div>
+      </section>
+
       <div class="操作">
         <button id="复制" type="button">复制报告</button>
         <span class="复述" id="复述" role="status" aria-live="polite"></span>
@@ -360,6 +373,108 @@
         检查表.append(条);
       }
 
+      // ---- 模型对话 ----
+      // 能力由壳装载后挂在 window.__toolbox 上；直接打开时它不会来，等到超时就当没有。
+      // 这一节只在按钮按下时用一次能力：自检页每次打开都烧一次调用没有意义。
+      const 模型表 = document.getElementById("模型读数");
+      const 模型行 = new Map();
+      const 模型键 = document.getElementById("试模型");
+      const 模型复述 = document.getElementById("模型复述");
+      const 提问 = "只回两个字：可用";
+      let 跑着 = false;
+
+      function 记模型(名, 值) {
+        let 值格 = 模型行.get(名);
+        if (值格 === undefined) {
+          const 行 = document.createElement("div");
+          行.className = "行";
+          const 键 = document.createElement("dt");
+          键.textContent = 名;
+          值格 = document.createElement("dd");
+          行.append(键, 值格);
+          模型表.append(行);
+          模型行.set(名, 值格);
+        }
+        值格.textContent = 值;
+      }
+
+      /** 拿到能力台；`null` 表示这次没有工具箱（或直接打开的页面）。 */
+      function 等能力(上限 = 3000) {
+        return new Promise((给出) => {
+          if (window.__toolbox) {
+            给出(window.__toolbox);
+            return;
+          }
+          const 到期 = window.setTimeout(() => {
+            window.removeEventListener("toolbox:ready", 收);
+            给出(null);
+          }, 上限);
+          function 收() {
+            window.clearTimeout(到期);
+            给出(window.__toolbox ?? null);
+          }
+          window.addEventListener("toolbox:ready", 收, { once: true });
+        });
+      }
+
+      /** 异常可能来自另一条 JS 世界，别只剩 [object Object]。 */
+      function 说清(错误) {
+        if (错误 instanceof Error) {
+          return 错误.message;
+        }
+        if (typeof 错误 === "string") {
+          return 错误;
+        }
+        try {
+          return JSON.stringify(错误).slice(0, 300);
+        } catch {
+          return String(错误);
+        }
+      }
+
+      模型键.addEventListener("click", async () => {
+        if (跑着) {
+          return;
+        }
+        跑着 = true;
+        模型键.disabled = true;
+        模型键.textContent = "正在叫醒上游…";
+        模型复述.textContent = "缩容过的上游要几十秒才醒";
+        记模型("提问", 提问);
+        记模型("回复", "…");
+        const 起点 = performance.now();
+        try {
+          const 能力台 = await 等能力();
+          if (能力台 === null) {
+            throw new Error("没有拿到能力：页面可能是直接打开的，或工具箱太旧");
+          }
+          if (!能力台.capabilities.includes("llm.chat")) {
+            throw new Error(`这次装载的是 ${能力台.capabilities.join("、") || "（空）"}，没有 llm.chat`);
+          }
+          const llm = 能力台.use("llm.chat");
+          记模型("模型", llm.model ?? "（能力包没说）");
+          let 累计 = "";
+          const 回复 = await llm.stream([{ role: "user", content: 提问 }], {
+            maxTokens: 16,
+            onDelta: (片) => {
+              累计 += 片;
+              记模型("回复", 累计);
+            },
+          });
+          记模型("耗时", `${Math.round(performance.now() - 起点)} ms（含冷启动）`);
+          记模型("长度", `${回复.length} 字`);
+          模型复述.textContent = "链路通了";
+        } catch (错误) {
+          记模型("失败", 说清(错误));
+          记模型("耗时", `${Math.round(performance.now() - 起点)} ms`);
+          模型复述.textContent = "没通";
+        } finally {
+          跑着 = false;
+          模型键.disabled = false;
+          模型键.textContent = "再试一次";
+        }
+      });
+
       const 复制键 = document.getElementById("复制");
       const 复述 = document.getElementById("复述");
       let 定时 = 0;
@@ -386,6 +501,9 @@
         ];
         for (const 项 of 检查) {
           行.push(`检查：${项.通过 ? "通过" : "未通过"} ${项.名称}（${项.缘由}）`);
+        }
+        for (const [名, 值格] of 模型行) {
+          行.push(`模型：${名} = ${值格.textContent}`);
         }
         行.push(`时间：${new Date().toISOString()}`);
         return `工具箱自检报告\n${行.join("\n")}\n`;

@@ -4,6 +4,15 @@
  * 产出是 `releases/<source>/<release>/` 的内容：catalog.json + tools/<id>/… + caps/<id>/…。
  * 脚本只做构建与校验，不联网——上传与 commitRelease 在工作流里做。
  *
+ * `tools/` 下一层目录名就是工具 id，版本层可选：
+ *
+ *     tools/<id>/tool.json                 无版本
+ *     tools/<id>/<version>/tool.json       有版本，可并存多个
+ *
+ * id 与版本都**只从目录名取**，`tool.json` 里出现 `id` 或 `version` 一律拒绝：
+ * 两处都写就有了两个事实来源，改目录名时漏改会留下「目录是 A、清单说自己是 B」
+ * 这种线上查不出来的状态。同一个 id 只能走其中一种形态，混用直接失败。
+ *
  * 环境变量：
  *   TOOLBOX_SOURCE       tools 或 tools_public（本仓固定 tools_public）
  *   TOOLBOX_RELEASE      版本目录名，默认 `<GITHUB_SHA>-s5`
@@ -18,6 +27,10 @@ const SOURCE = "tools_public";
 const SCHEMA_VERSION = 5;
 /** 与服务端 LIMITS.toolIdPattern 同一口径。 */
 const CAPABILITY_ID = /^[A-Za-z0-9._-]{1,64}$/;
+/** 工具 id 只来自目录名：小写字母、数字与连字符。 */
+const TOOL_ID = /^[a-z0-9][a-z0-9-]*$/;
+/** 版本目录名：三段数字。 */
+const VERSION = /^\d+\.\d+\.\d+$/;
 const repoRoot = process.cwd();
 const release =
   maybeText(process.env.TOOLBOX_RELEASE) ??
@@ -43,29 +56,36 @@ const tools = [];
 const caps = {};
 
 for (const entry of await readdir(toolsRoot, { withFileTypes: true })) {
-  if (entry.name.startsWith(".")) {
+  if (entry.name.startsWith(".") || entry.name === "README.md") {
     continue;
   }
-  if (entry.isFile() && entry.name.endsWith(".tool.json")) {
-    const id = entry.name.slice(0, -".tool.json".length);
-    tools.push(await loadTool(path.join(toolsRoot, entry.name), id, false));
+  if (entry.isFile()) {
+    // 单文件形态已废弃：它放不下版本，也承载不了 site/。
+    fail(
+      `tools/${entry.name}：单文件形态已废弃，改到 tools/<id>/tool.json 或 tools/<id>/<版本>/tool.json`,
+    );
+  }
+  if (!entry.isDirectory()) {
     continue;
   }
-  if (entry.isDirectory()) {
-    const manifest = path.join(toolsRoot, entry.name, "tool.json");
-    if (await exists(manifest)) {
-      tools.push(await loadTool(manifest, entry.name, true));
-    }
+  const id = entry.name;
+  if (!TOOL_ID.test(id)) {
+    fail(`tools/${id}/：目录名不是合法工具 id（只能小写字母、数字与连字符）`);
   }
+  tools.push(...(await loadToolDir(id)));
 }
 
-tools.sort((left, right) => left.id.localeCompare(right.id));
+tools.sort(
+  (left, right) =>
+    left.id.localeCompare(right.id) || right.version.localeCompare(left.version),
+);
 const seen = new Set();
 for (const tool of tools) {
-  if (seen.has(tool.id)) {
-    fail(`工具 id 重复：${tool.id}`);
+  const key = `${tool.id}@${tool.version}`;
+  if (seen.has(key)) {
+    fail(`工具重复：${tool.id}${tool.version === "" ? "" : `@${tool.version}`}`);
   }
-  seen.add(tool.id);
+  seen.add(key);
 }
 
 for (const capability of await loadCaps()) {
@@ -98,55 +118,102 @@ process.stdout.write(
   `${JSON.stringify({ source: SOURCE, release, stage, tools: tools.length, caps: Object.keys(caps).length })}\n`,
 );
 
-async function loadTool(manifestPath, expectedId, isDirectory) {
+/**
+ * 一个工具目录：可能走无版本形态，也可能带若干版本目录。
+ *
+ * 判定只看 `tools/<id>/tool.json` 在不在——在了就是无版本，不在就找版本目录。
+ * 两种信号同时出现说明有人把迁移做了一半，直接失败而不是挑一个。
+ */
+async function loadToolDir(id) {
+  const toolDir = path.join(toolsRoot, id);
+  const flatManifest = path.join(toolDir, "tool.json");
+  const children = (await readdir(toolDir, { withFileTypes: true })).filter(
+    (child) => child.isDirectory() && !child.name.startsWith("."),
+  );
+  const versioned = children.filter((child) => VERSION.test(child.name));
+  const others = children.filter((child) => !VERSION.test(child.name));
+
+  if (await exists(flatManifest)) {
+    if (versioned.length > 0) {
+      fail(
+        `tools/${id}/：同时有 tool.json 与版本目录（${versioned.map((c) => c.name).join("、")}），两种形态只能选一种`,
+      );
+    }
+    return [await loadTool(flatManifest, { id, version: "", dir: toolDir })];
+  }
+
+  if (versioned.length === 0) {
+    fail(`tools/${id}/：既没有 tool.json，也没有版本目录`);
+  }
+  if (others.length > 0) {
+    // 有版本形态下，id 目录只该有版本目录；混进别的目录会被误读成版本。
+    fail(
+      `tools/${id}/：有版本形态下只允许版本目录，不能有 ${others.map((c) => c.name).join("、")}`,
+    );
+  }
+
+  const loaded = [];
+  for (const child of versioned) {
+    const dir = path.join(toolDir, child.name);
+    const manifest = path.join(dir, "tool.json");
+    if (!(await exists(manifest))) {
+      fail(`tools/${id}/${child.name}/：缺 tool.json`);
+    }
+    loaded.push(await loadTool(manifest, { id, version: child.name, dir }));
+  }
+  return loaded;
+}
+
+async function loadTool(manifestPath, { id, version, dir }) {
   const raw = JSON.parse(await readFile(manifestPath, "utf8"));
+  const 位置 = version === "" ? `tools/${id}/` : `tools/${id}/${version}/`;
+
   if (raw["schemaVersion"] !== 2) {
-    fail(`${manifestPath}：schemaVersion 必须是 2`);
+    fail(`${位置}tool.json：schemaVersion 必须是 2`);
   }
   if (raw["type"] !== "tool") {
-    fail(`${manifestPath}：type 必须是 tool`);
+    fail(`${位置}tool.json：type 必须是 tool`);
   }
-  const id = requireText(raw["id"]);
-  if (id !== expectedId) {
-    fail(`${manifestPath}：id「${id}」与文件名/目录名「${expectedId}」不一致`);
+  if (raw["id"] !== undefined) {
+    fail(`${位置}tool.json：不要再写 id，id 只从目录名取`);
   }
-  if (!/^[a-z0-9][a-z0-9-]*$/.test(id)) {
-    fail(`${manifestPath}：id 只能是小写字母、数字与连字符`);
+  if (raw["version"] !== undefined) {
+    fail(`${位置}tool.json：不要再写 version，版本只从目录名取`);
   }
   const kind = raw["kind"];
   if (kind !== "h5" && kind !== "web") {
-    fail(`${manifestPath}：kind 只能是 h5 或 web`);
+    fail(`${位置}tool.json：kind 只能是 h5 或 web`);
   }
   const entry = requireText(raw["entry"]);
-  const capabilities = stringArray(raw["capabilities"], `${manifestPath}：capabilities`);
-  const tags = stringArray(raw["tags"], `${manifestPath}：tags`);
+  const capabilities = stringArray(raw["capabilities"], `${位置}tool.json：capabilities`);
+  const tags = stringArray(raw["tags"], `${位置}tool.json：tags`);
 
   let catalogEntry;
   if (kind === "h5") {
-    if (!isDirectory) {
-      fail(`${manifestPath}：h5 工具必须是目录形态`);
-    }
     if (entry.startsWith("/") || entry.includes("..")) {
-      fail(`${manifestPath}：entry 必须是 site/ 下的相对路径`);
+      fail(`${位置}tool.json：entry 必须是 site/ 下的相对路径`);
     }
-    const site = path.join(path.dirname(manifestPath), "site");
-    const entryFile = path.join(site, entry);
-    if (!(await exists(entryFile))) {
-      fail(`${manifestPath}：site/${entry} 不存在`);
+    const site = path.join(dir, "site");
+    if (!(await exists(site))) {
+      fail(`${位置}：h5 工具缺 site/ 目录`);
     }
-    const target = path.join(stage, "tools", id);
+    if (!(await exists(path.join(site, entry)))) {
+      fail(`${位置}：site/${entry} 不存在`);
+    }
+    const target = version === "" ? path.join(stage, "tools", id) : path.join(stage, "tools", id, version);
     await mkdir(target, { recursive: true });
     await cp(site, target, { recursive: true });
-    catalogEntry = `tools/${id}/${entry}`;
+    catalogEntry = `tools/${id}/${version === "" ? "" : `${version}/`}${entry}`;
   } else {
     if (!entry.startsWith("https://")) {
-      fail(`${manifestPath}：web 工具的 entry 必须是 https 地址`);
+      fail(`${位置}tool.json：web 工具的 entry 必须是 https 地址`);
     }
     catalogEntry = entry;
   }
 
   return {
     id,
+    version,
     name: requireText(raw["name"]),
     description: typeof raw["description"] === "string" ? raw["description"] : "",
     tags,
