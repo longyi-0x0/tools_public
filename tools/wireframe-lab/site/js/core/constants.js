@@ -1,4 +1,4 @@
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 export const LAYOUTS = ["row", "column", "grid", "free"];
 export const LAYOUT_LABELS = {
@@ -12,6 +12,14 @@ export const LAYOUT_GLYPHS = {
   column: "↓",
   grid: "▦",
   free: "✥",
+};
+
+/** 每种布局接受哪些参数，别的键写进来就是错的。 */
+export const LAYOUT_PARAM_KEYS = {
+  row: ["gap", "align", "distribute"],
+  column: ["gap", "align", "distribute"],
+  grid: ["gap", "align", "columns"],
+  free: ["gap"],
 };
 
 export const GAP_TOKENS = ["xs", "sm", "md", "lg"];
@@ -33,27 +41,6 @@ export const ALIGN_LABELS = {
   fill: "拉满",
 };
 
-export const SHAPES = ["text", "image", "button", "input", "placeholder"];
-export const SHAPE_LABELS = {
-  text: "文本",
-  image: "图片",
-  button: "按钮",
-  input: "输入框",
-  placeholder: "占位块",
-};
-
-export const PATTERNS = ["navbar", "tabs"];
-export const PATTERN_LABELS = { navbar: "导航栏", tabs: "标签页" };
-export const PATTERN_SLOTS = {
-  navbar: {
-    left: { label: "左侧", max: 1 },
-    right: { label: "右侧", max: 1 },
-  },
-  tabs: {
-    content: { label: "内容区", max: 1 },
-  },
-};
-
 export const ANCHORS = ["tl", "tc", "tr", "cl", "c", "cr", "bl", "bc", "br"];
 export const ANCHOR_LABELS = {
   tl: "左上",
@@ -70,11 +57,15 @@ export const ANCHOR_LABELS = {
 export const INSET_TOKENS = ["xs", "sm", "md", "lg"];
 export const INSET_LABELS = { xs: "很近", sm: "近", md: "中", lg: "远" };
 
-export const TYPE_LABELS = {
-  container: "容器",
-  pattern: "结构件",
-  leaf: "元素",
-};
+export const POSITION_MODES = ["flow", "anchor", "absolute"];
+
+export const SIZE_KEYWORDS = ["auto", "fill"];
+export const SIZE_LENGTH_KEYS = ["width", "height"];
+export const SIZE_BOUND_KEYS = ["minWidth", "maxWidth", "minHeight", "maxHeight"];
+export const SIZE_KEYS = [...SIZE_LENGTH_KEYS, ...SIZE_BOUND_KEYS, "aspect"];
+
+/** 内置组件集的 id。永远排在解析链尾，可在文档的 sets 里关掉。 */
+export const DEFAULT_SET_ID = "default";
 
 export function isLayout(value) {
   return LAYOUTS.includes(value);
@@ -82,4 +73,24 @@ export function isLayout(value) {
 
 export function isGap(value) {
   return GAP_TOKENS.includes(value);
+}
+
+export function isAnchor(value) {
+  return ANCHORS.includes(value);
+}
+
+export function isInset(value) {
+  return INSET_TOKENS.includes(value);
+}
+
+export function isAlign(value) {
+  return ALIGNS.includes(value);
+}
+
+export function isDistribute(value) {
+  return DISTRIBUTES.includes(value);
+}
+
+export function isPositionMode(value) {
+  return POSITION_MODES.includes(value);
 }

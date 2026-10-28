@@ -6,6 +6,8 @@ import {
   isDescendant,
 } from "./ast.js";
 import { positionBetween } from "./position.js";
+import { defaultLayoutProps, normalizePosition, normalizeSize } from "./schema.js";
+import { LAYOUT_PARAM_KEYS } from "./constants.js";
 
 export function clone(value) {
   return typeof structuredClone === "function"
@@ -32,9 +34,7 @@ export function insertNode(doc, parentId, node, { slot = null, index = Infinity 
   placed.pos = positionBetween(previous?.pos ?? null, next?.pos ?? null);
   if (slot == null) delete placed.slot;
   else placed.slot = slot;
-  delete placed.escape;
-  delete placed.frame;
-  delete placed.size;
+  delete placed.position;
   doc.nodes[placed.id] = placed;
   return placed;
 }
@@ -43,18 +43,13 @@ export function moveNode(
   doc,
   nodeId,
   parentId,
-  {
-    slot = null,
-    index = Infinity,
-    frame = null,
-    keepEscape = false,
-  } = {},
+  { slot = null, index = Infinity, position = null } = {},
 ) {
   const node = getNode(doc, nodeId);
   if (!node) throw new Error("要移动的节点不存在");
   if (nodeId === doc.root) throw new Error("根节点不能移动");
   if (parentId === nodeId || isDescendant(doc, nodeId, parentId)) {
-    throw new Error("不能把容器拖进自己的子树");
+    throw new Error("不能把节点拖进自己的子树");
   }
   const acceptance = canAcceptChild(doc, parentId, slot);
   if (!acceptance.ok) throw new Error(acceptance.reason);
@@ -68,12 +63,8 @@ export function moveNode(
   node.pos = positionBetween(previous?.pos ?? null, next?.pos ?? null);
   if (slot == null) delete node.slot;
   else node.slot = slot;
-  delete node.frame;
-  if (!keepEscape) {
-    delete node.escape;
-    delete node.size;
-  }
-  if (frame) node.frame = clone(frame);
+  if (position) node.position = normalizePosition(position);
+  else if (node.position?.mode === "absolute") delete node.position;
   return node;
 }
 
@@ -95,54 +86,65 @@ export function setFields(doc, nodeId, patch) {
   return node;
 }
 
+/**
+ * 切布局时把子节点的画面位置物化成 position.absolute，切回流体布局再删掉，
+ * 这样切换本身不会让画面跳动。
+ */
 export function setLayout(doc, nodeId, layout, frames = null) {
   const node = getNode(doc, nodeId);
-  if (!node || node.type !== "container") throw new Error("只有容器可以切换布局");
+  if (!node) throw new Error("节点不存在");
+  const defaults = defaultLayoutProps(layout);
+  const previous = node.layoutProps ?? {};
+  const next = {};
+  for (const key of LAYOUT_PARAM_KEYS[layout] ?? []) {
+    const value = previous[key] ?? defaults[key];
+    if (value !== undefined) next[key] = value;
+  }
   node.layout = layout;
-  if (layout === "grid" && !Number.isFinite(node.columns)) node.columns = 2;
-  if (layout === "grid") node.columns = Math.max(1, Math.min(6, node.columns ?? 2));
+  node.layoutProps = next;
+  if (layout === "grid") {
+    node.layoutProps.columns = Math.max(1, Math.min(6, node.layoutProps.columns ?? 2));
+  }
 
-  const children = childrenOf(doc, nodeId);
-  for (const child of children) {
-    if (child.escape) {
-      delete child.frame;
-      continue;
-    }
+  for (const child of childrenOf(doc, nodeId)) {
+    if (child.position?.mode === "anchor") continue;
     if (layout === "free") {
-      child.frame = clone(
-        frames?.[child.id] ?? child.frame ?? { x: 0, y: 0, w: 160, h: 48 },
-      );
-    } else {
-      delete child.frame;
+      child.position = {
+        mode: "absolute",
+        ...(frames?.[child.id] ?? frameOf(child) ?? { x: 0, y: 0, w: 160, h: 48 }),
+      };
+    } else if (child.position?.mode === "absolute") {
+      delete child.position;
     }
   }
   return node;
 }
 
-export function bindNode(doc, nodeId, component, props = {}) {
-  const node = getNode(doc, nodeId);
-  if (!node || node.type !== "leaf") throw new Error("只有叶子可以绑定组件");
-  node.binding = { component, props: clone(props) };
-  return node;
-}
-
-export function unbindNode(doc, nodeId) {
+export function setUse(doc, nodeId, use) {
   const node = getNode(doc, nodeId);
   if (!node) throw new Error("节点不存在");
-  delete node.binding;
+  if (use == null) delete node.use;
+  else node.use = clone(use);
   return node;
 }
 
-export function setEscape(doc, nodeId, escape = null) {
+export function setPosition(doc, nodeId, position = null) {
   const node = getNode(doc, nodeId);
-  if (!node || nodeId === doc.root) throw new Error("根节点不能悬浮");
-  if (!escape) {
-    delete node.escape;
-    delete node.size;
+  if (!node || nodeId === doc.root) throw new Error("这个节点不能改定位");
+  if (!position || position.mode === "flow") {
+    delete node.position;
     return node;
   }
-  node.escape = clone(escape);
-  delete node.frame;
+  node.position = normalizePosition(position);
+  return node;
+}
+
+export function setSize(doc, nodeId, size = null) {
+  const node = getNode(doc, nodeId);
+  if (!node) throw new Error("节点不存在");
+  const normalized = normalizeSize(size);
+  if (normalized) node.size = normalized;
+  else delete node.size;
   return node;
 }
 
@@ -191,6 +193,12 @@ export function applySnapshot(doc, snapshot) {
     else doc.nodes[id] = clone(node);
   }
   return doc;
+}
+
+function frameOf(node) {
+  if (node.position?.mode !== "absolute") return null;
+  const { x, y, w, h } = node.position;
+  return { x, y, w, h };
 }
 
 function metaOf(doc) {

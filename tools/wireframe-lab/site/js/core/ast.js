@@ -1,9 +1,5 @@
-import {
-  PATTERN_SLOTS,
-  PATTERNS,
-  SHAPES,
-  SCHEMA_VERSION,
-} from "./constants.js";
+import { SCHEMA_VERSION } from "./constants.js";
+import { normalizeUse, slotNamesOf } from "./schema.js";
 import { sortByPosition } from "./position.js";
 
 let sequence = 0;
@@ -16,45 +12,23 @@ export function newId(prefix = "n") {
   return `${prefix}${random}${sequence.toString(36).padStart(2, "0")}`;
 }
 
-export function createContainer(layout = "column", patch = {}) {
-  return {
-    id: newId(),
-    type: "container",
-    layout,
-    gap: "md",
-    align: "start",
-    distribute: "start",
-    ...(layout === "grid" ? { columns: 2 } : {}),
-    ...patch,
-  };
-}
-
-export function createLeaf(shape = "text", patch = {}) {
-  return {
-    id: newId(),
-    type: "leaf",
-    shape: SHAPES.includes(shape) ? shape : "text",
-    label: defaultLeafLabel(shape),
-    ...patch,
-  };
-}
-
-export function createPattern(pattern = "navbar", patch = {}) {
-  return {
-    id: newId(),
-    type: "pattern",
-    pattern: PATTERNS.includes(pattern) ? pattern : "navbar",
-    props:
-      pattern === "tabs"
-        ? { labels: ["概览", "详情", "记录"] }
-        : { title: "页面标题" },
-    ...patch,
-  };
+/**
+ * 节点只有一种结构。能不能装子节点、怎么排、由谁渲染，分别由
+ * slots / layout / use 三个字段回答，没有类型字段。
+ */
+export function createNode(patch = {}) {
+  const node = { id: patch.id ?? newId(), ...patch };
+  const { use } = patch;
+  if (use === undefined) node.use = [];
+  else node.use = Array.isArray(use) ? [...use] : [use];
+  return node;
 }
 
 export function createDocument(title = "未命名页面") {
-  const root = createContainer("column");
-  root.gap = "md";
+  const root = createNode({
+    layout: "column",
+    layoutProps: { gap: "md", align: "fill", distribute: "start" },
+  });
   return {
     schemaVersion: SCHEMA_VERSION,
     id: newId("p"),
@@ -62,16 +36,6 @@ export function createDocument(title = "未命名页面") {
     root: root.id,
     nodes: { [root.id]: root },
   };
-}
-
-export function defaultLeafLabel(shape) {
-  return {
-    text: "一段说明文字",
-    image: "图片",
-    button: "按钮",
-    input: "输入内容",
-    placeholder: "占位块",
-  }[shape] ?? "内容";
 }
 
 export function getNode(doc, id) {
@@ -129,53 +93,38 @@ export function descendantIds(doc, nodeId) {
   return result;
 }
 
-export function patternSlotNames(pattern) {
-  return Object.keys(PATTERN_SLOTS[pattern] ?? {});
-}
-
-export function patternSlotMax(pattern, slot) {
-  return PATTERN_SLOTS[pattern]?.[slot]?.max ?? 0;
-}
-
+/**
+ * 任何节点都能装子节点——类型消失之后这条不再是限制。
+ * 唯一的结构约束是：写进具名槽位的子节点，父节点必须声明过那个槽位。
+ */
 export function canAcceptChild(doc, parentId, slot = null) {
   const parent = doc.nodes[parentId];
-  if (!parent) return { ok: false, reason: "目标容器不存在" };
-  if (parent.type === "leaf") return { ok: false, reason: "元素不能包含子节点" };
-  if (parent.type === "container") {
-    if (slot != null) return { ok: false, reason: "普通容器没有具名槽位" };
-    return { ok: true };
+  if (!parent) return { ok: false, reason: "目标节点不存在" };
+  if (slot == null) return { ok: true };
+  if (!slotNamesOf(parent).includes(slot)) {
+    return { ok: false, reason: `${nodeDisplayName(parent)} 没有槽位 ${slot}` };
   }
-  if (parent.type === "pattern") {
-    if (slot == null) return { ok: false, reason: "结构件只能放进具名槽位" };
-    if (!(slot in (PATTERN_SLOTS[parent.pattern] ?? {}))) {
-      return { ok: false, reason: "这个槽位不存在" };
-    }
-    return { ok: true };
-  }
-  return { ok: false, reason: "未知父节点" };
+  return { ok: true };
 }
 
 export function nodeDisplayName(node) {
   if (!node) return "未选中";
-  if (node.type === "container") {
-    return {
-      row: "横排容器",
-      column: "纵向容器",
-      grid: "网格容器",
-      free: "自由容器",
-    }[node.layout] ?? "容器";
+  if (typeof node.desc === "string" && node.desc.trim()) return node.desc.trim();
+  const label = node.props?.label ?? node.props?.content ?? node.props?.title;
+  if (typeof label === "string" && label.trim()) return label.trim();
+  const first = normalizeUse(node.use)[0];
+  if (first) return first.src;
+  if (node.layout) {
+    return (
+      {
+        row: "横排容器",
+        column: "纵向容器",
+        grid: "网格容器",
+        free: "自由容器",
+      }[node.layout] ?? "容器"
+    );
   }
-  if (node.type === "pattern") {
-    return node.pattern === "navbar" ? "导航栏" : "标签页";
-  }
-  if (node.label) return String(node.label);
-  return {
-    text: "文本",
-    image: "图片",
-    button: "按钮",
-    input: "输入框",
-    placeholder: "占位块",
-  }[node.shape] ?? "元素";
+  return "节点";
 }
 
 export function childCount(doc, parentId) {

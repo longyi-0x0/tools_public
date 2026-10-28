@@ -1,54 +1,52 @@
 import {
-  ALIGNS,
   ANCHORS,
   DISTRIBUTES,
   GAP_TOKENS,
   INSET_TOKENS,
-  LAYOUTS,
-  PATTERN_SLOTS,
-  PATTERNS,
-  SHAPES,
+  LAYOUT_PARAM_KEYS,
   SCHEMA_VERSION,
+  isLayout,
 } from "./constants.js";
-import { childrenOf } from "./ast.js";
+import {
+  isPlainObject,
+  parseAspect,
+  parseLength,
+  splitHandle,
+  slotNamesOf,
+} from "./schema.js";
 
 /**
- * 返回空数组表示文档有效。这里只收“画不出来或会留下悬空引用”的错，
- * 不把风格偏好写成校验规则。
+ * 只返回结构层的错：画不出来、或者会留下悬空引用。
+ * 目标能否被解析、props 是否落在语义词表里，一律不算错，见 collectContractWarnings。
  */
 export function validateDocument(doc) {
   const errors = [];
-  if (!doc || typeof doc !== "object" || Array.isArray(doc)) {
-    return ["文档必须是对象"];
-  }
+  if (!isPlainObject(doc)) return ["文档必须是对象"];
   if (doc.schemaVersion !== SCHEMA_VERSION) {
     errors.push(`schemaVersion 必须是 ${SCHEMA_VERSION}`);
   }
   if (typeof doc.id !== "string" || !doc.id) errors.push("页面缺少 id");
   if (typeof doc.title !== "string") errors.push("页面缺少 title");
-  if (!doc.nodes || typeof doc.nodes !== "object" || Array.isArray(doc.nodes)) {
-    return [...errors, "nodes 必须是对象"];
-  }
+  if (!isPlainObject(doc.nodes)) return [...errors, "nodes 必须是对象"];
   if (typeof doc.root !== "string" || !doc.nodes[doc.root]) {
     return [...errors, "root 指向的节点不存在"];
   }
 
+  if (doc.sets != null) validateSets(doc, errors);
+
   for (const [id, node] of Object.entries(doc.nodes)) {
-    if (!node || typeof node !== "object") {
+    if (!isPlainObject(node)) {
       errors.push(`节点 ${id} 不是对象`);
       continue;
     }
     if (node.id !== id) errors.push(`节点 ${id} 的 id 字段不一致`);
-    if (!["container", "pattern", "leaf"].includes(node.type)) {
-      errors.push(`节点 ${id} 的 type 无效`);
-      continue;
-    }
     if (id === doc.root) {
-      if (node.type !== "container") errors.push("根节点必须是容器");
       if (node.parent != null) errors.push("根节点不能有 parent");
       if (node.pos != null) errors.push("根节点不能有 pos");
-      if (node.escape) errors.push("根节点不能 escape");
-      if (node.frame) errors.push("根节点不能有 frame");
+      if (node.slot != null) errors.push("根节点不能进槽位");
+      if (node.position != null && node.position.mode !== "flow") {
+        errors.push("根节点不能脱离文档流");
+      }
     } else {
       if (typeof node.parent !== "string" || !doc.nodes[node.parent]) {
         errors.push(`节点 ${id} 的 parent 不存在`);
@@ -58,114 +56,216 @@ export function validateDocument(doc) {
       }
     }
 
-    if (node.type === "container") validateContainer(doc, node, errors);
-    if (node.type === "pattern") validatePattern(doc, node, errors);
-    if (node.type === "leaf") validateLeaf(doc, node, errors);
-
-    if (node.escape) {
-      if (!ANCHORS.includes(node.escape.anchor)) {
-        errors.push(`节点 ${id} 的锚点无效`);
-      }
-      for (const axis of ["x", "y"]) {
-        if (!INSET_TOKENS.includes(node.escape.inset?.[axis])) {
-          errors.push(`节点 ${id} 的 inset.${axis} 不是有效 token`);
-        }
-      }
-      if (node.frame) errors.push(`节点 ${id} 同时有 escape 与 frame`);
-    }
-    if (node.size != null) {
-      if (!node.escape) errors.push(`节点 ${id} 只有 escape 时才能有显式 size`);
-      if (!positive(node.size.w) || !positive(node.size.h)) {
-        errors.push(`节点 ${id} 的 size 必须为正数`);
-      }
-    }
-    if (node.frame != null) {
-      const parent = doc.nodes[node.parent];
-      if (parent?.type !== "container" || parent.layout !== "free") {
-        errors.push(`节点 ${id} 的 frame 只属于自由容器的直接子节点`);
-      }
-      if (node.escape) errors.push(`节点 ${id} 的 escape 节点不应持有 frame`);
-      for (const key of ["x", "y", "w", "h"]) {
-        if (!Number.isFinite(node.frame[key])) {
-          errors.push(`节点 ${id} 的 frame.${key} 不是数字`);
-        }
-      }
-      if (!positive(node.frame.w) || !positive(node.frame.h)) {
-        errors.push(`节点 ${id} 的 frame 宽高必须为正数`);
-      }
-    }
-    if (node.binding != null) {
-      if (node.type !== "leaf") errors.push(`节点 ${id} 只有叶子能绑定组件`);
-      if (typeof node.binding.component !== "string" || !node.binding.component) {
-        errors.push(`节点 ${id} 的 binding.component 无效`);
-      }
-      if (
-        node.binding.props != null &&
-        (typeof node.binding.props !== "object" || Array.isArray(node.binding.props))
-      ) {
-        errors.push(`节点 ${id} 的 binding.props 必须是对象`);
-      }
-    }
-  }
-
-  if (doc.nodes[doc.root] && doc.nodes[doc.root].type !== "container") {
-    errors.push("root 必须是容器节点");
+    validateLayout(node, id, errors);
+    validateSlots(node, id, errors);
+    validateSize(node, id, errors);
+    validatePosition(doc, node, id, errors);
+    validateUse(node, id, errors);
   }
 
   validateParentLinks(doc, errors);
-  validateSlotCapacity(doc, errors);
   return [...new Set(errors)];
 }
 
-function validateContainer(doc, node, errors) {
-  if (!LAYOUTS.includes(node.layout)) {
-    errors.push(`容器 ${node.id} 的 layout 无效`);
+/**
+ * 契约层：文档仍然有效，只是某些引用解析不到、或者依赖了具体实现。
+ * 返回给人看的告警，不阻止载入与导出。
+ */
+export function collectContractWarnings(doc, { resolve } = {}) {
+  const warnings = [];
+  for (const [id, node] of Object.entries(doc.nodes)) {
+    const use = Array.isArray(node.use) ? node.use : [];
+    if (use.length === 0) continue;
+    if (typeof resolve !== "function") continue;
+    if (!use.some((entry) => resolve(node, entry))) {
+      warnings.push(`节点 ${id} 的候选全部解析不到：${describeFirst(use)}`);
+    }
+  }
+  return warnings;
+}
+
+function describeFirst(use) {
+  const first = use[0];
+  return typeof first === "string" ? first : String(first?.src ?? "");
+}
+
+function validateSets(doc, errors) {
+  if (!Array.isArray(doc.sets)) {
+    errors.push("sets 必须是数组");
+    return;
+  }
+  const seen = new Set();
+  for (const entry of doc.sets) {
+    if (!isPlainObject(entry)) {
+      errors.push("sets 里的条目必须是对象");
+      continue;
+    }
+    if (typeof entry.id !== "string" || !entry.id) {
+      errors.push("sets 条目缺少 id");
+      continue;
+    }
+    if (entry.id.includes(".")) errors.push(`集合 ${entry.id} 的 id 不能含点`);
+    if (seen.has(entry.id)) errors.push(`集合 ${entry.id} 重复声明`);
+    seen.add(entry.id);
+    if (entry.version != null && typeof entry.version !== "string") {
+      errors.push(`集合 ${entry.id} 的 version 必须是字符串`);
+    }
+    if (entry.enabled != null && typeof entry.enabled !== "boolean") {
+      errors.push(`集合 ${entry.id} 的 enabled 必须是布尔`);
+    }
+  }
+}
+
+function validateLayout(node, id, errors) {
+  if (node.layout == null) {
+    if (node.layoutProps != null) errors.push(`节点 ${id} 有 layoutProps 但没有 layout`);
+    return;
+  }
+  if (!isLayout(node.layout)) {
+    errors.push(`节点 ${id} 的 layout 无效`);
+    return;
+  }
+  if (!isPlainObject(node.layoutProps)) {
+    errors.push(`节点 ${id} 缺少 layoutProps`);
+    return;
+  }
+  const allowed = LAYOUT_PARAM_KEYS[node.layout] ?? [];
+  for (const key of Object.keys(node.layoutProps)) {
+    if (!allowed.includes(key)) errors.push(`节点 ${id} 的 layoutProps.${key} 不属于 ${node.layout}`);
+  }
+  const props = node.layoutProps;
+  if (props.gap != null && !GAP_TOKENS.includes(props.gap)) {
+    errors.push(`节点 ${id} 的 gap 无效`);
+  }
+  if (props.align != null && !["start", "center", "end", "fill"].includes(props.align)) {
+    errors.push(`节点 ${id} 的 align 无效`);
+  }
+  if (props.distribute != null && !DISTRIBUTES.includes(props.distribute)) {
+    errors.push(`节点 ${id} 的 distribute 无效`);
   }
   if (node.layout === "grid") {
-    if (!Number.isInteger(node.columns) || node.columns < 1 || node.columns > 6) {
-      errors.push(`容器 ${node.id} 的 columns 必须是 1–6 的整数`);
+    const columns = props.columns;
+    if (!Number.isInteger(columns) || columns < 1 || columns > 6) {
+      errors.push(`节点 ${id} 的 columns 必须是 1–6 的整数`);
     }
   }
-  if (!GAP_TOKENS.includes(node.gap)) {
-    errors.push(`容器 ${node.id} 的 gap 无效`);
+}
+
+function validateSlots(node, id, errors) {
+  if (node.slots == null) return;
+  if (!Array.isArray(node.slots)) {
+    errors.push(`节点 ${id} 的 slots 必须是数组`);
+    return;
   }
-  if (node.layout !== "free") {
-    if (!DISTRIBUTES.includes(node.distribute)) {
-      errors.push(`容器 ${node.id} 的 distribute 无效`);
+  const seen = new Set();
+  for (const name of node.slots) {
+    if (typeof name !== "string" || !name) {
+      errors.push(`节点 ${id} 的槽位名必须是非空字符串`);
+      continue;
     }
-    if (!ALIGNS.includes(node.align)) {
-      errors.push(`容器 ${node.id} 的 align 无效`);
+    if (seen.has(name)) errors.push(`节点 ${id} 的槽位 ${name} 重复`);
+    seen.add(name);
+  }
+  if (node.slots.length === 0) errors.push(`节点 ${id} 的 slots 为空数组，应直接省略`);
+}
+
+function validateSize(node, id, errors) {
+  if (node.size == null) return;
+  if (!isPlainObject(node.size)) {
+    errors.push(`节点 ${id} 的 size 必须是对象`);
+    return;
+  }
+  for (const key of ["width", "height"]) {
+    if (node.size[key] === undefined) continue;
+    const parsed = parseLength(node.size[key]);
+    if (parsed.kind === "invalid") errors.push(`节点 ${id} 的 size.${key} 无效`);
+  }
+  for (const key of ["minWidth", "maxWidth", "minHeight", "maxHeight"]) {
+    if (node.size[key] === undefined) continue;
+    const parsed = parseLength(node.size[key]);
+    if (parsed.kind !== "px" && parsed.kind !== "percent") {
+      errors.push(`节点 ${id} 的 size.${key} 只能是数值或百分比`);
     }
   }
-  if (node.layout === "free") {
-    for (const child of childrenOf(doc, node.id)) {
-      if (!child.escape && !child.frame) {
-        errors.push(`自由容器 ${node.id} 的子节点 ${child.id} 缺少 frame`);
+  if (node.size.aspect !== undefined && parseAspect(node.size.aspect) == null) {
+    errors.push(`节点 ${id} 的 size.aspect 无效`);
+  }
+  const known = new Set([
+    "width",
+    "height",
+    "minWidth",
+    "maxWidth",
+    "minHeight",
+    "maxHeight",
+    "aspect",
+  ]);
+  for (const key of Object.keys(node.size)) {
+    if (!known.has(key)) errors.push(`节点 ${id} 的 size.${key} 不认识`);
+  }
+}
+
+function validatePosition(doc, node, id, errors) {
+  if (node.position == null) return;
+  if (!isPlainObject(node.position)) {
+    errors.push(`节点 ${id} 的 position 必须是对象`);
+    return;
+  }
+  const mode = node.position.mode;
+  if (mode === "flow") return;
+  if (mode === "anchor") {
+    if (!ANCHORS.includes(node.position.anchor)) errors.push(`节点 ${id} 的锚点无效`);
+    for (const axis of ["x", "y"]) {
+      if (!INSET_TOKENS.includes(node.position.inset?.[axis])) {
+        errors.push(`节点 ${id} 的 inset.${axis} 不是有效 token`);
       }
     }
+    return;
   }
-}
-
-function validatePattern(doc, node, errors) {
-  if (!PATTERNS.includes(node.pattern)) {
-    errors.push(`结构件 ${node.id} 的 pattern 无效`);
-  }
-  for (const child of childrenOf(doc, node.id)) {
-    if (!child.slot) {
-      errors.push(`结构件 ${node.id} 的子节点 ${child.id} 缺少 slot`);
-    } else if (!(child.slot in (PATTERN_SLOTS[node.pattern] ?? {}))) {
-      errors.push(`结构件 ${node.id} 没有槽位 ${child.slot}`);
+  if (mode === "absolute") {
+    const parent = doc.nodes[node.parent];
+    if (parent?.layout !== "free") {
+      errors.push(`节点 ${id} 的 absolute 定位只属于自由布局父节点的直接子节点`);
     }
+    for (const key of ["x", "y", "w", "h"]) {
+      if (!Number.isFinite(node.position[key])) {
+        errors.push(`节点 ${id} 的 position.${key} 不是数字`);
+      }
+    }
+    if (node.position.w <= 0 || node.position.h <= 0) {
+      errors.push(`节点 ${id} 的 position 宽高必须为正数`);
+    }
+    return;
   }
+  errors.push(`节点 ${id} 的 position.mode 无效`);
 }
 
-function validateLeaf(doc, node, errors) {
-  if (!SHAPES.includes(node.shape)) {
-    errors.push(`元素 ${node.id} 的 shape 无效`);
+function validateUse(node, id, errors) {
+  if (node.use == null) return;
+  if (!Array.isArray(node.use)) {
+    errors.push(`节点 ${id} 的 use 必须是数组`);
+    return;
   }
-  if (typeof node.label !== "string") {
-    errors.push(`元素 ${node.id} 缺少 label`);
-  }
+  node.use.forEach((entry, index) => {
+    if (typeof entry === "string") {
+      if (!entry.trim()) errors.push(`节点 ${id} 的第 ${index + 1} 个候选为空`);
+      if (entry.includes(":")) {
+        const { scheme, rest } = splitHandle(entry);
+        if (!scheme) errors.push(`节点 ${id} 的候选 ${entry} 缺少 scheme`);
+        if (!rest) errors.push(`节点 ${id} 的候选 ${entry} 缺少 ${scheme}: 之后的内容`);
+      }
+      return;
+    }
+    if (!isPlainObject(entry)) {
+      errors.push(`节点 ${id} 的第 ${index + 1} 个候选必须是字符串或对象`);
+      return;
+    }
+    if (typeof entry.src !== "string" || !entry.src.trim()) {
+      errors.push(`节点 ${id} 的第 ${index + 1} 个候选缺少 src`);
+    }
+    if (entry.props != null && !isPlainObject(entry.props)) {
+      errors.push(`节点 ${id} 的第 ${index + 1} 个候选的 props 必须是对象`);
+    }
+  });
 }
 
 function validateParentLinks(doc, errors) {
@@ -173,16 +273,10 @@ function validateParentLinks(doc, errors) {
     if (id === doc.root) continue;
     const parent = doc.nodes[node.parent];
     if (!parent) continue;
-    if (parent.type === "leaf") {
-      errors.push(`元素 ${parent.id} 不能包含子节点 ${id}`);
-    }
-    if (parent.type === "container" && node.slot != null) {
-      errors.push(`普通容器的子节点 ${id} 不应带槽位`);
-    }
-    if (parent.type === "pattern") {
-      if (!node.slot) errors.push(`结构件的子节点 ${id} 缺少槽位`);
-      else if (!(node.slot in (PATTERN_SLOTS[parent.pattern] ?? {}))) {
-        errors.push(`结构件 ${parent.id} 没有槽位 ${node.slot}`);
+    if (node.slot != null) {
+      const declared = slotNamesOf(parent);
+      if (!declared.includes(node.slot)) {
+        errors.push(`父节点 ${parent.id} 没有槽位 ${node.slot}，子节点 ${id} 因此悬空`);
       }
     }
   }
@@ -202,21 +296,6 @@ function validateParentLinks(doc, errors) {
   }
 }
 
-function validateSlotCapacity(doc, errors) {
-  for (const node of Object.values(doc.nodes)) {
-    if (node.type !== "pattern") continue;
-    const definitions = PATTERN_SLOTS[node.pattern] ?? {};
-    for (const [slot, definition] of Object.entries(definitions)) {
-      const count = childrenOf(doc, node.id, slot).length;
-      if (count > definition.max) {
-        errors.push(
-          `结构件 ${node.id} 的槽位 ${slot} 最多 ${definition.max} 个，现在是 ${count} 个`,
-        );
-      }
-    }
-  }
-}
-
-function positive(value) {
-  return Number.isFinite(value) && value > 0;
+export function nodeHasAbsolutePosition(doc, node) {
+  return node.position?.mode === "absolute" && doc.nodes[node.parent]?.layout === "free";
 }
