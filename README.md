@@ -51,6 +51,7 @@
 | plantuml | web | — | dev |
 | react-lab | web | — | dev |
 | regex-tester | web | — | dev |
+| wireframe-lab | h5 | — | dev |
 | study-hall | h5 | — | edu |
 | petal-drift | h5 | — | scene |
 | lottery | h5 | 1.0.0 / 2.0.0 / 3.0.0 | scene |

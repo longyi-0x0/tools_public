@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>线框实验室</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="app" id="app" data-mode="edit">
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+      <span class="brand-copy">
+        <b>线框实验室</b>
+        <small>结构先行 · 局部高保真</small>
+      </span>
+    </div>
+
+    <label class="page-title">
+      <span>页面</span>
+      <input id="page-title" type="text" value="商品列表" autocomplete="off" spellcheck="false">
+    </label>
+
+    <div class="top-actions">
+      <div class="icon-pair" aria-label="历史">
+        <button class="icon-btn" id="undo" type="button" title="撤销 (⌘/Ctrl + Z)" aria-label="撤销">↶</button>
+        <button class="icon-btn" id="redo" type="button" title="重做 (⌘/Ctrl + Shift + Z)" aria-label="重做">↷</button>
+      </div>
+      <span class="divider" aria-hidden="true"></span>
+      <div class="segmented compact" id="viewport-switch" aria-label="画布宽度">
+        <button type="button" data-viewport="mobile" class="is-active">手机</button>
+        <button type="button" data-viewport="desktop">桌面</button>
+      </div>
+      <div class="segmented compact" id="mode-switch" aria-label="编辑模式">
+        <button type="button" data-mode="edit" class="is-active">编辑</button>
+        <button type="button" data-mode="preview">预览</button>
+      </div>
+      <button class="btn" id="import-btn" type="button">导入</button>
+      <button class="btn btn-primary" id="export-btn" type="button">导出 JSON</button>
+      <button class="icon-btn more" id="reset-btn" type="button" title="恢复示例页" aria-label="恢复示例页">⋯</button>
+    </div>
+  </header>
+
+  <div class="workspace">
+    <aside class="panel left-panel">
+      <div class="panel-head palette-head">
+        <div>
+          <h2>添加</h2>
+          <p>拖到画布，或点一下加入选中容器</p>
+        </div>
+      </div>
+      <div class="palette" id="palette"></div>
+
+      <div class="outline-head">
+        <h2>页面结构</h2>
+        <span id="outline-count"></span>
+      </div>
+      <div class="outline" id="outline"></div>
+
+      <div class="left-foot">
+        <span class="key">⌘/Ctrl Z</span> 撤销
+        <span class="key">Delete</span> 删除
+      </div>
+    </aside>
+
+    <main class="stage-wrap">
+      <div class="stage-top">
+        <div class="canvas-chip">
+          <b id="canvas-label">手机 · 390</b>
+          <span id="canvas-mode">线框视图</span>
+        </div>
+        <div class="stage-hint" id="stage-hint">拖节点改位置 · 选中后在右侧改属性</div>
+      </div>
+
+      <div class="stage" id="stage">
+        <div class="canvas-frame viewport-mobile" id="canvas-frame">
+          <div class="canvas" id="canvas"></div>
+        </div>
+      </div>
+
+      <div class="statusbar">
+        <span id="selection-summary">未选中节点</span>
+        <span class="status-dot" aria-hidden="true"></span>
+        <span id="node-count">0 个节点</span>
+        <span class="status-spacer"></span>
+        <span class="save-state" id="save-state">本机保存</span>
+      </div>
+    </main>
+
+    <aside class="panel inspector-panel">
+      <div class="panel-head inspector-head">
+        <div>
+          <h2>属性</h2>
+          <p id="inspector-subtitle">选中一个节点开始调整</p>
+        </div>
+      </div>
+      <div class="inspector" id="inspector"></div>
+    </aside>
+  </div>
+</div>
+
+<div class="dnd-layer" id="dnd-layer" aria-hidden="true">
+  <div class="drop-line" id="drop-line"></div>
+  <div class="drop-outline" id="drop-outline"></div>
+  <div class="drag-ghost" id="drag-ghost"></div>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<dialog class="confirm-dialog" id="confirm-dialog">
+  <div class="dialog-head">
+    <h2 id="confirm-title">确认操作</h2>
+  </div>
+  <div class="dialog-body" id="confirm-body"></div>
+  <div class="dialog-actions">
+    <button class="btn" id="confirm-cancel" type="button">取消</button>
+    <button class="btn btn-danger" id="confirm-ok" type="button">确认</button>
+  </div>
+</dialog>
+
+<input type="file" id="import-file" accept="application/json,.json" hidden>
+
+<script src="vendor/react.production.min.js"></script>
+<script src="vendor/react-dom.production.min.js"></script>
+<script type="module" src="js/main.js"></script>
+</body>
+</html>

@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 2,
+  "type": "tool",
+  "name": "线框实验室",
+  "description": "用结构化线框验证布局拖拽与渐进保真：容器管布局，叶子管内容，局部可以接真实组件。",
+  "order": 0,
+  "kind": "h5",
+  "entry": "index.html",
+  "tags": [
+    "dev"
+  ],
+  "capabilities": []
+}
