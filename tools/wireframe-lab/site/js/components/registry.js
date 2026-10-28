@@ -19,9 +19,3 @@ export function componentProps(component, props = {}) {
   }
   return { ...merged, ...props };
 }
-
-export function mountComponent(componentId, element, props) {
-  const component = getComponent(componentId);
-  if (!component) throw new Error("组件未注册");
-  return component.mount(element, componentProps(component, props));
-}

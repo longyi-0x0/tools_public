@@ -161,6 +161,8 @@ export default {
   id: "product-card",
   name: "商品卡",
   description: "带真实排版的复杂组件，用来验证组件撑开布局时的边界。",
+  honorsStructure: false,
+  slots: [],
   defaultSize: { w: 300, h: 108 },
   propsSchema: [
     { key: "name", label: "商品名", type: "string", default: "商品名称" },
@@ -168,9 +170,5 @@ export default {
     { key: "tag", label: "角标", type: "string", default: "今日好价" },
     { key: "sold", label: "已售", type: "number", default: 0 },
   ],
-  mount(element, props) {
-    const root = globalThis.ReactDOM.createRoot(element);
-    root.render(React.createElement(ProductCard, props));
-    return () => root.unmount();
-  },
+  Component: ProductCard,
 };

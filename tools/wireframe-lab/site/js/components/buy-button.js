@@ -42,14 +42,12 @@ export default {
   id: "buy-button",
   name: "购买按钮",
   description: "带点击反馈的真实按钮，用来验证接管区域的可交互性。",
-  defaultSize: { w: 58, h: 58 },
+  honorsStructure: false,
+  slots: [],
+  defaultSize: { w: 104, h: 40 },
   propsSchema: [
     { key: "label", label: "按钮文字", type: "string", default: "加购" },
     { key: "disabled", label: "禁用", type: "boolean", default: false },
   ],
-  mount(element, props) {
-    const root = globalThis.ReactDOM.createRoot(element);
-    root.render(React.createElement(BuyButton, props));
-    return () => root.unmount();
-  },
+  Component: BuyButton,
 };
