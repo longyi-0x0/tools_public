@@ -12,16 +12,20 @@ import {
   LAYOUT_GLYPHS,
   LAYOUTS,
   LAYOUT_LABELS,
-  PATTERN_SLOTS,
-  SHAPE_LABELS,
-  TYPE_LABELS,
 } from "../core/constants.js";
-import { childrenOf, nodeDisplayName } from "../core/ast.js";
-import { escapeHtml, tokenOptions } from "./dom.js";
+import { nodeDisplayName } from "../core/ast.js";
 import {
-  getComponent,
-  listComponents,
-} from "../components/registry.js";
+  isPlainObject,
+  layoutParamsOf,
+  normalizeUse,
+  positionOf,
+  slotNamesOf,
+} from "../core/schema.js";
+import { escapeHtml, tokenOptions } from "./dom.js";
+import { listComponents } from "../components/registry.js";
+import { registry } from "../resolve/bootstrap.js";
+import { baseNameOf, findSemantic, SEMANTIC_TARGETS } from "../resolve/vocabulary.js";
+import { inspectUse, resolveNode } from "../resolve/resolve.js";
 
 export function renderInspector(app) {
   const root = document.querySelector("#inspector");
@@ -36,9 +40,12 @@ export function renderInspector(app) {
   subtitle.textContent = node.id === app.doc.root ? "整页的布局与结构" : nodeDisplayName(node);
   root.innerHTML = [
     identityBlock(node),
-    node.type === "container" ? containerSection(node) : "",
-    node.type === "pattern" ? patternSection(node, app.doc) : "",
-    node.type === "leaf" ? leafSection(node) : "",
+    layoutSection(node),
+    slotsSection(node, app.doc),
+    useSection(node, app.doc),
+    propsSection(node),
+    descSection(node),
+    sizeSection(node),
     positionSection(node, app.doc),
     actionSection(node, app.doc),
   ].join("");
@@ -47,120 +54,202 @@ export function renderInspector(app) {
     const button = event.target.closest("button[data-action]");
     if (!button) return;
     const action = button.dataset.action;
-    if (action === "layout") app.changeLayout(node.id, button.dataset.value);
-    if (action === "gap") commit(app, "修改间距", (draft) => set(draft, node.id, { gap: button.dataset.value }));
-    if (action === "align") commit(app, "修改对齐", (draft) => set(draft, node.id, { align: button.dataset.value }));
-    if (action === "distribute") commit(app, "修改分布", (draft) => set(draft, node.id, { distribute: button.dataset.value }));
-    if (action === "columns") commit(app, "修改列数", (draft) => set(draft, node.id, { columns: Number(button.dataset.value) }));
-    if (action === "anchor") {
-      commit(app, "修改锚点", (draft) => {
-        draft.nodes[node.id].escape.anchor = button.dataset.value;
+    const value = button.dataset.value;
+    if (action === "layout") return app.changeLayout(node.id, value);
+    if (action === "layout-none") {
+      return commit(app, "去掉布局", (draft) => {
+        delete draft.nodes[node.id].layout;
+        delete draft.nodes[node.id].layoutProps;
       });
     }
-    if (action === "escape-on") app.setEscaped(node.id, true);
-    if (action === "escape-off") app.setEscaped(node.id, false);
-    if (action === "unbind") app.bindComponent(node.id, "");
-    if (action === "delete") app.deleteNode(node.id);
+    if (action === "gap" || action === "align" || action === "distribute" || action === "columns") {
+      const payload = action === "columns" ? Number(value) : value;
+      return commit(app, "修改布局参数", (draft) => {
+        const target = draft.nodes[node.id];
+        target.layoutProps = { ...(target.layoutProps ?? {}), [action]: payload };
+      });
+    }
+    if (action === "slot-add") {
+      const input = root.querySelector("#slot-name");
+      const name = (input?.value ?? "").trim();
+      if (!name) return;
+      return commit(app, "添加槽位", (draft) => {
+        const target = draft.nodes[node.id];
+        const slots = slotNamesOf(target);
+        if (slots.includes(name)) return;
+        target.slots = [...slots, name];
+      });
+    }
+    if (action === "slot-remove") {
+      return commit(app, "删除槽位", (draft) => {
+        const target = draft.nodes[node.id];
+        target.slots = slotNamesOf(target).filter((name) => name !== value);
+        if (target.slots.length === 0) delete target.slots;
+        for (const child of Object.values(draft.nodes)) {
+          if (child.parent === node.id && child.slot === value) delete child.slot;
+        }
+      });
+    }
+    if (action === "use-remove" || action === "use-up" || action === "use-down") {
+      const index = Number(button.dataset.index);
+      return commit(app, "调整候选链", (draft) => {
+        const target = draft.nodes[node.id];
+        const entries = [...normalizeUse(target.use)];
+        if (action === "use-remove") entries.splice(index, 1);
+        else {
+          const to = action === "use-up" ? index - 1 : index + 1;
+          if (to < 0 || to >= entries.length) return;
+          [entries[index], entries[to]] = [entries[to], entries[index]];
+        }
+        target.use = entries.map((entry) =>
+          entry.props ? { src: entry.src, props: entry.props } : entry.src,
+        );
+      });
+    }
+    if (action === "use-add") {
+      const select = root.querySelector("#use-add");
+      const custom = root.querySelector("#use-custom");
+      const picked = custom?.value?.trim() || select?.value || "";
+      if (!picked) return;
+      return commit(app, "加入候选链", (draft) => {
+        const target = draft.nodes[node.id];
+        target.use = [...normalizeUse(target.use).map(toStored), picked];
+      });
+    }
+    if (action === "prop-add") {
+      const key = root.querySelector("#prop-new-key")?.value?.trim();
+      const raw = root.querySelector("#prop-new-value")?.value ?? "";
+      if (!key) return;
+      return commit(app, "新增属性", (draft) => {
+        const target = draft.nodes[node.id];
+        target.props = { ...(target.props ?? {}), [key]: coerce(raw) };
+      });
+    }
+    if (action === "position-flow") {
+      return commit(app, "回到文档流", (draft) => {
+        delete draft.nodes[node.id].position;
+      });
+    }
+    if (action === "position-anchor") {
+      return commit(app, "设为悬浮", (draft) => {
+        draft.nodes[node.id].position = {
+          mode: "anchor",
+          anchor: "br",
+          inset: { x: "md", y: "md" },
+        };
+      });
+    }
+    if (action === "anchor") {
+      return commit(app, "修改锚点", (draft) => {
+        draft.nodes[node.id].position.anchor = value;
+      });
+    }
+    if (action === "delete") return app.deleteNode(node.id);
   };
 
   root.onchange = (event) => {
     const target = event.target;
-    if (target.dataset.action === "bind") {
-      app.bindComponent(node.id, target.value);
-      return;
-    }
-    if (target.dataset.edit === "common-label") {
-      commit(app, "修改文字", (draft) => set(draft, node.id, { label: target.value }));
-      return;
-    }
-    if (target.dataset.edit === "navbar-title") {
-      commit(app, "修改标题", (draft) => {
-        draft.nodes[node.id].props = { ...(draft.nodes[node.id].props ?? {}), title: target.value };
-      });
-      return;
-    }
-    if (target.dataset.edit === "tabs-labels") {
-      const labels = target.value
-        .split(/[,，]/)
-        .map((item) => item.trim())
-        .filter(Boolean);
-      commit(app, "修改标签", (draft) => {
-        draft.nodes[node.id].props = {
-          ...(draft.nodes[node.id].props ?? {}),
-          labels: labels.length > 0 ? labels : ["概览"],
+    const edit = target.dataset.edit;
+    if (!edit) return;
+    if (edit === "inset") {
+      const axis = target.dataset.axis;
+      return commit(app, "修改锚点距离", (draft) => {
+        draft.nodes[node.id].position.inset = {
+          ...draft.nodes[node.id].position.inset,
+          [axis]: target.value,
         };
       });
-      return;
     }
-    if (target.dataset.edit === "binding-prop") {
+    if (edit === "abs") {
+      const key = target.dataset.key;
+      return commit(app, "调整绝对定位", (draft) => {
+        const position = { ...draft.nodes[node.id].position };
+        position[key] = Number(target.value) || 0;
+        draft.nodes[node.id].position = position;
+      });
+    }
+    if (edit === "size") {
+      const key = target.dataset.key;
+      return commit(app, "调整尺寸", (draft) => {
+        const size = { ...(draft.nodes[node.id].size ?? {}) };
+        const raw = target.value.trim();
+        if (!raw) delete size[key];
+        else size[key] = key === "aspect" ? raw : Number(raw) || raw;
+        if (Object.keys(size).length === 0) delete draft.nodes[node.id].size;
+        else draft.nodes[node.id].size = size;
+      });
+    }
+    if (edit === "desc") {
+      return commit(app, "修改说明", (draft) => {
+        const target2 = draft.nodes[node.id];
+        const text = target.value.trim();
+        if (text) target2.desc = text;
+        else delete target2.desc;
+      });
+    }
+    if (edit === "prop") {
       const key = target.dataset.key;
       const type = target.dataset.type;
-      let value = target.value;
-      if (type === "number") value = Number(value);
-      if (type === "boolean") value = target.checked;
-      app.setBindingProp(node.id, key, value);
-      return;
-    }
-    if (target.dataset.edit === "frame") {
-      const key = target.dataset.key;
-      const frame = { ...(app.doc.nodes[node.id].frame ?? {}) };
-      frame[key] = Math.max(key === "w" || key === "h" ? 1 : 0, Number(target.value) || 0);
-      commit(app, "调整自由位置", (draft) => {
-        draft.nodes[node.id].frame = frame;
+      return commit(app, "修改属性", (draft) => {
+        const target2 = draft.nodes[node.id];
+        let value = target.value;
+        if (type === "number") value = Number(value);
+        if (type === "boolean") value = target.checked;
+        if (type === "list") {
+          value = value
+            .split(/[,，]/)
+            .map((item) => item.trim())
+            .filter(Boolean);
+        }
+        target2.props = { ...(target2.props ?? {}), [key]: value };
       });
-      return;
     }
-    if (target.dataset.edit === "escape-size") {
-      const key = target.dataset.key;
-      const size = { ...(app.doc.nodes[node.id].size ?? { w: 120, h: 40 }) };
-      size[key] = Math.max(1, Number(target.value) || 1);
-      commit(app, "调整悬浮尺寸", (draft) => {
-        draft.nodes[node.id].size = size;
-      });
-      return;
-    }
-    if (target.dataset.edit === "inset") {
-      const axis = target.dataset.axis;
-      const escape = structuredClone(app.doc.nodes[node.id].escape);
-      escape.inset[axis] = target.value;
-      commit(app, "修改锚点距离", (draft) => {
-        draft.nodes[node.id].escape = escape;
+    if (edit === "use-props") {
+      const index = Number(target.dataset.index);
+      return commit(app, "修改候选属性", (draft) => {
+        const target2 = draft.nodes[node.id];
+        const entries = normalizeUse(target2.use);
+        let parsed = null;
+        try {
+          parsed = target.value.trim() ? JSON.parse(target.value) : null;
+        } catch {
+          return;
+        }
+        if (!isPlainObject(parsed)) parsed = null;
+        entries[index] = { src: entries[index].src, props: parsed };
+        target2.use = entries.map(toStored);
       });
     }
   };
 }
 
 function identityBlock(node) {
-  const glyph =
-    node.type === "container"
-      ? LAYOUT_GLYPHS[node.layout]
-      : node.type === "pattern"
-        ? node.pattern === "navbar" ? "▔" : "▤"
-        : "T";
   return `
     <div class="insp-identity">
-      <span class="insp-type-icon">${escapeHtml(glyph)}</span>
+      <span class="insp-type-icon">${escapeHtml(glyphFor(node))}</span>
       <div class="insp-identity-copy">
         <b>${escapeHtml(nodeDisplayName(node))}</b>
         <code>${escapeHtml(node.id)}</code>
       </div>
-      <span class="type-pill">${escapeHtml(TYPE_LABELS[node.type] ?? node.type)}</span>
+      <span class="type-pill">${escapeHtml(pillText(node))}</span>
     </div>`;
 }
 
-function containerSection(node) {
+function layoutSection(node) {
+  const layout = node.layout;
+  const params = layoutParamsOf(node) ?? {};
   const layoutButtons = LAYOUTS.map(
-    (layout) => `
-      <button type="button" data-action="layout" data-value="${layout}"
-        class="${node.layout === layout ? "is-active" : ""}" title="${LAYOUT_LABELS[layout]}">
-        ${LAYOUT_GLYPHS[layout]} ${LAYOUT_LABELS[layout]}
+    (item) => `
+      <button type="button" data-action="layout" data-value="${item}"
+        class="${layout === item ? "is-active" : ""}" title="${LAYOUT_LABELS[item]}">
+        ${LAYOUT_GLYPHS[item]} ${LAYOUT_LABELS[item]}
       </button>`,
   ).join("");
 
   const gapButtons = GAP_TOKENS.map(
     (gap) => `
       <button type="button" data-action="gap" data-value="${gap}"
-        class="${node.gap === gap ? "is-active" : ""}" title="${GAP_LABELS[gap]}">
+        class="${params.gap === gap ? "is-active" : ""}" title="${GAP_LABELS[gap]}">
         ${GAP_LABELS[gap]}
       </button>`,
   ).join("");
@@ -168,41 +257,42 @@ function containerSection(node) {
   const alignButtons = ALIGNS.map(
     (align) => `
       <button type="button" data-action="align" data-value="${align}"
-        class="${node.align === align ? "is-active" : ""}">
-        ${ALIGN_LABELS[align]}
-      </button>`,
+        class="${params.align === align ? "is-active" : ""}">${ALIGN_LABELS[align]}</button>`,
   ).join("");
 
   const distributeButtons = DISTRIBUTES.map(
     (distribute) => `
       <button type="button" data-action="distribute" data-value="${distribute}"
-        class="${node.distribute === distribute ? "is-active" : ""}">
-        ${DISTRIBUTE_LABELS[distribute]}
-      </button>`,
+        class="${params.distribute === distribute ? "is-active" : ""}">${DISTRIBUTE_LABELS[distribute]}</button>`,
   ).join("");
 
   return `
     <section class="insp-section">
-      <div class="insp-section-title">布局模式 <small>父决定子怎么流</small></div>
+      <div class="insp-section-title">布局 <small>决定子节点怎么排</small></div>
       <div class="seg">${layoutButtons}</div>
-      ${node.layout === "free"
-        ? `<p class="insp-note">自由容器使用绝对坐标。它的子节点不会参与多尺寸重排，JSON 里会逐个保留 frame。</p>`
-        : `
+      <div class="insp-actions">
+        <button class="btn" type="button" data-action="layout-none"${layout ? "" : " disabled"}>不排布</button>
+      </div>
+      ${layout
+        ? `
           <div class="field" style="margin-top:10px">
             <div class="field-label">间距</div>
             <div class="seg">${gapButtons}</div>
           </div>
-          ${node.layout === "grid" ? `
+          ${layout === "grid"
+            ? `
             <div class="field">
               <div class="field-label">列数</div>
               <div class="seg three">
                 ${[2, 3, 4].map((count) => `
                   <button type="button" data-action="columns" data-value="${count}"
-                    class="${Number(node.columns) === count ? "is-active" : ""}">${count} 列</button>
+                    class="${Number(params.columns) === count ? "is-active" : ""}">${count} 列</button>
                 `).join("")}
               </div>
-            </div>
-          ` : `
+            </div>`
+            : layout === "free"
+              ? `<p class="insp-note">自由布局用绝对坐标，子节点的 position 会逐个保留。</p>`
+              : `
             <div class="field">
               <div class="field-label">对齐 <small>交叉轴</small></div>
               <div class="seg">${alignButtons}</div>
@@ -210,140 +300,222 @@ function containerSection(node) {
             <div class="field">
               <div class="field-label">分布 <small>主轴</small></div>
               <div class="seg">${distributeButtons}</div>
-            </div>
-          `}
-        `}
+            </div>`}
+        `
+        : `<p class="insp-note">没有布局时子节点不重排。任何节点都可以随时加上布局，包括按钮和图片。</p>`}
     </section>`;
 }
 
-function patternSection(node, doc) {
-  const definitions = PATTERN_SLOTS[node.pattern] ?? {};
-  const slots = Object.entries(definitions)
-    .map(([slotName, definition]) => {
-      const count = childrenOf(doc, node.id, slotName).length;
+function slotsSection(node, doc) {
+  const slots = slotNamesOf(node);
+  const rows = slots
+    .map((name) => {
+      const count = Object.values(doc.nodes).filter(
+        (child) => child.parent === node.id && child.slot === name,
+      ).length;
       return `
         <div class="slot-row">
-          <b>${escapeHtml(definition.label)}</b>
-          <span>${count} / ${definition.max}</span>
+          <b>${escapeHtml(name)}</b>
+          <span>${count} 个</span>
+          <button class="btn" type="button" data-action="slot-remove" data-value="${escapeHtml(name)}">移除</button>
         </div>`;
     })
     .join("");
 
   return `
     <section class="insp-section">
-      <div class="insp-section-title">结构件</div>
-      ${node.pattern === "navbar" ? `
-        <div class="field">
-          <label for="navbar-title">标题</label>
-          <input id="navbar-title" type="text" data-edit="navbar-title" value="${escapeHtml(node.props?.title ?? "")}">
-        </div>
-      ` : `
-        <div class="field">
-          <label for="tabs-labels">标签 <small>用逗号分隔</small></label>
-          <input id="tabs-labels" type="text" data-edit="tabs-labels"
-            value="${escapeHtml((node.props?.labels ?? []).join("，"))}">
-        </div>
-      `}
-      <div class="field">
-        <div class="field-label">具名槽位</div>
-        <div class="slot-list">
-          ${slots}
-        </div>
+      <div class="insp-section-title">具名槽位 <small>子节点可指定落位</small></div>
+      ${rows ? `<div class="slot-list">${rows}</div>` : `<p class="insp-note">没有声明槽位，子节点按顺序排。</p>`}
+      <div class="field-row">
+        <div class="field"><label>新槽位名</label><input id="slot-name" type="text" placeholder="例如 left"></div>
+        <div class="field"><label>&nbsp;</label><button class="btn" type="button" data-action="slot-add">添加</button></div>
       </div>
-      <p class="insp-note">结构件内部布局锁定，只能往槽位里放东西。想自由排布请改用普通容器。</p>
     </section>`;
 }
 
-function leafSection(node) {
-  const components = listComponents();
-  const binding = node.binding?.component ?? "";
-  const component = getComponent(binding);
-  const options = [
-    '<option value="">线框态（灰块）</option>',
-    ...components.map(
-      (item) =>
-        `<option value="${escapeHtml(item.id)}"${item.id === binding ? " selected" : ""}>${escapeHtml(item.name)}</option>`,
+function useSection(node, doc) {
+  const entries = normalizeUse(node.use);
+  const rows = entries
+    .map((entry, index) => {
+      const target = inspectUse(registry, doc, node)[index]?.target;
+      const status = target
+        ? `命中 ${escapeHtml(target.key ?? target.id ?? target.name ?? "")}`
+        : "未命中";
+      return `
+        <div class="slot-row">
+          <b>${index + 1}. ${escapeHtml(entry.src)}</b>
+          <span>${status}</span>
+          <button class="btn" type="button" data-action="use-up" data-index="${index}"${index === 0 ? " disabled" : ""}>↑</button>
+          <button class="btn" type="button" data-action="use-down" data-index="${index}"${index === entries.length - 1 ? " disabled" : ""}>↓</button>
+          <button class="btn" type="button" data-action="use-remove" data-index="${index}">移除</button>
+        </div>
+        <div class="field">
+          <label>候选属性 <small>JSON，可留空</small></label>
+          <input type="text" data-edit="use-props" data-index="${index}"
+            value="${escapeHtml(entry.props ? JSON.stringify(entry.props) : "")}">
+        </div>`;
+    })
+    .join("");
+
+  const resolved = resolveNode(registry, doc, node);
+  const choiceOf = [
+    ...SEMANTIC_TARGETS.map(
+      (entry) => `<option value="${entry.name}">${entry.label}（${entry.name}）</option>`,
+    ),
+    ...listComponents().map(
+      (component) => `<option value="local:${component.id}">${component.name}（local:${component.id}）</option>`,
     ),
   ].join("");
 
-  const props = component
-    ? component.propsSchema
+  return `
+    <section class="insp-section">
+      <div class="insp-section-title">渲染来源 <small>有序候选链</small></div>
+      ${rows || `<p class="insp-note">没有候选，节点按纯布局盒渲染。</p>`}
+      <div class="field">
+        <div class="field-label">当前渲染</div>
+        <p class="insp-note ${resolved.target ? "blue" : ""}">
+          ${resolved.target
+            ? `${escapeHtml(resolved.target.name ?? resolved.target.id ?? "")}${resolved.target.honorsStructure ? " · 承诺遵守结构" : " · 自行决定内部"}`
+            : "全部未命中，显示占位块与说明"}
+        </p>
+      </div>
+      <div class="field">
+        <label for="use-add">加入候选</label>
+        <select id="use-add">${choiceOf}</select>
+      </div>
+      <div class="field">
+        <label for="use-custom">或直接写标识 / 句柄</label>
+        <input id="use-custom" type="text" placeholder="ios.button.filled 或 file:./x.js">
+      </div>
+      <div class="insp-actions">
+        <button class="btn" type="button" data-action="use-add">加到最后</button>
+      </div>
+      <p class="insp-note">越靠前优先级越高。写全限定 id 可越过文档默认集；句柄用 scheme: 开头。</p>
+    </section>`;
+}
+
+function propsSection(node) {
+  const first = normalizeUse(node.use)[0];
+  const semantic = first ? findSemantic(baseNameOf(first.src)) : null;
+  const props = node.props ?? {};
+
+  const fields = semantic
+    ? semantic.propsSchema
         .map((field) => {
-          const value = node.binding?.props?.[field.key] ?? field.default;
+          const value = props[field.key] ?? "";
           if (field.type === "boolean") {
             return `
               <label class="check-field">
-                <input type="checkbox" data-edit="binding-prop" data-key="${escapeHtml(field.key)}" data-type="boolean" ${value ? "checked" : ""}>
+                <input type="checkbox" data-edit="prop" data-key="${escapeHtml(field.key)}" data-type="boolean" ${value ? "checked" : ""}>
                 ${escapeHtml(field.label)}
               </label>`;
           }
           return `
             <div class="field">
-              <label>${escapeHtml(field.label)}</label>
+              <label>${escapeHtml(field.label)} <small>${escapeHtml(field.key)}</small></label>
               <input type="${field.type === "number" ? "number" : "text"}"
-                data-edit="binding-prop" data-key="${escapeHtml(field.key)}" data-type="${field.type}"
-                value="${escapeHtml(value)}">
+                data-edit="prop" data-key="${escapeHtml(field.key)}" data-type="${field.type}"
+                value="${escapeHtml(Array.isArray(value) ? value.join("，") : value)}">
             </div>`;
         })
         .join("")
     : "";
 
+  const extras = Object.keys(props)
+    .filter((key) => !semantic?.propsSchema.some((field) => field.key === key))
+    .map(
+      (key) => `
+        <div class="slot-row">
+          <b>${escapeHtml(key)}</b>
+          <span>${escapeHtml(String(props[key]))}</span>
+        </div>`,
+    )
+    .join("");
+
   return `
     <section class="insp-section">
-      <div class="insp-section-title">元素</div>
-      <div class="field">
-        <label for="leaf-label">文字</label>
-        <input id="leaf-label" type="text" data-edit="common-label" value="${escapeHtml(node.label ?? "")}">
+      <div class="insp-section-title">属性 <small>原样透传给目标</small></div>
+      ${fields || `<p class="insp-note">这个候选没有语义词表，属性会原样透传。</p>`}
+      ${extras ? `<div class="slot-list">${extras}</div>` : ""}
+      <div class="field-row">
+        <div class="field"><label>额外属性</label><input id="prop-new-key" type="text" placeholder="key"></div>
+        <div class="field"><label>值</label><input id="prop-new-value" type="text" placeholder="value"></div>
       </div>
-      <div class="field">
-        <div class="field-label">线框形状 <small>${escapeHtml(SHAPE_LABELS[node.shape] ?? node.shape)}</small></div>
+      <div class="insp-actions">
+        <button class="btn" type="button" data-action="prop-add">加上去</button>
       </div>
-    </section>
+    </section>`;
+}
+
+function descSection(node) {
+  return `
     <section class="insp-section">
-      <div class="insp-section-title">保真度 <small>逐个叶子替换</small></div>
+      <div class="insp-section-title">说明 <small>解析不到时的兜底文字</small></div>
       <div class="field">
-        <div class="field-label">渲染来源</div>
-        <select data-action="bind">${options}</select>
+        <input type="text" data-edit="desc" value="${escapeHtml(node.desc ?? "")}" placeholder="这块是什么">
       </div>
-      ${component ? `
-        <div class="field">
-          <span class="component-chip">${escapeHtml(component.name)}</span>
-        </div>
-        <p class="insp-note blue">${escapeHtml(component.description ?? "真实组件接管这个叶子，外部尺寸仍由布局决定。")}</p>
-        ${props}
-        <div class="insp-actions">
-          <button class="btn" type="button" data-action="unbind">解绑，回到线框态</button>
-        </div>
-      ` : binding ? `
-        <p class="insp-note">这个组件没有注册，当前回落到线框态。绑定信息仍保留在 AST 里。</p>
-      ` : `
-        <p class="insp-note">线框态是默认。绑定组件只改变这个叶子的内部，不影响同级排布。</p>
-      `}
+    </section>`;
+}
+
+function sizeSection(node) {
+  const size = node.size ?? {};
+  const field = (key, label, value) => `
+    <div class="field">
+      <label>${label}</label>
+      <input type="text" data-edit="size" data-key="${key}" value="${escapeHtml(value ?? "")}">
+    </div>`;
+  return `
+    <section class="insp-section">
+      <div class="insp-section-title">尺寸 <small>留空即跟随内容</small></div>
+      <div class="field-row">
+        ${field("width", "宽", size.width)}
+        ${field("height", "高", size.height)}
+      </div>
+      <div class="field-row">
+        ${field("minWidth", "最小宽", size.minWidth)}
+        ${field("maxWidth", "最大宽", size.maxWidth)}
+      </div>
+      <div class="field-row">
+        ${field("aspect", "宽高比", size.aspect)}
+      </div>
+      <p class="insp-note">宽高可填 fill、auto、像素或百分比（如 50%）。</p>
     </section>`;
 }
 
 function positionSection(node, doc) {
-  if (node.id === doc.root) return "";
-  if (node.frame) {
+  if (node.id === doc.root) {
     return `
       <section class="insp-section">
-        <div class="insp-section-title">自由位置 <small>绝对坐标</small></div>
+        <div class="insp-note">根节点代表整页，只能改布局，不能定位或删除。</div>
+      </section>`;
+  }
+  const position = positionOf(node);
+  if (position.mode === "absolute") {
+    const field = (key, label, value) => `
+      <div class="field"><label>${label}</label>
+        <input type="number" data-edit="abs" data-key="${key}" value="${Math.round(value ?? 0)}">
+      </div>`;
+    return `
+      <section class="insp-section">
+        <div class="insp-section-title">绝对定位 <small>自由布局的子节点</small></div>
         <div class="field-row">
-          <div class="field"><label>X</label><input type="number" data-edit="frame" data-key="x" value="${Number(node.frame.x) || 0}"></div>
-          <div class="field"><label>Y</label><input type="number" data-edit="frame" data-key="y" value="${Number(node.frame.y) || 0}"></div>
+          ${field("x", "X", position.x)}
+          ${field("y", "Y", position.y)}
         </div>
         <div class="field-row">
-          <div class="field"><label>宽</label><input type="number" data-edit="frame" data-key="w" value="${Math.round(node.frame.w)}"></div>
-          <div class="field"><label>高</label><input type="number" data-edit="frame" data-key="h" value="${Math.round(node.frame.h)}"></div>
+          ${field("w", "宽", position.w)}
+          ${field("h", "高", position.h)}
+        </div>
+        <div class="insp-actions">
+          <button class="btn" type="button" data-action="position-flow">回到文档流</button>
         </div>
       </section>`;
   }
-
-  if (node.escape) {
+  if (position.mode === "anchor") {
     const anchors = ANCHORS.map(
       (anchor) => `
         <button type="button" data-action="anchor" data-value="${anchor}"
-          class="${node.escape.anchor === anchor ? "is-active" : ""}"
+          class="${position.anchor === anchor ? "is-active" : ""}"
           title="${ANCHOR_LABELS[anchor]}" aria-label="${ANCHOR_LABELS[anchor]}">
           ${anchorGlyph(anchor)}
         </button>`,
@@ -358,30 +530,24 @@ function positionSection(node, doc) {
         <div class="field-row">
           <div class="field">
             <label>横向距离</label>
-            <select data-edit="inset" data-axis="x">${tokenOptions(node.escape.inset?.x, INSET_TOKENS, INSET_LABELS)}</select>
+            <select data-edit="inset" data-axis="x">${tokenOptions(position.inset?.x, INSET_TOKENS, INSET_LABELS)}</select>
           </div>
           <div class="field">
             <label>纵向距离</label>
-            <select data-edit="inset" data-axis="y">${tokenOptions(node.escape.inset?.y, INSET_TOKENS, INSET_LABELS)}</select>
+            <select data-edit="inset" data-axis="y">${tokenOptions(position.inset?.y, INSET_TOKENS, INSET_LABELS)}</select>
           </div>
         </div>
-        <div class="field-row">
-          <div class="field"><label>宽</label><input type="number" data-edit="escape-size" data-key="w" value="${Math.round(node.size?.w ?? 120)}"></div>
-          <div class="field"><label>高</label><input type="number" data-edit="escape-size" data-key="h" value="${Math.round(node.size?.h ?? 40)}"></div>
-        </div>
-        <p class="insp-note">锚定元素仍属于原来的父节点，但不参与父容器的流式排布。</p>
         <div class="insp-actions">
-          <button class="btn" type="button" data-action="escape-off">取消悬浮</button>
+          <button class="btn" type="button" data-action="position-flow">取消悬浮</button>
         </div>
       </section>`;
   }
-
   return `
     <section class="insp-section">
       <div class="insp-section-title">定位 <small>参与父布局流</small></div>
-      <p class="insp-note">位置由父容器与同级顺序决定。拖到别的容器会改变所属父节点，不改像素坐标。</p>
+      <p class="insp-note">位置由父容器与同级顺序决定。</p>
       <div class="insp-actions">
-        <button class="btn" type="button" data-action="escape-on">设为悬浮</button>
+        <button class="btn" type="button" data-action="position-anchor">设为悬浮</button>
       </div>
     </section>`;
 }
@@ -390,7 +556,7 @@ function actionSection(node, doc) {
   if (node.id === doc.root) {
     return `
       <section class="insp-section insp-actions">
-        <div class="insp-note">根节点代表整页。可切换布局，但不能删除或悬浮。</div>
+        <div class="insp-note">根节点代表整页。可以切布局，但不能删除或悬浮。</div>
       </section>`;
   }
   return `
@@ -399,8 +565,34 @@ function actionSection(node, doc) {
     </section>`;
 }
 
-function set(draft, id, patch) {
-  Object.assign(draft.nodes[id], patch);
+function pillText(node) {
+  const first = normalizeUse(node.use)[0];
+  if (first) return first.src;
+  if (node.layout) return LAYOUT_LABELS[node.layout] ?? "布局";
+  return "空节点";
+}
+
+function glyphFor(node) {
+  if (node.layout) return LAYOUT_GLYPHS[node.layout] ?? "▢";
+  const first = normalizeUse(node.use)[0];
+  const base = first ? baseNameOf(first.src) : null;
+  return (
+    { text: "T", image: "▧", button: "◉", input: "⌸", placeholder: "▢", navbar: "▔", tabs: "▤" }[
+      base
+    ] ?? "·"
+  );
+}
+
+function toStored(entry) {
+  return entry.props ? { src: entry.src, props: entry.props } : entry.src;
+}
+
+function coerce(raw) {
+  const text = String(raw).trim();
+  if (text === "true") return true;
+  if (text === "false") return false;
+  if (text !== "" && !Number.isNaN(Number(text))) return Number(text);
+  return text;
 }
 
 function commit(app, label, mutate) {

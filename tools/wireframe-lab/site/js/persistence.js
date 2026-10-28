@@ -1,18 +1,24 @@
 import { validateDocument } from "./core/validate.js";
+import { migrateDocument, needsMigration } from "./core/migrate.js";
 
 const DOC_KEY = "wireframe-lab:doc:v1";
 const SESSION_KEY = "wireframe-lab:session:v1";
 
+/**
+ * 存储键沿用同一个，靠 schemaVersion 判断要不要迁移。
+ * 换键等于把用户已有的草稿弄丢，迁移才是正路。
+ */
 export function loadStoredDocument() {
   try {
     const raw = localStorage.getItem(DOC_KEY);
     if (!raw) return { doc: null, error: null };
-    const doc = JSON.parse(raw);
+    const parsed = JSON.parse(raw);
+    const doc = needsMigration(parsed) ? migrateDocument(parsed) : parsed;
     const errors = validateDocument(doc);
     if (errors.length > 0) {
-      return { doc: null, error: errors[0] };
+      return { doc: null, error: errors[0], migrated: needsMigration(parsed) };
     }
-    return { doc, error: null };
+    return { doc, error: null, migrated: needsMigration(parsed) };
   } catch (error) {
     return { doc: null, error: error.message };
   }

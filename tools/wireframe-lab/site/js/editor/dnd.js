@@ -1,6 +1,5 @@
 import {
   GAP_VALUES,
-  PATTERN_SLOTS,
 } from "../core/constants.js";
 import {
   childrenOf,
@@ -8,6 +7,7 @@ import {
   nodeDisplayName,
 } from "../core/ast.js";
 import { insertNode, moveNode } from "../core/ops.js";
+import { layoutParamsOf, positionOf, slotNamesOf } from "../core/schema.js";
 import { createFromTemplate, defaultFrameFor, paletteItem } from "./templates.js";
 
 const EDGE = 8;
@@ -127,7 +127,7 @@ export class DndController {
       node,
       nodeId: pending.nodeId,
       sourceNode,
-      escapeDrag: Boolean(sourceNode?.escape),
+      escapeDrag: positionOf(sourceNode).mode === "anchor",
       label,
       width,
       height,
@@ -205,19 +205,15 @@ export class DndController {
     const parentId = slotElement.dataset.slotParent;
     const slotName = slotElement.dataset.slotName;
     const parent = this.app.doc.nodes[parentId];
-    if (!parent || parent.type !== "pattern") {
-      return this.invalid("这个槽位不属于结构件", slotElement);
+    if (!parent || !slotNamesOf(parent).includes(slotName)) {
+      return this.invalid("这个槽位没有被父节点声明", slotElement);
     }
     if (this.sourceBlocks(parentId)) {
       return this.invalid("不能把节点放进它自己或它的子树", slotElement);
     }
-    const max = PATTERN_SLOTS[parent.pattern]?.[slotName]?.max ?? 0;
     const children = childrenOf(this.app.doc, parentId, slotName).filter(
       (child) => child.id !== this.drag.nodeId,
     );
-    if (children.length >= max) {
-      return this.invalid("这个槽位已经满了，先移走里面的节点", slotElement);
-    }
     return {
       kind: "slot",
       parentId,
@@ -242,22 +238,14 @@ export class DndController {
     const parent = this.app.doc.nodes[node.parent];
     if (!parent) return this.invalid("目标节点没有父节点", element);
 
-    if (parent.type === "container" && parent.layout === "free") {
+    if (parent.layout === "free" && node.slot == null) {
       return this.freeTarget(parent.id, x, y, shiftKey);
     }
-    if (
-      node.type === "container" &&
-      node.layout === "free" &&
-      nodeId !== this.drag.nodeId
-    ) {
+    if (node.layout === "free" && nodeId !== this.drag.nodeId && node.slot == null) {
       return this.freeTarget(node.id, x, y, shiftKey);
     }
 
-    if (node.type === "pattern") {
-      return this.invalid("结构件只能放进具名槽位", element);
-    }
-
-    if (node.type === "container") {
+    if (node.layout) {
       const rect = element.getBoundingClientRect();
       const nearStart =
         parent.layout === "row"
@@ -271,26 +259,30 @@ export class DndController {
           : parent.layout === "column"
             ? rect.bottom - y < EDGE
             : false;
-      if ((nearStart || nearEnd) && parent.type === "container") {
+      if (nearStart || nearEnd) {
         return this.siblingTarget(node, nearEnd, x, y);
       }
-      if (parent.type === "pattern") {
-        return this.patternChildSlotTarget(parent, node, x, y);
+      const slots = slotNamesOf(node);
+      if (slots.length > 0 && childrenOf(this.app.doc, node.id, null).length === 0) {
+        const slotElement = this.canvas.querySelector(
+          `[data-slot-parent="${cssEscape(node.id)}"][data-slot-name="${cssEscape(slots[0])}"]`,
+        );
+        if (slotElement) return this.slotTarget(slotElement);
       }
       return this.containerTarget(element, x, y, shiftKey);
     }
 
-    if (parent.type === "pattern") {
-      return this.patternChildSlotTarget(parent, node, x, y);
+    if (node.slot != null) {
+      return this.slotOfChild(parent, node);
     }
     return this.siblingTarget(node, this.isAfter(node, x, y, parent.layout), x, y);
   }
 
-  patternChildSlotTarget(parent, node, x, y) {
+  slotOfChild(parent, node) {
     const slotElement = this.canvas.querySelector(
       `[data-slot-parent="${cssEscape(parent.id)}"][data-slot-name="${cssEscape(node.slot)}"]`,
     );
-    if (!slotElement) return this.invalid("找不到结构件槽位");
+    if (!slotElement) return this.invalid("找不到这个节点所在的槽位");
     return this.slotTarget(slotElement);
   }
 
@@ -307,8 +299,8 @@ export class DndController {
   siblingTarget(node, after, x, y) {
     const parent = this.app.doc.nodes[node.parent];
     if (!parent) return this.invalid("目标节点没有父节点");
-    if (parent.type === "pattern") {
-      return this.patternChildSlotTarget(parent, node, x, y);
+    if (node.slot != null) {
+      return this.slotOfChild(parent, node);
     }
     if (parent.layout === "free") {
       return this.freeTarget(parent.id, x, y, false);
@@ -324,8 +316,8 @@ export class DndController {
   containerTarget(element, x, y, shiftKey) {
     const containerId = element.dataset.nodeId;
     const container = this.app.doc.nodes[containerId];
-    if (!container || container.type !== "container") {
-      return this.invalid("这里不是容器", element);
+    if (!container || !container.layout) {
+      return this.invalid("这里没有声明布局", element);
     }
     if (this.sourceBlocks(containerId)) {
       return this.invalid("不能把节点拖进自己或自己的子树", element);
@@ -349,7 +341,7 @@ export class DndController {
     const parentElement = this.app.renderer.elementFor(parentId);
     if (!parentElement) return this.invalid("目标容器没有渲染出来");
 
-    if (parent.type === "pattern" && slot) {
+    if (slot) {
       const slotElement = this.canvas.querySelector(
         `[data-slot-parent="${cssEscape(parentId)}"][data-slot-name="${cssEscape(slot)}"]`,
       );
@@ -377,7 +369,7 @@ export class DndController {
     const previousEl = previous ? this.app.renderer.elementFor(previous.id) : null;
     const nextEl = next ? this.app.renderer.elementFor(next.id) : null;
     const parentRect = parentElement.getBoundingClientRect();
-    const gap = GAP_VALUES[parent.gap] ?? 12;
+    const gap = GAP_VALUES[layoutParamsOf(parent)?.gap] ?? 12;
     let line;
     if (parent.layout === "row" || parent.layout === "grid") {
       let left;
@@ -647,7 +639,7 @@ export class DndController {
         this.app.showToast("悬浮元素先在原父容器内移动；跨容器请先取消悬浮", { error: true });
         return;
       }
-      this.app.applyEscapeDrop(drag.nodeId, target.anchor, target.inset);
+      this.app.applyAnchorDrop(drag.nodeId, target.anchor, target.inset);
       return;
     }
 
@@ -662,7 +654,10 @@ export class DndController {
               slot: null,
               index: target.index,
             });
-            draft.nodes[node.id].frame = { ...target.frame };
+            draft.nodes[node.id].position = {
+              mode: "absolute",
+              ...target.frame,
+            };
           } else {
             insertNode(draft, target.parentId, node, {
               slot: target.slot ?? null,
@@ -683,7 +678,7 @@ export class DndController {
             moveNode(draft, drag.nodeId, target.parentId, {
               slot: null,
               index: target.index,
-              frame: target.frame,
+              position: { mode: "absolute", ...target.frame },
             });
           } else {
             moveNode(draft, drag.nodeId, target.parentId, {

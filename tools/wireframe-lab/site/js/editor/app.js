@@ -1,27 +1,21 @@
-import {
-  GAP_VALUES,
-  LAYOUT_LABELS,
-  PATTERN_SLOTS,
-} from "../core/constants.js";
+import { GAP_VALUES, LAYOUT_LABELS } from "../core/constants.js";
 import {
   childrenOf,
   descendantIds,
   nodeDisplayName,
 } from "../core/ast.js";
 import {
-  bindNode,
   cloneDocument,
   insertNode,
   removeNode,
-  setEscape,
   setLayout,
   snapshotDiff,
   applySnapshot,
-  unbindNode,
 } from "../core/ops.js";
+import { slotNamesOf } from "../core/schema.js";
 import { validateDocument } from "../core/validate.js";
+import { migrateDocument } from "../core/migrate.js";
 import { parseDocument, serializeDocument } from "../core/serialize.js";
-import { getComponent } from "../components/registry.js";
 import { CanvasRenderer } from "../render/render.js";
 import { renderOutline } from "./outline.js";
 import { renderInspector } from "./inspector.js";
@@ -351,9 +345,8 @@ export class WireframeApp {
       return;
     }
     const node = createFromTemplate(template);
-    const parentIsFree =
-      this.doc.nodes[target.parentId]?.type === "container" &&
-      this.doc.nodes[target.parentId]?.layout === "free";
+    const parentNode = this.doc.nodes[target.parentId];
+    const parentIsFree = parentNode?.layout === "free";
     const nextIndex = Number.isFinite(target.index)
       ? target.index
       : childrenOf(this.doc, target.parentId, target.slot ?? null).length;
@@ -368,10 +361,12 @@ export class WireframeApp {
         if (parentIsFree) {
           const frame = defaultFrameFor(node);
           const ordinal = Math.max(0, childrenOf(draft, target.parentId, null).length - 1);
-          draft.nodes[node.id].frame = {
-            ...frame,
+          draft.nodes[node.id].position = {
+            mode: "absolute",
             x: frame.x + (ordinal % 4) * 10,
             y: frame.y + (ordinal % 4) * 10,
+            w: frame.w,
+            h: frame.h,
           };
         }
       },
@@ -387,43 +382,29 @@ export class WireframeApp {
     if (!selected) {
       return { parentId: this.doc.root, slot: null, index: Infinity };
     }
-    if (selected.type === "container") {
+    // 有布局就往下装；声明了槽位就装进第一个槽位；否则插在它后面。
+    if (selected.layout) {
       return { parentId: selected.id, slot: null, index: Infinity };
     }
-    if (selected.type === "pattern") {
-      for (const [slotName, definition] of Object.entries(
-        PATTERN_SLOTS[selected.pattern] ?? {},
-      )) {
-        const count = childrenOf(this.doc, selected.id, slotName).length;
-        if (count < definition.max) {
-          return { parentId: selected.id, slot: slotName, index: Infinity };
-        }
-      }
-      return { error: "这个结构件的槽位已满，先删除槽位里的节点再添加" };
+    const slots = slotNamesOf(selected);
+    if (slots.length > 0) {
+      return { parentId: selected.id, slot: slots[0], index: Infinity };
     }
 
     const parent = this.doc.nodes[selected.parent];
     if (!parent) return { parentId: this.doc.root, slot: null, index: Infinity };
-    if (parent.type === "pattern") {
-      const max = PATTERN_SLOTS[parent.pattern]?.[selected.slot]?.max ?? 0;
-      const count = childrenOf(this.doc, parent.id, selected.slot).length;
-      if (count >= max) {
-        return { error: "这个槽位最多只放一个节点，先删除或取消绑定再试" };
-      }
-      return { parentId: parent.id, slot: selected.slot, index: count };
-    }
-    const siblings = childrenOf(this.doc, parent.id, parent.type === "container" ? null : undefined);
+    const siblings = childrenOf(this.doc, parent.id, selected.slot ?? null);
     const at = siblings.findIndex((item) => item.id === selected.id);
     return {
       parentId: parent.id,
-      slot: parent.type === "container" ? null : selected.slot,
+      slot: selected.slot ?? null,
       index: at >= 0 ? at + 1 : Infinity,
     };
   }
 
   changeLayout(nodeId, layout) {
     const node = this.doc.nodes[nodeId];
-    if (!node || node.type !== "container" || node.layout === layout) return;
+    if (!node || node.layout === layout) return;
     const frames =
       layout === "free" ? this.renderer.captureLayoutFrames(nodeId) : undefined;
     const ok = this.commit(
@@ -438,111 +419,14 @@ export class WireframeApp {
     }
   }
 
-  setEscaped(nodeId, enable) {
+  /** 把节点挂到某个锚点上，脱离父容器的流。拖拽落点与 inspector 共用。 */
+  applyAnchorDrop(nodeId, anchor, inset) {
     const node = this.doc.nodes[nodeId];
     if (!node || nodeId === this.doc.root) return;
-    if (!enable) {
-      this.commit(
-        "取消悬浮",
-        (draft) => setEscape(draft, nodeId, null),
-        { select: nodeId },
-      );
-      return;
-    }
-    if (node.escape) return;
-    const element = this.renderer.elementFor(nodeId);
-    const parent = this.renderer.elementFor(node.parent);
-    const rect = element?.getBoundingClientRect();
-    const parentRect = parent?.getBoundingClientRect();
-    const size = {
-      w: Math.max(24, Math.round(rect?.width ?? 120)),
-      h: Math.max(24, Math.round(rect?.height ?? 40)),
-    };
-    let anchor = "br";
-    let inset = { x: "md", y: "md" };
-    if (rect && parentRect) {
-      const centerX = rect.left + rect.width / 2;
-      const centerY = rect.top + rect.height / 2;
-      const horizontal =
-        centerX < parentRect.left + parentRect.width / 3
-          ? "l"
-          : centerX > parentRect.left + (parentRect.width * 2) / 3
-            ? "r"
-            : "c";
-      const vertical =
-        centerY < parentRect.top + parentRect.height / 3
-          ? "t"
-          : centerY > parentRect.top + (parentRect.height * 2) / 3
-            ? "b"
-            : "c";
-      anchor = `${vertical}${horizontal}`;
-      if (horizontal === "l") inset.x = tokenForDistance(rect.left - parentRect.left);
-      if (horizontal === "r") inset.x = tokenForDistance(parentRect.right - rect.right);
-      if (vertical === "t") inset.y = tokenForDistance(rect.top - parentRect.top);
-      if (vertical === "b") inset.y = tokenForDistance(parentRect.bottom - rect.bottom);
-    }
-    const ok = this.commit(
-      "设为悬浮",
-      (draft) => {
-        const target = draft.nodes[nodeId];
-        target.escape = { anchor, inset };
-        target.size = size;
-        delete target.frame;
-      },
-      { select: nodeId },
-    );
-    if (ok) {
-      this.showToast("已脱离父容器的布局流。右侧可以精确改锚点、距离和尺寸。");
-    }
-  }
-
-  applyEscapeDrop(nodeId, anchor, inset) {
-    const node = this.doc.nodes[nodeId];
-    if (!node?.escape) return;
     this.commit(
       "移动悬浮元素",
       (draft) => {
-        draft.nodes[nodeId].escape = { anchor, inset };
-      },
-      { select: nodeId },
-    );
-  }
-
-  bindComponent(nodeId, componentId) {
-    const node = this.doc.nodes[nodeId];
-    if (!node || node.type !== "leaf") return;
-    if (!componentId) {
-      if (!node.binding) return;
-      this.commit("解绑组件", (draft) => unbindNode(draft, nodeId), {
-        select: nodeId,
-      });
-      this.showToast("已回到线框态；这个叶子仍保留原来的位置和尺寸。");
-      return;
-    }
-    const component = getComponent(componentId);
-    if (!component) {
-      this.showToast("这个组件不在当前注册表里。", { error: true });
-      return;
-    }
-    if (node.binding?.component === componentId) return;
-    const props = Object.fromEntries(
-      component.propsSchema.map((field) => [field.key, field.default]),
-    );
-    this.commit(
-      `绑定${component.name}`,
-      (draft) => bindNode(draft, nodeId, componentId, props),
-      { select: nodeId },
-    );
-  }
-
-  setBindingProp(nodeId, key, value) {
-    const node = this.doc.nodes[nodeId];
-    if (!node?.binding) return;
-    this.commit(
-      "修改组件参数",
-      (draft) => {
-        const binding = draft.nodes[nodeId].binding;
-        binding.props = { ...(binding.props ?? {}), [key]: value };
+        draft.nodes[nodeId].position = { mode: "anchor", anchor, inset };
       },
       { select: nodeId },
     );
@@ -617,7 +501,7 @@ export class WireframeApp {
         throw new Error("文件超过 2 MB，不像是线框页面");
       }
       const text = await file.text();
-      const doc = parseDocument(text);
+      const doc = migrateDocument(parseDocument(text));
       const errors = validateDocument(doc);
       if (errors.length > 0) {
         throw new Error(errors[0]);

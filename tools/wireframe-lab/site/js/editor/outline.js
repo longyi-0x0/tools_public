@@ -1,19 +1,17 @@
-import {
-  LAYOUT_GLYPHS,
-  PATTERN_LABELS,
-  PATTERN_SLOTS,
-  SHAPE_LABELS,
-  TYPE_LABELS,
-} from "../core/constants.js";
+import { LAYOUT_GLYPHS, LAYOUT_LABELS } from "../core/constants.js";
 import { childrenOf, nodeDisplayName } from "../core/ast.js";
+import { normalizeUse, positionOf, slotNamesOf } from "../core/schema.js";
+import { baseNameOf } from "../resolve/vocabulary.js";
 import { el } from "./dom.js";
 
-const LEAF_GLYPHS = {
+const SEMANTIC_GLYPHS = {
   text: "T",
   image: "▧",
   button: "◉",
   input: "⌸",
   placeholder: "▢",
+  navbar: "▔",
+  tabs: "▤",
 };
 
 export function renderOutline(app) {
@@ -26,24 +24,18 @@ export function renderOutline(app) {
 
   const appendNode = (node, depth) => {
     root.append(outlineRow(node, depth, app.selectionId));
-    if (node.type === "pattern") {
-      const definitions = PATTERN_SLOTS[node.pattern] ?? {};
-      for (const [slotName, definition] of Object.entries(definitions)) {
+    const slots = slotNamesOf(node);
+    if (slots.length > 0) {
+      for (const slotName of slots) {
         const children = childrenOf(app.doc, node.id, slotName);
-        if (children.length > 0) {
-          const label = el("div", "tree-slot-label", `槽位 · ${definition.label}`);
-          label.style.paddingLeft = `${depth * 13 + 25}px`;
-          root.append(label);
-        }
+        if (children.length === 0) continue;
+        const label = el("div", "tree-slot-label", `槽位 · ${slotName}`);
+        label.style.paddingLeft = `${depth * 13 + 25}px`;
+        root.append(label);
         for (const child of children) appendNode(child, depth + 1);
       }
-      return;
     }
-    for (const child of childrenOf(
-      app.doc,
-      node.id,
-      node.type === "container" ? null : undefined,
-    )) {
+    for (const child of childrenOf(app.doc, node.id, null)) {
       appendNode(child, depth + 1);
     }
   };
@@ -68,27 +60,30 @@ function outlineRow(node, depth, selectedId) {
   const label = el("span", "tree-label", nodeDisplayName(node));
   row.append(indent, glyph, label);
 
-  if (node.binding) {
-    row.append(el("span", "tree-badge bound", "组件"));
-  } else if (node.type === "pattern") {
-    row.append(el("span", "tree-badge", "锁定"));
-  } else if (node.escape) {
-    row.append(el("span", "tree-badge", "悬浮"));
-  } else if (node.type === "container") {
-    row.append(el("span", "tree-badge", TYPE_LABELS[node.type]));
-  } else if (SHAPE_LABELS[node.shape]) {
-    row.append(el("span", "tree-badge", SHAPE_LABELS[node.shape]));
-  }
+  const badge = badgeFor(node);
+  if (badge) row.append(el("span", "tree-badge", badge));
   return row;
 }
 
+function badgeFor(node) {
+  const first = normalizeUse(node.use)[0];
+  if (first && first.src.includes(":")) return "组件";
+  const position = positionOf(node);
+  if (position.mode === "anchor") return "悬浮";
+  if (position.mode === "absolute") return "定位";
+  if (slotNamesOf(node).length > 0) return "槽位";
+  if (node.layout) return LAYOUT_LABELS[node.layout] ?? "布局";
+  if (first) return "语义";
+  return null;
+}
+
 function glyphFor(node) {
-  if (node.type === "container") return LAYOUT_GLYPHS[node.layout] ?? "▢";
-  if (node.type === "pattern") return node.pattern === "navbar" ? "▔" : "▤";
-  return LEAF_GLYPHS[node.shape] ?? "·";
+  if (node.layout) return LAYOUT_GLYPHS[node.layout] ?? "▢";
+  const first = normalizeUse(node.use)[0];
+  const base = first ? baseNameOf(first.src) : null;
+  return SEMANTIC_GLYPHS[base] ?? "·";
 }
 
 export function outlineLabel(node) {
-  if (node.type === "pattern") return PATTERN_LABELS[node.pattern] ?? "结构件";
   return nodeDisplayName(node);
 }
