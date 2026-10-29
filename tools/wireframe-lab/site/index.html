@@ -18,6 +18,16 @@
       </span>
     </div>
 
+    <div class="project-switch">
+      <button class="project-chip" id="project-chip" type="button" title="切换项目，或新建 / 导出 / 删除">
+        <span class="project-chip-copy">
+          <b id="project-name">项目</b>
+          <small id="project-page-count"></small>
+        </span>
+        <span class="caret" aria-hidden="true">▾</span>
+      </button>
+    </div>
+
     <label class="page-title">
       <span>页面</span>
       <input id="page-title" type="text" value="商品列表" autocomplete="off" spellcheck="false">
@@ -38,13 +48,21 @@
         <button type="button" data-mode="preview">预览</button>
       </div>
       <button class="btn" id="import-btn" type="button">导入</button>
-      <button class="btn btn-primary" id="export-btn" type="button">导出 JSON</button>
-      <button class="icon-btn more" id="reset-btn" type="button" title="恢复示例页" aria-label="恢复示例页">⋯</button>
+      <button class="btn btn-primary" id="export-btn" type="button">导出页面</button>
     </div>
   </header>
 
   <div class="workspace">
     <aside class="panel left-panel">
+      <div class="panel-head pages-head">
+        <div>
+          <h2>页面</h2>
+          <p>当前项目里的页面</p>
+        </div>
+        <button class="icon-btn" id="page-add" type="button" title="新建页面" aria-label="新建页面">＋</button>
+      </div>
+      <div class="pages" id="pages"></div>
+
       <div class="panel-head palette-head">
         <div>
           <h2>添加</h2>
@@ -117,6 +135,22 @@
   <div class="dialog-actions">
     <button class="btn" id="confirm-cancel" type="button">取消</button>
     <button class="btn btn-danger" id="confirm-ok" type="button">确认</button>
+  </div>
+</dialog>
+
+<dialog class="confirm-dialog prompt-dialog" id="prompt-dialog">
+  <div class="dialog-head">
+    <h2 id="prompt-title">输入</h2>
+  </div>
+  <div class="dialog-body">
+    <label class="dialog-field">
+      <span id="prompt-label">名称</span>
+      <input id="prompt-input" type="text" autocomplete="off" spellcheck="false">
+    </label>
+  </div>
+  <div class="dialog-actions">
+    <button class="btn" id="prompt-cancel" type="button">取消</button>
+    <button class="btn btn-primary" id="prompt-ok" type="button">确认</button>
   </div>
 </dialog>
 

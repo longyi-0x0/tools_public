@@ -953,6 +953,122 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 .dialog-body { padding: 7px 18px 18px; color: var(--ink-2); font-size: 11.5px; line-height: 1.7; }
 .dialog-body p { margin: 0; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 11px 18px; border-top: 1px solid var(--line); background: #fcfbf8; border-radius: 0 0 14px 14px; }
+.dialog-field { display: flex; flex-direction: column; gap: 6px; }
+.dialog-field span { font-size: 11px; color: var(--ink-3); }
+.dialog-field input {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: var(--surface);
+  font-size: 13px;
+}
+.dialog-field input:focus { border-color: var(--accent); outline: none; }
+
+/* ---------- 项目层：顶栏项目切换器 ---------- */
+.project-switch { flex: 0 0 auto; }
+.project-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 220px;
+  padding: 5px 9px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface);
+}
+.project-chip:hover { border-color: var(--line-strong); background: #fff; }
+.project-chip-copy { display: flex; flex-direction: column; min-width: 0; line-height: 1.25; text-align: left; }
+.project-chip-copy b {
+  overflow: hidden;
+  font-size: 12.5px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.project-chip-copy small { font-size: 9.5px; color: var(--ink-3); white-space: nowrap; }
+.project-chip .caret { font-size: 10px; color: var(--ink-3); }
+
+/* ---------- 项目层：左栏页面列表 ---------- */
+.pages-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 8px; }
+.pages-head p { margin: 3px 0 0; }
+.pages { flex: 0 0 auto; max-height: 34%; padding: 0 8px 8px; overflow: auto; }
+.page-row { display: flex; align-items: center; gap: 2px; border-radius: 8px; }
+.page-row:hover { background: var(--panel-soft); }
+.page-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 6px 7px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  text-align: left;
+}
+.page-item:hover { background: transparent; }
+.page-index {
+  flex: 0 0 auto;
+  width: 17px;
+  height: 17px;
+  border-radius: 5px;
+  background: var(--panel-soft);
+  color: var(--ink-3);
+  font-size: 10px;
+  line-height: 17px;
+  text-align: center;
+}
+.page-copy { min-width: 0; display: flex; flex-direction: column; line-height: 1.3; }
+.page-copy b { overflow: hidden; font-size: 12px; font-weight: 550; text-overflow: ellipsis; white-space: nowrap; }
+.page-copy small { font-size: 9.5px; color: var(--ink-3); }
+.page-row.is-active { background: var(--accent-soft); }
+.page-row.is-active .page-item b { color: #14409e; }
+.page-row.is-active .page-index { background: #dbe6ff; color: #2b57b8; }
+.page-more {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 24px;
+  margin-right: 3px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink-3);
+  font-size: 13px;
+  line-height: 1;
+  opacity: 0;
+}
+.page-row:hover .page-more, .page-more:focus-visible { opacity: 1; }
+.page-more:hover { background: var(--line); color: var(--ink); }
+
+/* ---------- 弹出菜单 ---------- */
+.menu {
+  position: fixed;
+  z-index: 60;
+  min-width: 148px;
+  padding: 5px;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: 0 16px 40px rgba(39, 32, 22, .18);
+}
+.menu-item {
+  display: block;
+  width: 100%;
+  padding: 7px 9px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  font-size: 12px;
+  text-align: left;
+}
+.menu-item:hover:not(:disabled) { background: var(--panel-soft); }
+.menu-item:disabled { opacity: .35; cursor: default; }
+.menu-item.is-danger { color: var(--danger); }
+.menu-item.is-danger:hover:not(:disabled) { background: var(--danger-soft); }
+.menu-item.is-current { display: flex; align-items: center; gap: 6px; color: var(--ink); font-weight: 550; }
+.menu-tick { color: var(--accent); font-size: 11px; }
+.menu-sep { height: 1px; margin: 4px 6px; background: var(--line); }
 
 @media (max-width: 1180px) {
   .workspace { grid-template-columns: 220px minmax(0, 1fr) 272px; }
