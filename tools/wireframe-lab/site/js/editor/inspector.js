@@ -30,6 +30,7 @@ import { inspectUse, resolveNode } from "../resolve/resolve.js";
 export function renderInspector(app) {
   const root = document.querySelector("#inspector");
   const subtitle = document.querySelector("#inspector-subtitle");
+  const sets = app.sets;
   const node = app.doc.nodes[app.selectionId] ?? app.doc.nodes[app.doc.root];
   if (!node) {
     root.innerHTML = '<div class="insp-empty">文档里还没有节点</div>';
@@ -42,7 +43,7 @@ export function renderInspector(app) {
     identityBlock(node),
     layoutSection(node),
     slotsSection(node, app.doc),
-    useSection(node, app.doc),
+    useSection(node, sets),
     propsSection(node),
     descSection(node),
     sizeSection(node),
@@ -333,11 +334,11 @@ function slotsSection(node, doc) {
     </section>`;
 }
 
-function useSection(node, doc) {
+function useSection(node, sets) {
   const entries = normalizeUse(node.use);
   const rows = entries
     .map((entry, index) => {
-      const target = inspectUse(registry, doc, node)[index]?.target;
+      const target = inspectUse(registry, node, sets)[index]?.target;
       const status = target
         ? `命中 ${escapeHtml(target.key ?? target.id ?? target.name ?? "")}`
         : "未命中";
@@ -357,7 +358,7 @@ function useSection(node, doc) {
     })
     .join("");
 
-  const resolved = resolveNode(registry, doc, node);
+  const resolved = resolveNode(registry, node, sets);
   const choiceOf = [
     ...SEMANTIC_TARGETS.map(
       (entry) => `<option value="${entry.name}">${entry.label}（${entry.name}）</option>`,
@@ -390,7 +391,7 @@ function useSection(node, doc) {
       <div class="insp-actions">
         <button class="btn" type="button" data-action="use-add">加到最后</button>
       </div>
-      <p class="insp-note">越靠前优先级越高。写全限定 id 可越过文档默认集；句柄用 scheme: 开头。</p>
+      <p class="insp-note">越靠前优先级越高。写全限定 id 可越过项目默认集；句柄用 scheme: 开头。</p>
     </section>`;
 }
 

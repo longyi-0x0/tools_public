@@ -20,9 +20,13 @@ export class CanvasRenderer {
     return this.app.doc;
   }
 
+  get sets() {
+    return this.app.sets;
+  }
+
   render() {
     const warnings = [];
-    const ir = buildIR(this.doc, this.doc.root, registry, warnings);
+    const ir = buildIR(this.doc, this.doc.root, registry, this.sets, warnings);
     this.warnings = warnings;
     const paint = () => {
       if (!ir) {

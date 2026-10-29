@@ -1,17 +1,18 @@
 import {
   installedSetIds,
+  installedSets,
   mergeProps,
   normalizeUse,
-  setOf,
 } from "../core/schema.js";
 import { classify } from "./parse-use.js";
 
 /**
- * 一条候选的解析：句柄走 scheme loader，id 按文档声明的集合顺序查找。
- * 解析不到不算错，只往 warnings 里记一句，调用方继续看下一条候选。
+ * 一条候选的解析：句柄走 scheme loader，id 按组件集声明顺序查找。
+ * 组件集由项目提供（`sets`），页面不再自带；解析不到不算错，
+ * 只往 warnings 里记一句，调用方继续看下一条候选。
  */
-export function resolveEntry(registry, doc, src, warnings = []) {
-  const info = classify(src, installedSetIds(doc));
+export function resolveEntry(registry, sets, src, warnings = []) {
+  const info = classify(src, installedSetIds(sets));
   if (info.kind === "invalid") {
     warnings.push("候选为空");
     return null;
@@ -41,7 +42,7 @@ export function resolveEntry(registry, doc, src, warnings = []) {
     if (!target) warnings.push(`集合 ${info.setId} 里没有 ${info.name}`);
     return target ?? null;
   }
-  for (const entry of setOf(doc)) {
+  for (const entry of installedSets(sets)) {
     const target = registry.sets.get(entry.id)?.targets.get(info.name);
     if (target) return target;
   }
@@ -49,11 +50,11 @@ export function resolveEntry(registry, doc, src, warnings = []) {
 }
 
 /** 按序试候选，第一条命中的决定渲染；props 与槽位在调用处一并透传。 */
-export function resolveNode(registry, doc, node) {
+export function resolveNode(registry, node, sets) {
   const warnings = [];
   const entries = normalizeUse(node?.use);
   for (const entry of entries) {
-    const target = resolveEntry(registry, doc, entry.src, warnings);
+    const target = resolveEntry(registry, sets, entry.src, warnings);
     if (!target) continue;
     return {
       target,
@@ -69,11 +70,11 @@ export function resolveNode(registry, doc, node) {
 }
 
 /** 给 inspector 用：当前候选链每一条的实际命中情况。 */
-export function inspectUse(registry, doc, node) {
+export function inspectUse(registry, node, sets) {
   const warnings = [];
   return normalizeUse(node?.use).map((entry) => ({
     src: entry.src,
     props: entry.props,
-    target: resolveEntry(registry, doc, entry.src, warnings),
+    target: resolveEntry(registry, sets, entry.src, warnings),
   }));
 }

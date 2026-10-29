@@ -7,11 +7,11 @@ import { resolveNode } from "../resolve/resolve.js";
  * IR 是宿主算完语义之后的纯数据：token 换成像素、位置模式归一化、
  * 候选链已经解析完。语言适配器只做 IR 到原生树的映射。
  */
-export function buildIR(doc, nodeId, registry, warnings = []) {
+export function buildIR(doc, nodeId, registry, sets, warnings = []) {
   const node = doc.nodes[nodeId];
   if (!node) return null;
 
-  const resolved = resolveNode(registry, doc, node);
+  const resolved = resolveNode(registry, node, sets);
   for (const warning of resolved.warnings) {
     warnings.push(`${nodeId}: ${warning}`);
   }
@@ -32,18 +32,18 @@ export function buildIR(doc, nodeId, registry, warnings = []) {
 
   for (const name of slotNamesOf(node)) {
     ir.slots[name] = childrenOf(doc, node.id, name)
-      .map((child) => buildIR(doc, child.id, registry, warnings))
+      .map((child) => buildIR(doc, child.id, registry, sets, warnings))
       .filter(Boolean);
   }
   ir.children = childrenOf(doc, node.id, null)
-    .map((child) => buildIR(doc, child.id, registry, warnings))
+    .map((child) => buildIR(doc, child.id, registry, sets, warnings))
     .filter(Boolean);
   return ir;
 }
 
-export function buildDocumentIR(doc, registry) {
+export function buildDocumentIR(doc, registry, sets) {
   const warnings = [];
-  const ir = buildIR(doc, doc.root, registry, warnings);
+  const ir = buildIR(doc, doc.root, registry, sets, warnings);
   return { ir, warnings };
 }
 

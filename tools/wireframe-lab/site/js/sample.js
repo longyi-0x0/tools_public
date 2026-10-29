@@ -207,7 +207,6 @@ export function createSampleDocument() {
     id: "p-sample",
     title: "商品列表",
     root: "nRoot",
-    sets: [{ id: "default", version: "1" }],
     nodes,
   };
 }

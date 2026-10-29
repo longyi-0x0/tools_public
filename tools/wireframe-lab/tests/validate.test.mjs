@@ -81,12 +81,11 @@ test("候选条目缺 src 会报错", () => {
   assert.ok(validateDocument(doc).some((error) => error.includes("缺少 src")));
 });
 
-test("集合 id 不能含点，也不允许重复声明", () => {
+test("页面不再携带 sets，组件集归项目", () => {
   const doc = createDocument();
   doc.sets = [{ id: "ios.skin" }, { id: "ios" }, { id: "ios" }];
   const errors = validateDocument(doc);
-  assert.ok(errors.some((error) => error.includes("不能含点")));
-  assert.ok(errors.some((error) => error.includes("重复声明")));
+  assert.ok(errors.some((error) => error.includes("组件集属于项目")));
 });
 
 test("候选全部解析不到只是告警，文档仍然有效", () => {
@@ -110,7 +109,6 @@ test("序列化固定 key 顺序，导入导出无损", () => {
 test("meta 变化也能被校验和往返", () => {
   const doc = createSampleDocument();
   doc.title = "改过的标题";
-  doc.sets = [{ id: "default", version: "1" }];
   const text = serializeDocument(doc);
   assert.equal(serializeDocument(parseDocument(text)), text);
   assert.deepEqual(validateDocument(parseDocument(text)), []);

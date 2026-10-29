@@ -32,7 +32,8 @@ export function validateDocument(doc) {
     return [...errors, "root 指向的节点不存在"];
   }
 
-  if (doc.sets != null) validateSets(doc, errors);
+  // 组件集在 v2 之后归项目管，页面再带一份就是没迁干净的脏数据。
+  if (doc.sets != null) errors.push("页面不再携带 sets：组件集属于项目");
 
   for (const [id, node] of Object.entries(doc.nodes)) {
     if (!isPlainObject(node)) {
@@ -87,33 +88,6 @@ export function collectContractWarnings(doc, { resolve } = {}) {
 function describeFirst(use) {
   const first = use[0];
   return typeof first === "string" ? first : String(first?.src ?? "");
-}
-
-function validateSets(doc, errors) {
-  if (!Array.isArray(doc.sets)) {
-    errors.push("sets 必须是数组");
-    return;
-  }
-  const seen = new Set();
-  for (const entry of doc.sets) {
-    if (!isPlainObject(entry)) {
-      errors.push("sets 里的条目必须是对象");
-      continue;
-    }
-    if (typeof entry.id !== "string" || !entry.id) {
-      errors.push("sets 条目缺少 id");
-      continue;
-    }
-    if (entry.id.includes(".")) errors.push(`集合 ${entry.id} 的 id 不能含点`);
-    if (seen.has(entry.id)) errors.push(`集合 ${entry.id} 重复声明`);
-    seen.add(entry.id);
-    if (entry.version != null && typeof entry.version !== "string") {
-      errors.push(`集合 ${entry.id} 的 version 必须是字符串`);
-    }
-    if (entry.enabled != null && typeof entry.enabled !== "boolean") {
-      errors.push(`集合 ${entry.id} 的 enabled 必须是布尔`);
-    }
-  }
 }
 
 function validateLayout(node, id, errors) {

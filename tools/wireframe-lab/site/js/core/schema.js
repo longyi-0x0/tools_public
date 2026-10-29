@@ -171,11 +171,12 @@ export function slotNamesOf(node) {
   return node.slots.filter((name) => typeof name === "string" && name.length > 0);
 }
 
-export function setOf(document) {
-  const sets = Array.isArray(document?.sets) ? document.sets : [];
+/** 组件集由项目提供，页面只管结构。解析时把项目那份 sets 传进来。 */
+export function installedSets(sets) {
+  const list = Array.isArray(sets) ? sets : [];
   const installed = [];
   const declared = new Set();
-  for (const entry of sets) {
+  for (const entry of list) {
     if (!isPlainObject(entry) || typeof entry.id !== "string" || !entry.id) continue;
     declared.add(entry.id);
     if (entry.enabled === false) continue;
@@ -188,8 +189,8 @@ export function setOf(document) {
   return installed;
 }
 
-export function installedSetIds(document) {
-  return new Set(setOf(document).map((entry) => entry.id));
+export function installedSetIds(sets) {
+  return new Set(installedSets(sets).map((entry) => entry.id));
 }
 
 export function hasGapToken(value) {
