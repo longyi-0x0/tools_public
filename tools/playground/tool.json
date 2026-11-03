@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 2,
+  "type": "tool",
+  "name": "演练场",
+  "description": "按语言切换目录，左侧选条目，右侧按条目类型装配出编辑、预览、文档或练习工作区。",
+  "order": 0,
+  "kind": "h5",
+  "entry": "index.html",
+  "tags": [
+    "dev"
+  ],
+  "capabilities": []
+}
