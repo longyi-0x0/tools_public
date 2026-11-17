@@ -1,0 +1,20 @@
+/* reset 与全局字体（02 §8）：系统栈、零外部字体、零 CDN、零外链图片。 */
+*,*::before,*::after{box-sizing:border-box}
+html,body,#root{height:100%}
+body{
+  margin:0;
+  background:var(--pd-bg-1);
+  color:var(--pd-fg-1);
+  font-family:-apple-system,"Segoe UI","Noto Sans SC","Microsoft YaHei",sans-serif;
+  font-size:var(--pd-fs-3);
+  -webkit-font-smoothing:antialiased;
+}
+button{font:inherit;color:inherit;background:none;padding:0;border:0;cursor:pointer}
+input{font:inherit;color:inherit;background:none;border:0;padding:0}
+ul,ol{margin:0;padding:0;list-style:none}
+p{margin:0}
+h1,h2,h3{margin:0;font-weight:600}
+:focus-visible{outline:2px solid var(--pd-ring);outline-offset:2px}
+::-webkit-scrollbar{width:8px;height:8px}
+::-webkit-scrollbar-thumb{background:var(--pd-line-1);border-radius:999px}
+::-webkit-scrollbar-track{background:transparent}

@@ -1,0 +1,285 @@
+/* 画布与详情（03 §2.4 / 02 §3 组件 3、10、15、§3.1）：只用 tokens.css 的 50 个令牌，无裸 hex。 */
+
+/* 画板：网格 4px 实 / 5px 空的极淡虚线（02 §7 画布网格），本身不是 1px 分隔线 */
+.stage{
+  cursor:default;
+  background-image:
+    linear-gradient(var(--pd-line-1) 1px, transparent 1px),
+    linear-gradient(90deg, var(--pd-line-1) 1px, transparent 1px);
+  background-size:24px 24px;
+  background-position:0 0;
+  touch-action:none;
+}
+
+/* 节点卡（02 §3 组件 3 / §4）：无描边，选中 1.5px 主色环用 box-shadow。
+   卡片内容分两行：.node-head（编号 + 标题）+ .node-links（关联元素小胶囊，最多 3 个 + `+N`）。 */
+.node-card{
+  position:absolute;
+  display:flex;
+  flex-direction:column;
+  justify-content:center;
+  align-items:stretch;
+  gap:2px;
+  padding:0 var(--pd-sp-3);
+  background:var(--pd-bg-3);
+  border-radius:var(--pd-r-3);
+  box-shadow:var(--pd-sh-1);
+  cursor:grab;
+  user-select:none;
+}
+.node-head{display:flex;align-items:center;gap:var(--pd-sp-2);min-width:0}
+.node-links{display:flex;align-items:center;gap:4px;min-width:0;overflow:hidden}
+.node-link{
+  flex:none;
+  max-width:76px;
+  height:16px;
+  padding:0 6px;
+  border-radius:999px;
+  background:var(--pd-tint-bg);
+  color:var(--pd-tint-fg);
+  font-size:10px;
+  line-height:16px;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+.node-link:hover{box-shadow:var(--pd-sh-1)}
+.node-link-more{flex:none;padding:0 2px;font-size:10px;color:var(--pd-fg-3);font-variant-numeric:tabular-nums;white-space:nowrap}
+.node-card:hover{box-shadow:var(--pd-sh-2)}
+.node-card[data-dragging]{cursor:grabbing;box-shadow:var(--pd-sh-2);z-index:2}
+.node-card[data-core]{background:var(--pd-bg-2)}
+.node-card[data-selected]{box-shadow:0 0 0 1.5px var(--pd-accent), var(--pd-sh-1)}
+.node-code{font-size:var(--pd-fs-1);color:var(--pd-fg-3);font-variant-numeric:tabular-nums}
+.node-title{
+  min-width:0;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  font-size:var(--pd-fs-3);
+  color:var(--pd-fg-1);
+}
+.check-mark{
+  margin-left:auto;
+  display:grid;
+  place-items:center;
+  min-width:16px;
+  height:16px;
+  padding:0 4px;
+  border-radius:999px;
+  background:var(--pd-tint-bg);
+  color:var(--pd-tint-fg);
+  font-size:var(--pd-fs-1);
+  font-variant-numeric:tabular-nums;
+}
+
+/* 画布悬浮工具条（02 §3 组件 10）：高 30、胶囊、无边框、无 1px 直线 */
+.stage-tools{
+  position:absolute;
+  top:46px;
+  right:14px;
+  display:flex;
+  align-items:center;
+  gap:2px;
+  height:30px;
+  padding:0 var(--pd-sp-1);
+  border-radius:999px;
+  background:var(--pd-bg-3);
+  box-shadow:var(--pd-sh-2);
+  z-index:3;
+}
+.stage-tools button{
+  height:22px;
+  min-width:22px;
+  padding:0 var(--pd-sp-2);
+  border-radius:999px;
+  font-size:var(--pd-fs-1);
+  color:var(--pd-fg-2);
+  font-variant-numeric:tabular-nums;
+}
+.stage-tools button:hover{background:var(--pd-tint-bg);color:var(--pd-tint-fg)}
+
+/* 画布提示胶囊（02 §3 组件 15）：底部中央偏下，不拦鼠标 */
+.canvas-hint{
+  position:absolute;
+  bottom:20px;
+  left:50%;
+  transform:translateX(-50%);
+  display:flex;
+  align-items:center;
+  height:28px;
+  padding:0 12px;
+  border-radius:999px;
+  background:var(--pd-bg-3);
+  box-shadow:var(--pd-sh-1);
+  font-size:var(--pd-fs-2);
+  color:var(--pd-fg-3);
+  pointer-events:none;
+  z-index:3;
+}
+
+/* 连线模式提示条（03 §2.7）：比普通提示更亮，明确当前在连线 */
+.modebar{
+  position:absolute;
+  bottom:20px;
+  left:50%;
+  transform:translateX(-50%);
+  display:flex;
+  align-items:center;
+  height:28px;
+  padding:0 12px;
+  border-radius:999px;
+  background:var(--pd-bg-3);
+  box-shadow:var(--pd-sh-2);
+  font-size:var(--pd-fs-2);
+  color:var(--pd-tint-fg);
+  pointer-events:none;
+  z-index:3;
+}
+
+/* ---------- 解域领域模型（IMP3）：实体卡片、关系连线、空态卡 ---------- */
+.node-card.entity-card{
+  display:flex;
+  flex-direction:column;
+  align-items:stretch;
+  gap:4px;
+  padding:10px 12px;
+  overflow:hidden;
+}
+.node-card.entity-card[data-connect-source]{box-shadow:0 0 0 1.5px var(--pd-accent), var(--pd-sh-2)}
+.entity-head{display:flex;align-items:center;gap:6px;min-width:0}
+.entity-head .node-title{flex:1;font-weight:600}
+.entity-identity{font-size:var(--pd-fs-1);color:var(--pd-fg-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.entity-fields{list-style:none;display:flex;flex-direction:column;gap:2px;margin:0;padding:0;font-size:var(--pd-fs-1);color:var(--pd-fg-2);min-height:0;overflow:hidden}
+.entity-fields li{display:flex;align-items:center;gap:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.entity-fields .field-type{color:var(--pd-fg-3)}
+.entity-fields .field-req{color:var(--pd-fg-3);font-size:10px}
+.entity-tags{display:flex;flex-wrap:wrap;gap:4px;margin-top:auto}
+.tag{display:grid;place-items:center;height:18px;padding:0 6px;border-radius:999px;background:var(--pd-tint-bg);color:var(--pd-tint-fg);font-size:var(--pd-fs-1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.tag-constraint{background:var(--pd-bg-2);box-shadow:var(--pd-sh-1)}
+.tag[data-unsupported]{box-shadow:0 0 0 1px var(--pd-red-3)}
+.tag-support{margin-left:4px;font-size:10px;opacity:.75}
+.entity-card .support-badge{margin-left:0}
+.entity-card .check-mark{background:color-mix(in srgb,var(--pd-red-3) 14%,transparent);color:var(--pd-red-3)}
+
+/* 解域空态卡（01 §3.3 / 03 §2.7 ④）：画板正中，只有树与画布都空时出现 */
+.emptycard{
+  position:absolute;
+  left:50%;
+  top:50%;
+  transform:translate(-50%,-50%);
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  gap:var(--pd-sp-2);
+  padding:20px;
+  border-radius:var(--pd-r-3);
+  background:var(--pd-bg-3);
+  box-shadow:var(--pd-sh-2);
+  z-index:2;
+  text-align:center;
+}
+.emptycard .ghost-btn{margin-left:0}
+
+/* 详情栏（03 §2.4.4）：分组 = 嵌套淡色块 + 圆角 12，无边框；聚焦分组浮 1.5px 主色环 */
+.detail-body{flex:1;min-height:0;overflow:auto;gap:var(--pd-sp-2)}
+.dgroup{
+  display:flex;
+  flex-direction:column;
+  gap:var(--pd-sp-1);
+  padding:var(--pd-sp-2);
+  border-radius:var(--pd-r-3);
+  background:color-mix(in srgb,var(--pd-bg-1) 32%,var(--pd-bg-2));
+}
+.dgroup[data-focus="true"]{box-shadow:0 0 0 1.5px var(--pd-accent)}
+.dgroup-title{font-size:var(--pd-fs-1);color:var(--pd-fg-3)}
+.prop-row{
+  display:grid;
+  grid-template-columns:88px minmax(0,1fr);
+  align-items:center;
+  gap:var(--pd-sp-2);
+  min-height:28px;
+  font-size:var(--pd-fs-2);
+}
+.prop-row-list{align-items:start}
+.prop-label{color:var(--pd-fg-3);font-size:var(--pd-fs-1)}
+.prop-value{display:flex;align-items:center;gap:var(--pd-sp-2);color:var(--pd-fg-1);min-width:0}
+.prop-row input,.prop-row textarea{
+  width:100%;
+  padding:2px var(--pd-sp-1);
+  border-radius:var(--pd-r-1);
+  background:transparent;
+  color:var(--pd-fg-1);
+  font:inherit;
+  resize:vertical;
+}
+.prop-row input:focus,.prop-row textarea:focus{
+  background:var(--pd-bg-3);
+  outline:none;
+  box-shadow:0 0 0 1.5px var(--pd-ring);
+}
+.ghost-btn{
+  margin-left:auto;
+  height:20px;
+  padding:0 var(--pd-sp-2);
+  border-radius:999px;
+  font-size:var(--pd-fs-1);
+  color:var(--pd-fg-3);
+}
+.ghost-btn:hover{background:var(--pd-tint-bg);color:var(--pd-tint-fg)}
+
+/* 检查项（02 §3 组件 6）：行高 40、圆角 10、卡片底 + sh-1 */
+.check-item{
+  display:flex;
+  align-items:center;
+  gap:var(--pd-sp-2);
+  min-height:40px;
+  padding:0 var(--pd-sp-2);
+  border-radius:10px;
+  background:var(--pd-bg-3);
+  box-shadow:var(--pd-sh-1);
+  cursor:pointer;
+  font-size:var(--pd-fs-2);
+}
+.check-item:hover{box-shadow:var(--pd-sh-2)}
+.check-code{font-size:var(--pd-fs-1);color:var(--pd-fg-3)}
+.check-text{min-width:0;color:var(--pd-fg-2)}
+
+.status-picks{display:flex;flex-wrap:wrap;gap:var(--pd-sp-1)}
+.status-pick{
+  height:24px;
+  padding:0 var(--pd-sp-2);
+  border-radius:999px;
+  font-size:var(--pd-fs-1);
+  color:var(--pd-fg-2);
+}
+.status-pick[data-on="true"]{background:var(--pd-bg-3);color:var(--pd-fg-1);box-shadow:var(--pd-sh-1)}
+
+/* 右列信息行：父级路径（12px 弱字），已保存 11px 弱字 */
+.sb-path{font-size:var(--pd-fs-2);color:var(--pd-fg-3)}
+.sb-left{display:flex;align-items:center;gap:var(--pd-sp-2);min-width:0}
+.sb-title{font-size:calc(var(--pd-fs-4) + 1px);font-weight:600;color:var(--pd-fg-1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sb-none{font-size:var(--pd-fs-2);color:var(--pd-fg-2)}
+.sb-right{display:flex;align-items:center;gap:var(--pd-sp-2)}
+.saved{font-size:var(--pd-fs-1);color:var(--pd-fg-3)}
+
+/* 检查行是 <button>：贴左列底部，仍是「不是卡片」的观感（03 §2.2） */
+.check-footer{width:calc(100% - var(--pd-sp-3));text-align:left;background:none;box-shadow:none;border-radius:0}
+
+/* 严重度两档（02 §2.2）：错误红、提示琥珀；只有 6px 圆点用色 */
+.dot.s-error{background:var(--pd-red-3)}
+.dot.s-warning{background:var(--pd-amber-3)}
+
+/* 详情收起（03 §2.4.2）：右列第二列收到 0，不是缩成窄条 */
+.app[data-right="off"] .content{grid-template-columns:minmax(0,1fr) 0}
+.reopen-detail{
+  position:absolute;
+  right:0;
+  top:50%;
+  width:24px;
+  height:24px;
+  border-radius:999px;
+  background:var(--pd-bg-3);
+  box-shadow:var(--pd-sh-2);
+  color:var(--pd-fg-2);
+  z-index:3;
+}

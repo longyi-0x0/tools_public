@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 2,
+  "type": "tool",
+  "name": "问题域画板",
+  "description": "两域画板：先在问题域把模糊问题推成清晰的问题结构，拨一下切到解域推成领域模型。",
+  "kind": "h5",
+  "entry": "index.html",
+  "tags": ["问题域", "问题树", "领域模型", "建模"],
+  "capabilities": []
+}

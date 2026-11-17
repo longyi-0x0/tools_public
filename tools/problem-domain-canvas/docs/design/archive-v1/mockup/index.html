@@ -1,0 +1,768 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>问题域思考画板 · 静态视觉稿（5 屏 · 选课样例）</title>
+<!--
+  问题域思考画板 · UI 合成稿的静态视觉件（03-ui.md §0）
+  - 纯 HTML/CSS，无构建、无外部请求；切 tab 只有 8 行脚本（只改 data-view）
+  - 数据硬编码自 01-product.md §5.9「选课问题域」样例
+  - 令牌全部来自 02-design-system.md §2.9（mockup.css 顶部照抄，同一套十六进制）
+  - 不进 site/，不进产物
+-->
+<link rel="stylesheet" href="mockup.css">
+<style>html, body { margin: 0; height: 100%; background: #11151A; }</style>
+</head>
+<body>
+
+<!-- 图标与箭头：全部内联 SVG，currentColor / 令牌着色（02 §8.5 R2/R3） -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <defs>
+    <symbol id="i-core" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="8" cy="8" r="1.6" fill="currentColor"/></symbol>
+    <symbol id="i-q" viewBox="0 0 16 16"><path d="M6 5.6a2 2 0 1 1 2.9 1.8c-.6.3-.9.8-.9 1.4v.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="8" cy="12.4" r=".9" fill="currentColor"/></symbol>
+    <symbol id="i-person" viewBox="0 0 16 16"><circle cx="8" cy="5" r="2.4" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M3.6 13c0-2.2 2-3.4 4.4-3.4S12.4 10.8 12.4 13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></symbol>
+    <symbol id="i-frame" viewBox="0 0 16 16"><path d="M3 6V3.6h2.6M13 6V3.6h-2.6M3 10v2.4h2.6M13 10v2.4h-2.6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></symbol>
+    <symbol id="i-diamond" viewBox="0 0 16 16"><path d="M8 2.5 13.5 8 8 13.5 2.5 8z" fill="none" stroke="currentColor" stroke-width="1.5"/></symbol>
+    <symbol id="i-shield" viewBox="0 0 16 16"><path d="M8 2.4 13 4.4v4c0 2.6-2.2 4.4-5 5.6-2.8-1.2-5-3-5-5.6v-4z" fill="none" stroke="currentColor" stroke-width="1.5"/></symbol>
+    <symbol id="i-bolt" viewBox="0 0 16 16"><path d="M9 2 4.6 9H8l-1 5 4.4-7H8z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></symbol>
+    <symbol id="i-quote" viewBox="0 0 16 16"><path d="M5.4 5.4c-1.3 0-2.2 1-2.2 2.3 0 1.2.9 2.1 2 2.1.3 0 .5 0 .7-.1-.2 1.1-1 1.9-2 2.3M12 5.4c-1.3 0-2.2 1-2.2 2.3 0 1.2.9 2.1 2 2.1.3 0 .5 0 .7-.1-.2 1.1-1 1.9-2 2.3" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></symbol>
+    <symbol id="i-search" viewBox="0 0 16 16"><circle cx="7" cy="7" r="4" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="m10.2 10.2 3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></symbol>
+    <symbol id="i-info" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M8 7v4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="8" cy="4.9" r=".8" fill="currentColor"/></symbol>
+
+    <marker id="tri-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path class="mk-a" d="M0 0 8 4 0 8z"/></marker>
+    <marker id="tri-b" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path class="mk-b" d="M0 0 8 4 0 8z"/></marker>
+    <marker id="tri-c" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path class="mk-c" d="M0 0 8 4 0 8z"/></marker>
+    <marker id="open-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="mk-open-a" d="M0 0 8 4 0 8"/></marker>
+    <marker id="open-b" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="mk-open-b" d="M0 0 8 4 0 8"/></marker>
+    <marker id="open-c" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="mk-open-c" d="M0 0 8 4 0 8"/></marker>
+    <marker id="dot-a" viewBox="0 0 8 8" refX="4" refY="4" markerWidth="8" markerHeight="8"><circle class="mk-dot-a" cx="4" cy="4" r="2.6"/></marker>
+    <marker id="dot-b" viewBox="0 0 8 8" refX="4" refY="4" markerWidth="8" markerHeight="8"><circle class="mk-dot-b" cx="4" cy="4" r="2.6"/></marker>
+    <marker id="dot-c" viewBox="0 0 8 8" refX="4" refY="4" markerWidth="8" markerHeight="8"><circle class="mk-dot-c" cx="4" cy="4" r="2.6"/></marker>
+    <marker id="cap-b" viewBox="0 0 8 8" refX="4" refY="4" markerWidth="8" markerHeight="8"><path class="mk-cap-b" d="M4 0V8"/></marker>
+    <marker id="cap-c" viewBox="0 0 8 8" refX="4" refY="4" markerWidth="8" markerHeight="8"><path class="mk-cap-c" d="M4 0V8"/></marker>
+  </defs>
+</svg>
+
+<div class="pd-app" data-view="overview">
+
+  <!-- ============ 顶栏（pd-topbar 64px，5 个 tab：D6） ============ -->
+  <header class="pd-topbar">
+    <div class="pd-worktitle">
+      <div class="pd-worktitle-name">选课问题域</div>
+      <div class="pd-worktitle-goal">核心问题：如何正确处理选课？</div>
+    </div>
+    <nav class="pd-tabs" role="tablist" aria-label="视图">
+      <button class="pd-tab" role="tab" data-goto="overview" aria-selected="true">问题总览<span class="pd-tab-count">17</span></button>
+      <button class="pd-tab" role="tab" data-goto="detail" aria-selected="false">详情</button>
+      <button class="pd-tab" role="tab" data-goto="deps" aria-selected="false">依赖与组合<span class="pd-tab-count">7</span></button>
+      <button class="pd-tab" role="tab" data-goto="elements" aria-selected="false">领域元素<span class="pd-tab-count">10</span></button>
+      <button class="pd-tab" role="tab" data-goto="model" aria-selected="false">领域模型<span class="pd-tab-count">5</span></button>
+    </nav>
+    <div class="pd-actions">
+      <button class="pd-toolbtn"><svg class="pd-ico" width="16" height="16" aria-hidden="true"><use href="#i-search"/></svg>搜索</button>
+      <button class="pd-checkbadge" title="7 条规则命中 · 9 个节点 · 1 条阻断">⛔<span class="b">1</span>·⚠<span class="w">6</span></button>
+      <span class="pd-savestate">已保存 · 刚刚</span>
+      <button class="pd-toolbtn primary">导出</button>
+    </div>
+  </header>
+
+  <!-- ==================================================================
+       S1 问题总览
+       ================================================================== -->
+  <main class="pd-screen" data-screen="overview" role="tabpanel" aria-label="问题总览">
+    <aside class="pd-nav" aria-label="问题导航">
+      <div class="pd-nav-group">
+        <div class="pd-nav-title">核心问题<span class="pd-nav-count">2</span></div>
+        <div class="pd-navitem is-core"><span class="pd-nav-code">P0</span><span class="pd-nav-label">如何正确处理选课？</span><span class="pd-sdot" data-state="analyzing"></span></div>
+        <div class="pd-navitem is-core"><span class="pd-nav-code">P5</span><span class="pd-nav-label">成绩与绩点如何联动</span><span class="pd-badge warn">C5</span><span class="pd-sdot" data-state="open"></span></div>
+      </div>
+      <div class="pd-nav-group">
+        <div class="pd-nav-title">问题<span class="pd-nav-count">4</span></div>
+        <div class="pd-navitem"><span class="pd-chev">▾</span><span class="pd-nav-code">P1</span><span class="pd-nav-label">选课资格如何判定</span><span class="pd-sdot" data-state="analyzing"></span></div>
+        <div class="pd-navitem pd-ind1"><span class="pd-nav-code">P1.2</span><span class="pd-nav-label">时间冲突如何检测</span><span class="pd-badge err">C1</span><span class="pd-sdot" data-state="clarified"></span></div>
+        <div class="pd-navitem is-active"><span class="pd-nav-code">P1.1</span><span class="pd-nav-label">课容量够不够</span><span class="pd-sdot" data-state="clarified"></span></div>
+        <div class="pd-navitem"><span class="pd-nav-code">P2</span><span class="pd-nav-label">选课状态如何更新</span><span class="pd-sdot" data-state="answered"></span></div>
+      </div>
+      <div class="pd-nav-group pd-nav-open">
+        <div class="pd-nav-title">待澄清事项<span class="pd-nav-count">1</span></div>
+        <div class="pd-navitem"><span class="pd-nav-code">T1</span><span class="pd-nav-label">走班制下选课怎么算</span><span class="pd-badge warn">C3</span><span class="pd-sdot" data-state="open"></span></div>
+      </div>
+    </aside>
+
+    <section class="pd-stage">
+      <div class="pd-canvas">
+        <div class="pd-canvas-head">问题与领域元素<span class="sub">17 个节点 · 14 条边 · 缩放 80%</span></div>
+        <div class="pd-band-label" style="left:760px;top:694px;">领域元素（按类型分组摆放，共 9 个）</div>
+        <div class="pd-world">
+          <svg class="pd-edges" width="1080" height="950" aria-hidden="true">
+            <path class="pd-edge rel-a" d="M540 620 L540 564" marker-end="url(#tri-a)"/>
+            <path class="pd-edge rel-a" d="M424 530 L270 432" marker-start="url(#dot-a)" marker-end="url(#tri-a)"/>
+            <path class="pd-edge rel-a" d="M382 400 L796 528" marker-start="url(#dot-a)" marker-end="url(#tri-a)"/>
+            <path class="pd-edge rel-a" d="M540 500 L712 404" marker-end="url(#tri-a)"/>
+            <path class="pd-edge rel-a dash-2-4" d="M382 382 L600 368" marker-start="url(#dot-a)" marker-end="url(#dot-a)"/>
+            <path class="pd-edge rel-b" d="M520 560 L556 724" marker-end="url(#open-b)"/>
+            <path class="pd-edge rel-b" d="M390 660 L202 748" marker-end="url(#open-b)"/>
+            <path class="pd-edge rel-b" d="M440 560 L336 720" marker-end="url(#open-b)"/>
+            <path class="pd-edge rel-b dash-4-3" d="M220 430 L142 798" marker-end="url(#cap-b)"/>
+            <path class="pd-edge rel-b dash-1-3" d="M660 696 L830 804" marker-end="url(#dot-b)"/>
+            <path class="pd-edge rel-b" d="M900 560 L626 804" marker-start="url(#dot-b)" marker-end="url(#tri-b)"/>
+            <path class="pd-edge rel-c dash-4-3" d="M246 828 L496 760" marker-end="url(#cap-c)"/>
+            <path class="pd-edge rel-c w-125" d="M230 750 L202 750" marker-end="url(#open-c)"/>
+            <path class="pd-edge rel-c" d="M530 830 L556 772" marker-start="url(#tri-c)" marker-end="url(#tri-c)"/>
+          </svg>
+
+          <div class="pd-edge-label" style="left:546px;top:584px;">分解为</div>
+          <div class="pd-edge-label" style="left:300px;top:466px;">依赖于</div>
+          <div class="pd-edge-label" style="left:556px;top:452px;">受约于</div>
+          <div class="pd-edge-label" style="left:606px;top:440px;">分解为</div>
+          <div class="pd-edge-label bare" style="left:452px;top:350px;">共享课表状态</div>
+          <div class="pd-edge-label bare" style="left:500px;top:636px;">关注概念</div>
+          <div class="pd-edge-label bare" style="left:246px;top:700px;">涉及参与者</div>
+          <div class="pd-edge-label bare" style="left:348px;top:640px;">发生于场景</div>
+          <div class="pd-edge-label" style="left:150px;top:606px;">受规则约束</div>
+          <div class="pd-edge-label bare" style="left:700px;top:738px;">由示例说明</div>
+          <div class="pd-edge-label" style="left:724px;top:676px;">由事件触发</div>
+          <div class="pd-edge-label" style="left:300px;top:786px;">约束概念</div>
+          <div class="pd-edge-label bare" style="left:146px;top:760px;">涉及参与者</div>
+          <div class="pd-edge-label" style="left:462px;top:786px;">改变概念状态</div>
+
+          <!-- 问题节点（父在下、子在上：D7） -->
+          <div class="pd-node pd-node-problem" data-kind-variant="core" data-state="analyzing" style="left:390px;top:620px;">
+            <svg class="pd-ico" aria-hidden="true"><use href="#i-core"/></svg>
+            <div class="pd-node-body"><div class="pd-node-label">如何正确处理选课？</div><div class="pd-node-meta">P0 · 分析中 · 3 条关联</div></div>
+            <span class="pd-sdot pd-node-sdot" data-state="analyzing"></span>
+          </div>
+          <div class="pd-node pd-node-problem" data-kind-variant="sub" data-state="analyzing" style="left:424px;top:500px;">
+            <svg class="pd-ico" aria-hidden="true"><use href="#i-q"/></svg>
+            <div class="pd-node-body"><div class="pd-node-label">选课资格如何判定</div><div class="pd-node-meta">P1 · 分析中</div></div>
+            <span class="pd-sdot pd-node-sdot" data-state="analyzing"></span>
+          </div>
+          <div class="pd-node pd-node-problem" data-kind-variant="sub" data-state="answered" style="left:800px;top:500px;">
+            <svg class="pd-ico" aria-hidden="true"><use href="#i-q"/></svg>
+            <div class="pd-node-body"><div class="pd-node-label">选课状态如何更新</div><div class="pd-node-meta">P2 · 已回答</div></div>
+            <span class="pd-sdot pd-node-sdot" data-state="answered"></span>
+          </div>
+          <div class="pd-node pd-node-problem" data-kind-variant="sub" data-state="clarified" data-selected="primary" style="left:150px;top:370px;">
+            <svg class="pd-ico" aria-hidden="true"><use href="#i-q"/></svg>
+            <div class="pd-node-body"><div class="pd-node-label">课容量够不够</div><div class="pd-node-meta">P1.1 · 已澄清</div></div>
+            <span class="pd-sdot pd-node-sdot" data-state="clarified"></span>
+          </div>
+          <div class="pd-node pd-node-problem" data-kind-variant="sub" data-state="clarified" style="left:600px;top:340px;">
+            <svg class="pd-ico" aria-hidden="true"><use href="#i-q"/></svg>
+            <div class="pd-node-body"><div class="pd-node-label">时间冲突如何检测</div><div class="pd-node-meta">P1.2 · 已澄清</div></div>
+            <span class="pd-node-flag err">C1</span>
+            <span class="pd-sdot pd-node-sdot" data-state="clarified"></span>
+          </div>
+          <div class="pd-node pd-node-problem" data-kind-variant="open" data-state="open" style="left:820px;top:60px;">
+            <svg class="pd-ico" aria-hidden="true"><use href="#i-q"/></svg>
+            <div class="pd-node-body"><div class="pd-node-label">走班制下选课怎么算</div><div class="pd-node-meta">T1 · 未澄清</div></div>
+            <span class="pd-node-flag">C3</span>
+            <span class="pd-sdot pd-node-sdot" data-state="open"></span>
+          </div>
+          <div class="pd-node pd-node-problem" data-kind-variant="core" data-state="open" style="left:820px;top:190px;">
+            <svg class="pd-ico" aria-hidden="true"><use href="#i-core"/></svg>
+            <div class="pd-node-body"><div class="pd-node-label">成绩与绩点如何联动</div><div class="pd-node-meta">P5 · 未澄清</div></div>
+            <span class="pd-node-flag">C5</span>
+            <span class="pd-sdot pd-node-sdot" data-state="open"></span>
+          </div>
+
+          <!-- 领域元素（按类型分组摆在下方） -->
+          <div class="pd-node pd-node-actor" style="left:30px;top:730px;">
+            <span class="pd-iconchip"><svg class="pd-ico" aria-hidden="true"><use href="#i-person"/></svg></span>
+            <div class="pd-node-body"><div class="pd-node-label">学生</div><div class="pd-node-meta">external · 提交选课</div></div>
+          </div>
+          <div class="pd-node pd-node-scene" style="left:230px;top:722px;">
+            <svg class="pd-ico" aria-hidden="true"><use href="#i-frame"/></svg>
+            <div class="pd-node-body"><div class="pd-node-label">提交选课</div><div class="pd-node-meta">触发：选课周开放后</div></div>
+          </div>
+          <div class="pd-node pd-node-concept" style="left:470px;top:726px;">
+            <svg class="pd-ico" aria-hidden="true"><use href="#i-diamond"/></svg>
+            <div class="pd-node-body"><div class="pd-node-label">选课记录</div><div class="pd-node-meta">一次有效占用</div></div>
+          </div>
+          <div class="pd-node pd-node-concept" style="left:690px;top:726px;">
+            <svg class="pd-ico" aria-hidden="true"><use href="#i-diamond"/></svg>
+            <div class="pd-node-body"><div class="pd-node-label">绩点</div><div class="pd-node-meta">成绩按学分加权</div></div>
+            <span class="pd-node-flag">C6</span>
+          </div>
+          <div class="pd-node pd-node-rule" style="left:30px;top:800px;">
+            <svg class="pd-ico" aria-hidden="true"><use href="#i-shield"/></svg>
+            <div class="pd-node-body"><div class="pd-node-label">容量规则</div><div class="pd-node-meta">constraint · system</div></div>
+          </div>
+          <div class="pd-node pd-node-rule" style="left:280px;top:800px;">
+            <svg class="pd-ico" aria-hidden="true"><use href="#i-shield"/></svg>
+            <div class="pd-node-body"><div class="pd-node-label">先修规则</div><div class="pd-node-meta">constraint · system</div></div>
+            <span class="pd-node-flag">C7</span>
+          </div>
+          <div class="pd-node pd-node-event" style="left:530px;top:806px;">
+            <svg class="pd-ico" aria-hidden="true"><use href="#i-bolt"/></svg>
+            <div class="pd-node-body"><div class="pd-node-label">名额变更</div><div class="pd-node-meta">教务调容量</div></div>
+          </div>
+          <div class="pd-node pd-node-example" style="left:750px;top:806px;">
+            <svg class="pd-ico" aria-hidden="true"><use href="#i-quote"/></svg>
+            <div class="pd-node-body"><div class="pd-node-label">容量 60 已选 59</div><div class="pd-node-meta">good</div></div>
+          </div>
+          <div class="pd-node pd-node-example" style="left:30px;top:880px;">
+            <svg class="pd-ico" aria-hidden="true"><use href="#i-quote"/></svg>
+            <div class="pd-node-body"><div class="pd-node-label">走班制共用教室</div><div class="pd-node-meta">edge · 待挂靠</div></div>
+            <span class="pd-node-flag">C9</span>
+          </div>
+          <div class="pd-node pd-node-note" style="left:230px;top:880px;">
+            <svg class="pd-ico" aria-hidden="true"><use href="#i-quote"/></svg>
+            <div class="pd-node-body"><div class="pd-node-label">备忘：退课口径未定</div><div class="pd-node-meta">工作区级备注</div></div>
+          </div>
+        </div>
+
+        <div class="pd-capsule summary">
+          <span>⛔ <span class="b">1 阻断</span> · ⚠ <span class="w">6 提示</span></span>
+          <span class="sep"></span>
+          <span>关联：<span class="chip">学生</span>｜<span class="chip">提交选课</span>｜<span class="chip">容量规则</span></span>
+          <span class="sep"></span>
+          <span>检查</span>
+        </div>
+        <div class="pd-zoom"><button aria-label="缩小">−</button><span class="val">80%</span><button aria-label="放大">+</button><button aria-label="适配内容">⤢</button></div>
+      </div>
+    </section>
+
+    <aside class="pd-insp" aria-label="节点属性与检查">
+      <section class="pd-insp-group">
+        <div class="pd-insp-title">属性 · 已选中 1 项</div>
+        <div class="pd-prop-row"><span class="pd-k">标题</span><span class="pd-v strong">课容量够不够</span></div>
+        <div class="pd-prop-row"><span class="pd-k">类型</span><span class="pd-v">子问题（question.sub）</span></div>
+        <div class="pd-prop-row"><span class="pd-k">编号</span><span class="pd-v pd-mono">P1.1</span></div>
+        <div class="pd-prop-row"><span class="pd-k">状态</span><span class="pd-v"><span class="pd-sdot" data-state="clarified"></span> 已澄清</span></div>
+        <div class="pd-prop-row"><span class="pd-k">范围</span><span class="pd-v mute">未定</span></div>
+        <div class="pd-prop-row multi"><span class="pd-k">问题陈述</span><span class="pd-v">一个教学班还剩多少名额，什么时候算占用？</span></div>
+        <div class="pd-prop-row multi"><span class="pd-k">目标</span><span class="pd-v">名额判定不含糊，不出现超选。</span></div>
+        <div class="pd-prop-row multi"><span class="pd-k">答案形式</span><span class="pd-v">判定 · 已选人数 + 1 ≤ 容量</span></div>
+        <div class="pd-prop-row"><span class="pd-k">判定标准</span><span class="pd-v">2 条</span></div>
+        <div class="pd-prop-row"><span class="pd-k">正例 / 反例</span><span class="pd-v">1 / 1</span></div>
+        <div class="pd-prop-row multi"><span class="pd-k">备注</span><span class="pd-v">并发口径待与开发确认</span></div>
+        <div class="pd-prop-row multi"><span class="pd-k">关联节点</span><span class="pd-v"><span class="pd-tag accent">P1 分解为</span> <span class="pd-tag accent">P2 依赖于</span> <span class="pd-tag accent">容量规则</span></span></div>
+      </section>
+      <section class="pd-insp-group">
+        <div class="pd-insp-title">检查<span class="pd-nav-count">9</span><span class="pd-badge err">1</span></div>
+        <div class="pd-check-item"><span class="pd-sev-ico" data-sev="blocker">!</span><div class="pd-check-text"><div class="pd-check-line1">阻断· 判定标准未填</div><div class="pd-check-desc">C1 · P1.2 已标已澄清，判定标准为空</div></div><button class="pd-locate">定位</button></div>
+        <div class="pd-check-item"><span class="pd-sev-ico" data-sev="warning">!</span><div class="pd-check-text"><div class="pd-check-line1">警告· 缺反例</div><div class="pd-check-desc">C2 · P1.2 只有正例，没有反例</div></div><button class="pd-locate">定位</button></div>
+        <div class="pd-check-item"><span class="pd-sev-ico" data-sev="warning">!</span><div class="pd-check-text"><div class="pd-check-line1">警告· 缺反例</div><div class="pd-check-desc">C2 · P5 是核心问题，没有反例</div></div><button class="pd-locate">定位</button></div>
+        <div class="pd-check-item"><span class="pd-sev-ico" data-sev="warning">!</span><div class="pd-check-text"><div class="pd-check-line1">警告· 孤立问题</div><div class="pd-check-desc">C3 · T1 没有任何 A 组连线</div></div><button class="pd-locate">定位</button></div>
+        <div class="pd-check-item"><span class="pd-sev-ico" data-sev="warning">!</span><div class="pd-check-text"><div class="pd-check-line1">警告· 孤立问题</div><div class="pd-check-desc">C3 · P5 没有任何 A 组连线</div></div><button class="pd-locate">定位</button></div>
+        <div class="pd-check-item"><span class="pd-sev-ico" data-sev="warning">!</span><div class="pd-check-text"><div class="pd-check-line1">警告· 核心问题未分解</div><div class="pd-check-desc">C5 · P5 没有 decomposesTo 出边</div></div><button class="pd-locate">定位</button></div>
+        <div class="pd-check-item"><span class="pd-sev-ico" data-sev="hint">i</span><div class="pd-check-text"><div class="pd-check-line1">提示· 概念未挂问题</div><div class="pd-check-desc">C6 · 绩点 没有 concernsConcept 入边</div></div><button class="pd-locate">定位</button></div>
+        <div class="pd-check-item"><span class="pd-sev-ico" data-sev="hint">i</span><div class="pd-check-text"><div class="pd-check-line1">提示· 规则未挂问题</div><div class="pd-check-desc">C7 · 先修规则 没有 constrainedByRule 入边</div></div><button class="pd-locate">定位</button></div>
+        <div class="pd-check-item"><span class="pd-sev-ico" data-sev="hint">i</span><div class="pd-check-text"><div class="pd-check-line1">提示· 示例未挂靠</div><div class="pd-check-desc">C9 · 走班制共用教室 没有 illustratedByExample 入边</div></div><button class="pd-locate">定位</button></div>
+        <div class="pd-prop-row"><span class="pd-k">C4 / C8</span><span class="pd-v mute">0（未命中）</span></div>
+      </section>
+    </aside>
+  </main>
+
+  <!-- ==================================================================
+       S2 单问题详情
+       ================================================================== -->
+  <main class="pd-screen" data-screen="detail" role="tabpanel" aria-label="单问题详情">
+    <aside class="pd-nav" aria-label="问题导航">
+      <div class="pd-nav-group">
+        <div class="pd-nav-title">核心问题<span class="pd-nav-count">2</span></div>
+        <div class="pd-navitem is-core"><span class="pd-nav-code">P0</span><span class="pd-nav-label">如何正确处理选课？</span><span class="pd-sdot" data-state="analyzing"></span></div>
+        <div class="pd-navitem is-core"><span class="pd-nav-code">P5</span><span class="pd-nav-label">成绩与绩点如何联动</span><span class="pd-badge warn">C5</span><span class="pd-sdot" data-state="open"></span></div>
+      </div>
+      <div class="pd-nav-group">
+        <div class="pd-nav-title">问题<span class="pd-nav-count">4</span></div>
+        <div class="pd-navitem"><span class="pd-chev">▾</span><span class="pd-nav-code">P1</span><span class="pd-nav-label">选课资格如何判定</span><span class="pd-sdot" data-state="analyzing"></span></div>
+        <div class="pd-navitem pd-ind1 is-active"><span class="pd-nav-code">P1.2</span><span class="pd-nav-label">时间冲突如何检测</span><span class="pd-badge err">C1</span><span class="pd-sdot" data-state="clarified"></span></div>
+        <div class="pd-navitem"><span class="pd-nav-code">P1.1</span><span class="pd-nav-label">课容量够不够</span><span class="pd-sdot" data-state="clarified"></span></div>
+        <div class="pd-navitem"><span class="pd-nav-code">P2</span><span class="pd-nav-label">选课状态如何更新</span><span class="pd-sdot" data-state="answered"></span></div>
+      </div>
+      <div class="pd-nav-group pd-nav-open">
+        <div class="pd-nav-title">待澄清事项<span class="pd-nav-count">1</span></div>
+        <div class="pd-navitem"><span class="pd-nav-code">T1</span><span class="pd-nav-label">走班制下选课怎么算</span><span class="pd-badge warn">C3</span><span class="pd-sdot" data-state="open"></span></div>
+      </div>
+    </aside>
+
+    <section class="pd-stage">
+      <div class="pd-doc">
+        <div class="pd-doc-inner">
+          <div class="pd-doc-crumb">P1.2 · question.sub</div>
+          <h1 class="pd-doc-title">时间冲突如何检测</h1>
+          <div class="pd-doc-badges">
+            <span class="pd-chip"><span class="pd-sdot" data-state="clarified"></span>已澄清</span>
+            <span class="pd-chip">子问题</span>
+            <span class="pd-chip">范围 未定</span>
+          </div>
+          <div class="pd-actionrow">
+            <button class="pd-btn">退回分析中</button>
+            <button class="pd-btn primary">标记已回答</button>
+            <button class="pd-btn">导出这张卡</button>
+          </div>
+          <div class="pd-inline-tip">
+            <span class="pd-sev-ico" data-sev="blocker">!</span>
+            <span>这条已经标成已澄清，但判定标准还空着。补上判定标准，或者把它退回分析中。<b>C1</b></span>
+          </div>
+
+          <div class="pd-fieldset">
+            <h3>陈述与目标</h3>
+            <div class="pd-field"><div class="pd-k">问题陈述</div><div class="pd-v">学生已选课表与待选课时间重叠时怎么办？</div></div>
+            <div class="pd-field"><div class="pd-k">目标</div><div class="pd-v">冲突不进课表，且给出可读原因。</div></div>
+          </div>
+          <div class="pd-fieldset">
+            <h3>场景与边界</h3>
+            <div class="pd-field"><div class="pd-k">场景（速记）</div><div class="pd-v">提交选课</div></div>
+            <div class="pd-field"><div class="pd-k">范围与边界</div><div class="pd-v">只看时段重叠，不管地点。</div></div>
+            <div class="pd-field"><div class="pd-k">已知条件</div><div class="pd-v">一门课有周次与节次</div></div>
+            <div class="pd-field"><div class="pd-k">假设与约束</div><div class="pd-v mute">未填</div></div>
+          </div>
+          <div class="pd-fieldset">
+            <h3>答案形式与判定标准</h3>
+            <div class="pd-field"><div class="pd-k">答案形式</div><div class="pd-v">判定 · 两门课的周次与节次有交集即冲突</div></div>
+            <div class="pd-field"><div class="pd-k">判定标准</div><div class="pd-v err">未填 · C1 命中：已标已澄清但判定标准为空</div></div>
+          </div>
+          <div class="pd-fieldset">
+            <h3>示例与备注</h3>
+            <div class="pd-field"><div class="pd-k">正例（1 条）</div><div class="pd-v">两门课同一节次 → 拒绝</div></div>
+            <div class="pd-field"><div class="pd-k">反例（0 条）</div><div class="pd-v err">缺少：反例 · C2 命中</div></div>
+            <div class="pd-field"><div class="pd-k">备注</div><div class="pd-v mute">无</div></div>
+            <div class="pd-field"><div class="pd-k">答案</div><div class="pd-v mute">要标已回答，先写下结论</div></div>
+          </div>
+          <div class="pd-fieldset">
+            <h3>关系清单（与该问题相连的 4 条边）</h3>
+            <div class="pd-rel-list">
+              <div class="pd-rel-line"><span class="dot" style="background:var(--pd-rel-problem)"></span><span class="rel">分解为</span><span>← P1 选课资格如何判定</span></div>
+              <div class="pd-rel-line"><span class="dot" style="background:var(--pd-rel-problem)"></span><span class="rel">共享状态</span><span>↔ P1.1 课容量够不够</span></div>
+              <div class="pd-rel-line"><span class="dot" style="background:var(--pd-rel-bridge)"></span><span class="rel">发生于场景</span><span>→ 提交选课</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <aside class="pd-insp" aria-label="节点属性与检查">
+      <section class="pd-insp-group">
+        <div class="pd-insp-title">标识</div>
+        <div class="pd-prop-row"><span class="pd-k">类型</span><span class="pd-v">子问题</span></div>
+        <div class="pd-prop-row"><span class="pd-k">编号</span><span class="pd-v pd-mono">P1.2</span></div>
+        <div class="pd-prop-row"><span class="pd-k">状态</span><span class="pd-v"><span class="pd-sdot" data-state="clarified"></span> 已澄清</span></div>
+        <div class="pd-prop-row"><span class="pd-k">范围</span><span class="pd-v mute">未定</span></div>
+      </section>
+      <section class="pd-insp-group">
+        <div class="pd-insp-title">陈述与目标</div>
+        <div class="pd-prop-row multi"><span class="pd-k">问题陈述</span><span class="pd-v">学生已选课表与待选课时间重叠时怎么办？</span></div>
+        <div class="pd-prop-row multi"><span class="pd-k">目标</span><span class="pd-v">冲突不进课表，且给出可读原因。</span></div>
+      </section>
+      <section class="pd-insp-group">
+        <div class="pd-insp-title">场景与边界</div>
+        <div class="pd-prop-row"><span class="pd-k">场景</span><span class="pd-v">提交选课</span></div>
+        <div class="pd-prop-row multi"><span class="pd-k">边界</span><span class="pd-v">只看时段重叠，不管地点。</span></div>
+        <div class="pd-prop-row"><span class="pd-k">已知条件</span><span class="pd-v">1 条</span></div>
+        <div class="pd-prop-row"><span class="pd-k">假设</span><span class="pd-v mute">未填</span></div>
+      </section>
+      <section class="pd-insp-group">
+        <div class="pd-insp-title">答案形式与标准</div>
+        <div class="pd-prop-row multi"><span class="pd-k">答案形式</span><span class="pd-v">判定 · 周次与节次有交集即冲突</span></div>
+        <div class="pd-prop-row multi"><span class="pd-k">判定标准</span><span class="pd-v err">判定标准：未填</span></div>
+      </section>
+      <section class="pd-insp-group">
+        <div class="pd-insp-title">示例与备注</div>
+        <div class="pd-prop-row"><span class="pd-k">正例</span><span class="pd-v">1 条</span></div>
+        <div class="pd-prop-row"><span class="pd-k">反例</span><span class="pd-v warn">缺少：反例</span></div>
+        <div class="pd-prop-row"><span class="pd-k">备注</span><span class="pd-v mute">无</span></div>
+        <div class="pd-prop-row"><span class="pd-k">答案</span><span class="pd-v mute">未填</span></div>
+      </section>
+      <section class="pd-insp-group">
+        <div class="pd-insp-title">工作区边界（inScope / outOfScope）</div>
+        <div class="pd-prop-row multi"><span class="pd-k">范围内</span><span class="pd-v"><span class="pd-tag">本科生学期选课</span> <span class="pd-tag">容量与时间冲突两类检查</span></span></div>
+        <div class="pd-prop-row multi"><span class="pd-k">范围外</span><span class="pd-v"><span class="pd-tag">退课与重修</span> <span class="pd-tag">绩点计算</span></span></div>
+      </section>
+      <section class="pd-insp-group">
+        <div class="pd-insp-title">检查<span class="pd-nav-count">9</span><span class="pd-badge err">1</span></div>
+        <div class="pd-check-item"><span class="pd-sev-ico" data-sev="blocker">!</span><div class="pd-check-text"><div class="pd-check-line1">阻断· 判定标准未填</div><div class="pd-check-desc">C1 · P1.2 已标已澄清，判定标准为空</div></div><button class="pd-locate">定位</button></div>
+        <div class="pd-check-item"><span class="pd-sev-ico" data-sev="warning">!</span><div class="pd-check-text"><div class="pd-check-line1">警告· 缺反例</div><div class="pd-check-desc">C2 · P1.2 只有正例，没有反例</div></div><button class="pd-locate">定位</button></div>
+        <div class="pd-prop-row"><span class="pd-k">其余 7 条</span><span class="pd-v mute">本对象未命中</span></div>
+      </section>
+    </aside>
+  </main>
+
+  <!-- ==================================================================
+       S3 依赖与组合
+       ================================================================== -->
+  <main class="pd-screen" data-screen="deps" role="tabpanel" aria-label="依赖与组合">
+    <aside class="pd-nav" aria-label="问题导航">
+      <div class="pd-nav-group">
+        <div class="pd-nav-title">核心问题<span class="pd-nav-count">2</span></div>
+        <div class="pd-navitem is-core"><span class="pd-nav-code">P0</span><span class="pd-nav-label">如何正确处理选课？</span><span class="pd-sdot" data-state="analyzing"></span></div>
+        <div class="pd-navitem is-core"><span class="pd-nav-code">P5</span><span class="pd-nav-label">成绩与绩点如何联动</span><span class="pd-badge warn">C5</span><span class="pd-sdot" data-state="open"></span></div>
+      </div>
+      <div class="pd-nav-group">
+        <div class="pd-nav-title">问题<span class="pd-nav-count">4</span></div>
+        <div class="pd-navitem"><span class="pd-chev">▾</span><span class="pd-nav-code">P1</span><span class="pd-nav-label">选课资格如何判定</span><span class="pd-sdot" data-state="analyzing"></span></div>
+        <div class="pd-navitem pd-ind1"><span class="pd-nav-code">P1.2</span><span class="pd-nav-label">时间冲突如何检测</span><span class="pd-badge err">C1</span><span class="pd-sdot" data-state="clarified"></span></div>
+        <div class="pd-navitem is-active"><span class="pd-nav-code">P1.1</span><span class="pd-nav-label">课容量够不够</span><span class="pd-sdot" data-state="clarified"></span></div>
+        <div class="pd-navitem"><span class="pd-nav-code">P2</span><span class="pd-nav-label">选课状态如何更新</span><span class="pd-sdot" data-state="answered"></span></div>
+      </div>
+      <div class="pd-nav-group pd-nav-open">
+        <div class="pd-nav-title">待澄清事项<span class="pd-nav-count">1</span></div>
+        <div class="pd-navitem"><span class="pd-nav-code">T1</span><span class="pd-nav-label">走班制下选课怎么算</span><span class="pd-badge warn">C3</span><span class="pd-sdot" data-state="open"></span></div>
+      </div>
+    </aside>
+
+    <section class="pd-stage">
+      <div class="pd-canvas">
+        <div class="pd-deps-head">7 个问题 · 4 条依赖 · 1 条共享状态
+          <span class="sub">只画 A 组 5 类边</span>
+          <span class="seg"><button class="pd-toolbtn" aria-pressed="true">纵向</button><button class="pd-toolbtn">横向</button><button class="pd-toolbtn">只看当前分量</button></span>
+        </div>
+        <div class="pd-world pd-world-deps" style="top:60px;width:900px;height:700px;">
+          <svg class="pd-edges" width="900" height="700" aria-hidden="true">
+            <path class="pd-edge rel-a" d="M450 560 L450 504" marker-end="url(#tri-a)"/>
+            <path class="pd-edge rel-a" d="M470 440 L588 384" marker-end="url(#tri-a)"/>
+            <path class="pd-edge rel-a" d="M340 470 L372 352" marker-start="url(#dot-a)" marker-end="url(#tri-a)"/>
+            <path class="pd-edge rel-a" d="M372 340 L596 456" marker-start="url(#dot-a)" marker-end="url(#tri-a)"/>
+            <path class="pd-edge rel-a dash-2-4" d="M372 362 L480 348" marker-start="url(#dot-a)" marker-end="url(#dot-a)"/>
+          </svg>
+          <div class="pd-edge-label" style="left:458px;top:520px;">分解为</div>
+          <div class="pd-edge-label" style="left:492px;top:396px;">分解为</div>
+          <div class="pd-edge-label" style="left:288px;top:404px;">依赖于</div>
+          <div class="pd-edge-label" style="left:452px;top:378px;">受约于</div>
+          <div class="pd-edge-label bare" style="left:388px;top:330px;">共享课表状态</div>
+
+          <div class="pd-node pd-node-problem" data-kind-variant="core" data-state="analyzing" style="left:300px;top:560px;">
+            <svg class="pd-ico" aria-hidden="true"><use href="#i-core"/></svg>
+            <div class="pd-node-body"><div class="pd-node-label">如何正确处理选课？</div><div class="pd-node-meta">P0 · depth 0</div></div>
+            <span class="pd-sdot pd-node-sdot" data-state="analyzing"></span>
+          </div>
+          <div class="pd-node pd-node-problem" data-kind-variant="sub" data-state="analyzing" style="left:340px;top:440px;">
+            <svg class="pd-ico" aria-hidden="true"><use href="#i-q"/></svg>
+            <div class="pd-node-body"><div class="pd-node-label">选课资格如何判定</div><div class="pd-node-meta">P1 · depth 1</div></div>
+            <span class="pd-sdot pd-node-sdot" data-state="analyzing"></span>
+          </div>
+          <div class="pd-node pd-node-problem" data-kind-variant="sub" data-state="answered" style="left:600px;top:440px;">
+            <svg class="pd-ico" aria-hidden="true"><use href="#i-q"/></svg>
+            <div class="pd-node-body"><div class="pd-node-label">选课状态如何更新</div><div class="pd-node-meta">P2 · depth 1</div></div>
+            <span class="pd-sdot pd-node-sdot" data-state="answered"></span>
+          </div>
+          <div class="pd-node pd-node-problem" data-kind-variant="sub" data-state="clarified" data-selected="primary" style="left:140px;top:320px;">
+            <svg class="pd-ico" aria-hidden="true"><use href="#i-q"/></svg>
+            <div class="pd-node-body"><div class="pd-node-label">课容量够不够</div><div class="pd-node-meta">P1.1 · depth 2</div></div>
+            <span class="pd-sdot pd-node-sdot" data-state="clarified"></span>
+          </div>
+          <div class="pd-node pd-node-problem" data-kind-variant="sub" data-state="clarified" style="left:480px;top:320px;">
+            <svg class="pd-ico" aria-hidden="true"><use href="#i-q"/></svg>
+            <div class="pd-node-body"><div class="pd-node-label">时间冲突如何检测</div><div class="pd-node-meta">P1.2 · depth 2</div></div>
+            <span class="pd-sdot pd-node-sdot" data-state="clarified"></span>
+          </div>
+          <div class="pd-node pd-node-problem" data-kind-variant="open" data-state="open" style="left:60px;top:140px;">
+            <svg class="pd-ico" aria-hidden="true"><use href="#i-q"/></svg>
+            <div class="pd-node-body"><div class="pd-node-label">走班制下选课怎么算</div><div class="pd-node-meta">T1 · 孤立</div></div>
+            <span class="pd-node-flag">C3</span>
+            <span class="pd-sdot pd-node-sdot" data-state="open"></span>
+          </div>
+          <div class="pd-node pd-node-problem" data-kind-variant="core" data-state="open" style="left:560px;top:140px;">
+            <svg class="pd-ico" aria-hidden="true"><use href="#i-core"/></svg>
+            <div class="pd-node-body"><div class="pd-node-label">成绩与绩点如何联动</div><div class="pd-node-meta">P5 · 孤立</div></div>
+            <span class="pd-node-flag">C3</span>
+            <span class="pd-sdot pd-node-sdot" data-state="open"></span>
+          </div>
+        </div>
+        <div class="pd-zoom"><button aria-label="缩小">−</button><span class="val">95%</span><button aria-label="放大">+</button><button aria-label="适配内容">⤢</button></div>
+      </div>
+    </section>
+
+    <aside class="pd-insp" aria-label="节点属性与检查">
+      <section class="pd-insp-group">
+        <div class="pd-insp-title">属性 · 已选中 1 项</div>
+        <div class="pd-prop-row"><span class="pd-k">标题</span><span class="pd-v strong">课容量够不够</span></div>
+        <div class="pd-prop-row"><span class="pd-k">类型</span><span class="pd-v">子问题</span></div>
+        <div class="pd-prop-row"><span class="pd-k">编号</span><span class="pd-v pd-mono">P1.1</span></div>
+        <div class="pd-prop-row"><span class="pd-k">状态</span><span class="pd-v"><span class="pd-sdot" data-state="clarified"></span> 已澄清</span></div>
+      </section>
+      <section class="pd-insp-group">
+        <div class="pd-insp-title">依赖统计</div>
+        <div class="pd-prop-row multi"><span class="pd-k">入边</span><span class="pd-v">1 条 · P1 —依赖于→ P1.1</span></div>
+        <div class="pd-prop-row multi"><span class="pd-k">出边</span><span class="pd-v">2 条 · P1.1 —依赖于→ P2；P1.1 ┄共享状态┄ P1.2</span></div>
+        <div class="pd-prop-row"><span class="pd-k">所在分量</span><span class="pd-v">6 个问题</span></div>
+      </section>
+      <section class="pd-insp-group">
+        <div class="pd-insp-title">检查<span class="pd-nav-count">9</span><span class="pd-badge err">1</span></div>
+        <div class="pd-check-item"><span class="pd-sev-ico" data-sev="blocker">!</span><div class="pd-check-text"><div class="pd-check-line1">阻断· 判定标准未填</div><div class="pd-check-desc">C1 · P1.2 已标已澄清，判定标准为空</div></div><button class="pd-locate">定位</button></div>
+        <div class="pd-check-item"><span class="pd-sev-ico" data-sev="warning">!</span><div class="pd-check-text"><div class="pd-check-line1">警告· 孤立问题</div><div class="pd-check-desc">C3 · T1 没有任何 A 组连线</div></div><button class="pd-locate">定位</button></div>
+        <div class="pd-check-item"><span class="pd-sev-ico" data-sev="warning">!</span><div class="pd-check-text"><div class="pd-check-line1">警告· 孤立问题</div><div class="pd-check-desc">C3 · P5 没有任何 A 组连线</div></div><button class="pd-locate">定位</button></div>
+        <div class="pd-prop-row"><span class="pd-k">其余 6 条</span><span class="pd-v mute">见问题总览右栏</span></div>
+      </section>
+    </aside>
+  </main>
+
+  <!-- ==================================================================
+       S4 领域元素
+       ================================================================== -->
+  <main class="pd-screen" data-screen="elements" role="tabpanel" aria-label="领域元素">
+    <aside class="pd-nav" aria-label="问题导航">
+      <div class="pd-nav-group">
+        <div class="pd-nav-title">核心问题<span class="pd-nav-count">2</span></div>
+        <div class="pd-navitem is-core"><span class="pd-nav-code">P0</span><span class="pd-nav-label">如何正确处理选课？</span><span class="pd-sdot" data-state="analyzing"></span></div>
+        <div class="pd-navitem is-core"><span class="pd-nav-code">P5</span><span class="pd-nav-label">成绩与绩点如何联动</span><span class="pd-badge warn">C5</span><span class="pd-sdot" data-state="open"></span></div>
+      </div>
+      <div class="pd-nav-group">
+        <div class="pd-nav-title">问题<span class="pd-nav-count">4</span></div>
+        <div class="pd-navitem is-active"><span class="pd-chev">▾</span><span class="pd-nav-code">P1</span><span class="pd-nav-label">选课资格如何判定</span><span class="pd-sdot" data-state="analyzing"></span></div>
+        <div class="pd-navitem pd-ind1"><span class="pd-nav-code">P1.2</span><span class="pd-nav-label">时间冲突如何检测</span><span class="pd-badge err">C1</span><span class="pd-sdot" data-state="clarified"></span></div>
+        <div class="pd-navitem"><span class="pd-nav-code">P1.1</span><span class="pd-nav-label">课容量够不够</span><span class="pd-sdot" data-state="clarified"></span></div>
+        <div class="pd-navitem"><span class="pd-nav-code">P2</span><span class="pd-nav-label">选课状态如何更新</span><span class="pd-sdot" data-state="answered"></span></div>
+      </div>
+      <div class="pd-nav-group pd-nav-open">
+        <div class="pd-nav-title">待澄清事项<span class="pd-nav-count">1</span></div>
+        <div class="pd-navitem"><span class="pd-nav-code">T1</span><span class="pd-nav-label">走班制下选课怎么算</span><span class="pd-badge warn">C3</span><span class="pd-sdot" data-state="open"></span></div>
+      </div>
+    </aside>
+
+    <section class="pd-stage">
+      <div class="pd-elements">
+        <div class="pd-el-summary">10 个领域元素<span class="sub">已挂 7 · 未挂 3</span>
+          <span class="pd-chip">C6 概念 <span class="pd-badge hint">1</span></span>
+          <span class="pd-chip">C7 规则 <span class="pd-badge hint">1</span></span>
+          <span class="pd-chip">C9 示例 <span class="pd-badge hint">1</span></span>
+        </div>
+
+        <div class="pd-elgroup">
+          <div class="pd-elgroup-head"><span class="pd-dot" style="background:var(--pd-el-actor)"></span>参与者 <span class="pd-nav-count">1</span></div>
+          <div class="pd-elcols">
+            <div class="pd-elcol">
+              <div class="pd-elcol-title">已挂到问题 · 1</div>
+              <div class="pd-elwrap"><div class="pd-node pd-node-actor"><span class="pd-iconchip"><svg class="pd-ico" aria-hidden="true"><use href="#i-person"/></svg></span><div class="pd-node-body"><div class="pd-node-label">学生</div></div></div>
+                <div class="pd-elcard-why">← P0 涉及参与者</div></div>
+            </div>
+            <div class="pd-elcol"><div class="pd-elcol-title">未挂 · 0</div><div class="pd-elcard-why">无</div></div>
+          </div>
+        </div>
+
+        <div class="pd-elgroup">
+          <div class="pd-elgroup-head"><span class="pd-dot" style="background:var(--pd-el-scenario)"></span>场景 <span class="pd-nav-count">1</span></div>
+          <div class="pd-elcols">
+            <div class="pd-elcol">
+              <div class="pd-elcol-title">已挂到问题 · 1</div>
+              <div class="pd-elwrap"><div class="pd-node pd-node-scene"><svg class="pd-ico" aria-hidden="true"><use href="#i-frame"/></svg><div class="pd-node-body"><div class="pd-node-label">提交选课</div></div></div>
+                <div class="pd-elcard-why">← P1 发生于场景</div></div>
+            </div>
+            <div class="pd-elcol"><div class="pd-elcol-title">未挂 · 0</div><div class="pd-elcard-why">无</div></div>
+          </div>
+        </div>
+
+        <div class="pd-elgroup">
+          <div class="pd-elgroup-head"><span class="pd-dot" style="background:var(--pd-el-concept)"></span>概念 <span class="pd-nav-count">2</span></div>
+          <div class="pd-elcols">
+            <div class="pd-elcol">
+              <div class="pd-elcol-title">已挂到问题 · 1</div>
+              <div class="pd-elwrap"><div class="pd-node pd-node-concept"><svg class="pd-ico" aria-hidden="true"><use href="#i-diamond"/></svg><div class="pd-node-body"><div class="pd-node-label">选课记录</div></div></div>
+                <div class="pd-elcard-why">← P1 关注概念</div></div>
+            </div>
+            <div class="pd-elcol">
+              <div class="pd-elcol-title">未挂 · 1</div>
+              <div class="pd-elwrap"><div class="pd-node pd-node-concept" data-selected="primary"><svg class="pd-ico" aria-hidden="true"><use href="#i-diamond"/></svg><div class="pd-node-body"><div class="pd-node-label">绩点</div></div></div>
+                <div class="pd-elcard-why err">未挂 · C6 概念未挂问题</div></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="pd-elgroup">
+          <div class="pd-elgroup-head"><span class="pd-dot" style="background:var(--pd-el-rule)"></span>规则 <span class="pd-nav-count">2</span></div>
+          <div class="pd-elcols">
+            <div class="pd-elcol">
+              <div class="pd-elcol-title">已挂到问题 · 1</div>
+              <div class="pd-elwrap"><div class="pd-node pd-node-rule"><svg class="pd-ico" aria-hidden="true"><use href="#i-shield"/></svg><div class="pd-node-body"><div class="pd-node-label">容量规则</div></div></div>
+                <div class="pd-elcard-why">← P1.1 受规则约束</div></div>
+            </div>
+            <div class="pd-elcol">
+              <div class="pd-elcol-title">未挂 · 1</div>
+              <div class="pd-elwrap"><div class="pd-node pd-node-rule"><svg class="pd-ico" aria-hidden="true"><use href="#i-shield"/></svg><div class="pd-node-body"><div class="pd-node-label">先修规则</div></div></div>
+                <div class="pd-elcard-why err">未挂 · C7 规则未挂问题</div></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="pd-elgroup">
+          <div class="pd-elgroup-head"><span class="pd-dot" style="background:var(--pd-el-event)"></span>事件 <span class="pd-nav-count">1</span></div>
+          <div class="pd-elcols">
+            <div class="pd-elcol">
+              <div class="pd-elcol-title">已挂到问题 · 1</div>
+              <div class="pd-elwrap"><div class="pd-node pd-node-event"><svg class="pd-ico" aria-hidden="true"><use href="#i-bolt"/></svg><div class="pd-node-body"><div class="pd-node-label">名额变更</div></div></div>
+                <div class="pd-elcard-why">← P2 由事件触发</div></div>
+            </div>
+            <div class="pd-elcol"><div class="pd-elcol-title">未挂 · 0</div><div class="pd-elcard-why">无</div></div>
+          </div>
+        </div>
+
+        <div class="pd-elgroup">
+          <div class="pd-elgroup-head"><span class="pd-dot" style="background:var(--pd-el-example)"></span>示例 <span class="pd-nav-count">2</span></div>
+          <div class="pd-elcols">
+            <div class="pd-elcol">
+              <div class="pd-elcol-title">已挂到问题 · 1</div>
+              <div class="pd-elwrap"><div class="pd-node pd-node-example"><svg class="pd-ico" aria-hidden="true"><use href="#i-quote"/></svg><div class="pd-node-body"><div class="pd-node-label">容量 60 已选 59</div></div></div>
+                <div class="pd-elcard-why">← P0 由示例说明</div></div>
+            </div>
+            <div class="pd-elcol">
+              <div class="pd-elcol-title">未挂 · 1</div>
+              <div class="pd-elwrap"><div class="pd-node pd-node-example"><svg class="pd-ico" aria-hidden="true"><use href="#i-quote"/></svg><div class="pd-node-body"><div class="pd-node-label">走班制共用教室</div></div></div>
+                <div class="pd-elcard-why err">未挂 · C9 示例未挂靠</div></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="pd-elgroup">
+          <div class="pd-elgroup-head"><span class="pd-dot" style="background:var(--pd-text-4)"></span>备注 <span class="pd-nav-count">1</span></div>
+          <div class="pd-elcols">
+            <div class="pd-elcol">
+              <div class="pd-elcol-title">工作区级（anchorId: null）</div>
+              <div class="pd-elwrap"><div class="pd-node pd-node-note"><svg class="pd-ico" aria-hidden="true"><use href="#i-quote"/></svg><div class="pd-node-body"><div class="pd-node-label">备忘：退课口径未定</div></div></div>
+                <div class="pd-elcard-why">退课要不要走同一套判定，还没定。</div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <aside class="pd-insp" aria-label="节点属性与检查">
+      <section class="pd-insp-group">
+        <div class="pd-insp-title">属性 · 已选中 1 项</div>
+        <div class="pd-prop-row"><span class="pd-k">标题</span><span class="pd-v strong">绩点</span></div>
+        <div class="pd-prop-row"><span class="pd-k">类型</span><span class="pd-v">领域概念（concept）</span></div>
+        <div class="pd-prop-row"><span class="pd-k">挂靠</span><span class="pd-v err">未挂到任何问题 · C6</span></div>
+        <div class="pd-prop-row multi"><span class="pd-k">定义</span><span class="pd-v">课程成绩按学分加权后换算出的数值</span></div>
+        <div class="pd-prop-row multi"><span class="pd-k">属性</span><span class="pd-v"><span class="pd-tag">数值: number</span></span></div>
+        <div class="pd-prop-row"><span class="pd-k">别名</span><span class="pd-v mute">无</span></div>
+        <div class="pd-prop-row multi"><span class="pd-k">备注</span><span class="pd-v">暂时不知道挂哪个问题</span></div>
+        <div class="pd-prop-row"><span class="pd-k">指回问题</span><span class="pd-v mute">无</span></div>
+      </section>
+      <section class="pd-insp-group">
+        <div class="pd-insp-title">检查<span class="pd-nav-count">3</span></div>
+        <div class="pd-check-item"><span class="pd-sev-ico" data-sev="hint">i</span><div class="pd-check-text"><div class="pd-check-line1">提示· 概念未挂问题</div><div class="pd-check-desc">C6 · 这个领域概念没有对应的问题。它可能来自另一个问题域，先挂到问题上，或者先放一边。</div></div><button class="pd-locate">定位</button></div>
+        <div class="pd-check-item"><span class="pd-sev-ico" data-sev="hint">i</span><div class="pd-check-text"><div class="pd-check-line1">提示· 规则未挂问题</div><div class="pd-check-desc">C7 · 先修规则 没有 constrainedByRule 入边</div></div><button class="pd-locate">定位</button></div>
+        <div class="pd-check-item"><span class="pd-sev-ico" data-sev="hint">i</span><div class="pd-check-text"><div class="pd-check-line1">提示· 示例未挂靠</div><div class="pd-check-desc">C9 · 走班制共用教室 没有 illustratedByExample 入边</div></div><button class="pd-locate">定位</button></div>
+      </section>
+    </aside>
+  </main>
+
+  <!-- ==================================================================
+       S5 领域模型
+       ================================================================== -->
+  <main class="pd-screen" data-screen="model" role="tabpanel" aria-label="领域模型">
+    <aside class="pd-nav" aria-label="问题导航">
+      <div class="pd-nav-group">
+        <div class="pd-nav-title">核心问题<span class="pd-nav-count">2</span></div>
+        <div class="pd-navitem is-core"><span class="pd-nav-code">P0</span><span class="pd-nav-label">如何正确处理选课？</span><span class="pd-sdot" data-state="analyzing"></span></div>
+        <div class="pd-navitem is-core"><span class="pd-nav-code">P5</span><span class="pd-nav-label">成绩与绩点如何联动</span><span class="pd-badge warn">C5</span><span class="pd-sdot" data-state="open"></span></div>
+      </div>
+      <div class="pd-nav-group">
+        <div class="pd-nav-title">问题<span class="pd-nav-count">4</span></div>
+        <div class="pd-navitem is-active"><span class="pd-chev">▾</span><span class="pd-nav-code">P1</span><span class="pd-nav-label">选课资格如何判定</span><span class="pd-sdot" data-state="analyzing"></span></div>
+        <div class="pd-navitem pd-ind1"><span class="pd-nav-code">P1.2</span><span class="pd-nav-label">时间冲突如何检测</span><span class="pd-badge err">C1</span><span class="pd-sdot" data-state="clarified"></span></div>
+        <div class="pd-navitem"><span class="pd-nav-code">P1.1</span><span class="pd-nav-label">课容量够不够</span><span class="pd-sdot" data-state="clarified"></span></div>
+        <div class="pd-navitem"><span class="pd-nav-code">P2</span><span class="pd-nav-label">选课状态如何更新</span><span class="pd-sdot" data-state="answered"></span></div>
+      </div>
+      <div class="pd-nav-group pd-nav-open">
+        <div class="pd-nav-title">待澄清事项<span class="pd-nav-count">1</span></div>
+        <div class="pd-navitem"><span class="pd-nav-code">T1</span><span class="pd-nav-label">走班制下选课怎么算</span><span class="pd-badge warn">C3</span><span class="pd-sdot" data-state="open"></span></div>
+      </div>
+    </aside>
+
+    <section class="pd-stage">
+      <div class="pd-canvas">
+        <div class="pd-model-head"><span class="n">2 概念 · 2 规则 · 1 事件</span><span>1 个概念还指不回问题（绩点）</span>
+          <span class="seg" style="margin-left:auto"><button class="pd-toolbtn">导出模型 SVG</button></span>
+        </div>
+        <!-- D3 唯一软闸门：非模态横条，仅本屏首次出现 -->
+        <div class="pd-softgate" style="position:absolute;left:16px;right:16px;top:44px;margin:0;">
+          <svg width="16" height="16" aria-hidden="true" style="color:var(--pd-accent)"><use href="#i-info"/></svg>
+          <span class="grow"><span class="b">进入领域模型：</span>这里只收口名词与规则，问题留在上一个视图。</span>
+          <button class="pd-toolbtn">知道了</button>
+          <button class="pd-toolbtn" aria-label="关闭">✕</button>
+        </div>
+
+        <div class="pd-world pd-world-model" style="top:110px;width:900px;height:650px;">
+          <svg class="pd-edges" width="900" height="650" aria-hidden="true">
+            <path class="pd-edge rel-c dash-4-3" d="M340 380 L400 398" marker-end="url(#cap-c)"/>
+            <path class="pd-edge rel-c w-125" d="M600 208 L620 200" marker-end="url(#open-c)"/>
+            <path class="pd-edge rel-c" d="M492 540 L492 428" marker-start="url(#tri-c)" marker-end="url(#tri-c)"/>
+            <path class="pd-edge rel-b" style="opacity:.3" d="M220 212 L400 392" marker-end="url(#open-b)"/>
+            <path class="pd-edge rel-b" style="opacity:.3" d="M220 322 L252 380" marker-end="url(#cap-b)"/>
+          </svg>
+          <div class="pd-edge-label" style="left:322px;top:362px;">约束概念</div>
+          <div class="pd-edge-label bare" style="left:584px;top:182px;">涉及参与者</div>
+          <div class="pd-edge-label" style="left:498px;top:466px;">改变概念状态</div>
+          <div class="pd-edge-label bare" style="left:276px;top:286px;">关注概念</div>
+          <div class="pd-edge-label bare" style="left:112px;top:330px;">受规则约束</div>
+
+          <div class="pd-refnode" style="left:60px;top:80px;">P0 如何正确处理选课？</div>
+          <div class="pd-refnode" style="left:60px;top:190px;">P1 选课资格如何判定</div>
+          <div class="pd-refnode" style="left:60px;top:300px;">P1.1 课容量够不够</div>
+
+          <div class="pd-node pd-node-scene" style="left:400px;top:180px;">
+            <svg class="pd-ico" aria-hidden="true"><use href="#i-frame"/></svg>
+            <div class="pd-node-body"><div class="pd-node-label">提交选课</div><div class="pd-node-meta">触发：选课周开放后</div></div>
+          </div>
+          <div class="pd-node pd-node-actor" style="left:620px;top:180px;">
+            <span class="pd-iconchip"><svg class="pd-ico" aria-hidden="true"><use href="#i-person"/></svg></span>
+            <div class="pd-node-body"><div class="pd-node-label">学生</div></div>
+          </div>
+          <div class="pd-node pd-node-concept" data-selected="primary" style="left:400px;top:380px;">
+            <svg class="pd-ico" aria-hidden="true"><use href="#i-diamond"/></svg>
+            <div class="pd-node-body"><div class="pd-node-label">选课记录</div><div class="pd-node-meta">属性 3 条 · 别名 1</div></div>
+          </div>
+          <div class="pd-node pd-node-concept" style="left:620px;top:470px;">
+            <svg class="pd-ico" aria-hidden="true"><use href="#i-diamond"/></svg>
+            <div class="pd-node-body"><div class="pd-node-label">绩点</div><div class="pd-node-meta">指不回问题</div></div>
+            <span class="pd-node-flag">C6</span>
+          </div>
+          <div class="pd-node pd-node-rule" style="left:150px;top:380px;">
+            <svg class="pd-ico" aria-hidden="true"><use href="#i-shield"/></svg>
+            <div class="pd-node-body"><div class="pd-node-label">容量规则</div><div class="pd-node-meta">constraint</div></div>
+          </div>
+          <div class="pd-node pd-node-rule" style="left:230px;top:540px;">
+            <svg class="pd-ico" aria-hidden="true"><use href="#i-shield"/></svg>
+            <div class="pd-node-body"><div class="pd-node-label">先修规则</div><div class="pd-node-meta">constraint · 未挂</div></div>
+            <span class="pd-node-flag">C7</span>
+          </div>
+          <div class="pd-node pd-node-event" style="left:400px;top:540px;">
+            <svg class="pd-ico" aria-hidden="true"><use href="#i-bolt"/></svg>
+            <div class="pd-node-body"><div class="pd-node-label">名额变更</div><div class="pd-node-meta">影响 2 条</div></div>
+          </div>
+        </div>
+        <div class="pd-zoom"><button aria-label="缩小">−</button><span class="val">95%</span><button aria-label="放大">+</button><button aria-label="适配内容">⤢</button></div>
+      </div>
+    </section>
+
+    <aside class="pd-insp" aria-label="节点属性与检查">
+      <section class="pd-insp-group">
+        <div class="pd-insp-title">属性 · 已选中 1 项</div>
+        <div class="pd-prop-row"><span class="pd-k">标题</span><span class="pd-v strong">选课记录</span></div>
+        <div class="pd-prop-row"><span class="pd-k">类型</span><span class="pd-v">领域概念（concept）</span></div>
+        <div class="pd-prop-row multi"><span class="pd-k">定义</span><span class="pd-v">一名学生与一个教学班之间的一次有效占用</span></div>
+        <div class="pd-prop-row multi"><span class="pd-k">属性</span><span class="pd-v"><span class="pd-tag">学生编号: string</span> <span class="pd-tag">教学班编号: string</span> <span class="pd-tag">状态: 已选/退选</span></span></div>
+        <div class="pd-prop-row"><span class="pd-k">别名</span><span class="pd-v">选课条目</span></div>
+      </section>
+      <section class="pd-insp-group">
+        <div class="pd-insp-title">指回问题</div>
+        <div class="pd-prop-row"><span class="pd-k">关注它的问题</span><span class="pd-v"><span class="pd-tag accent">P1 选课资格如何判定</span></span></div>
+        <div class="pd-prop-row"><span class="pd-k">被谁约束</span><span class="pd-v">容量规则 · 1</span></div>
+        <div class="pd-prop-row"><span class="pd-k">被谁改变</span><span class="pd-v">名额变更 · 1</span></div>
+      </section>
+      <section class="pd-insp-group">
+        <div class="pd-insp-title">检查</div>
+        <div class="pd-prop-row"><span class="pd-k">本对象</span><span class="pd-v">当前未发现结构性缺口</span></div>
+        <div class="pd-prop-row"><span class="pd-k">工作区</span><span class="pd-v mute">7 条规则命中（9 个节点）</span></div>
+      </section>
+    </aside>
+  </main>
+</div>
+
+<script>
+// 纯视觉切换：只改 data-view 与 aria-selected，无业务逻辑（03-ui.md §0）
+document.querySelectorAll('.pd-tab').forEach(function (tab) {
+  tab.addEventListener('click', function () {
+    var view = tab.dataset.goto;
+    document.querySelector('.pd-app').dataset.view = view;
+    document.querySelectorAll('.pd-tab').forEach(function (t) {
+      t.setAttribute('aria-selected', String(t.dataset.goto === view));
+    });
+  });
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,1385 @@
+@layer xyflow {
+
+/* these are the necessary styles for React/Svelte Flow, they get used by base.css and style.css */
+
+.react-flow {
+  direction: ltr;
+  color-scheme: light dark;
+
+  --xy-edge-stroke-default: light-dark(#b1b1b7, #3e3e3e);
+  --xy-edge-stroke-width-default: 1;
+  --xy-edge-stroke-selected-default: light-dark(#555, #727272);
+
+  --xy-connectionline-stroke-default: #b1b1b7;
+  --xy-connectionline-stroke-width-default: 1;
+
+  --xy-attribution-background-color-default: light-dark(rgba(255, 255, 255, 0.5), rgba(150, 150, 150, 0.25));
+
+  --xy-minimap-background-color-default: light-dark(#fff, #141414);
+  --xy-minimap-mask-background-color-default: light-dark(rgba(240, 240, 240, 0.6), rgba(60, 60, 60, 0.6));
+  --xy-minimap-mask-stroke-color-default: transparent;
+  --xy-minimap-mask-stroke-width-default: 1;
+  --xy-minimap-node-background-color-default: light-dark(#e2e2e2, #2b2b2b);
+  --xy-minimap-node-stroke-color-default: transparent;
+  --xy-minimap-node-stroke-width-default: 2;
+
+  --xy-background-color-default: light-dark(transparent, #141414);
+  --xy-background-pattern-dots-color-default: light-dark(#91919a, #555);
+  --xy-background-pattern-lines-color-default: light-dark(#eee, #333);
+  --xy-background-pattern-cross-color-default: light-dark(#e2e2e2, #333);
+  background-color: var(--xy-background-color, var(--xy-background-color-default));
+  --xy-node-color-default: light-dark(CanvasText, #f8f8f8);
+  --xy-node-border-default: 1px solid light-dark(#1a192b, #3c3c3c);
+  --xy-node-background-color-default: light-dark(#fff, #1e1e1e);
+  --xy-node-group-background-color-default: rgba(240, 240, 240, 0.25);
+  --xy-node-boxshadow-hover-default: 0 1px 4px 1px light-dark(rgba(0, 0, 0, 0.08), rgba(255, 255, 255, 0.08));
+  --xy-node-boxshadow-selected-default: 0 0 0 0.5px light-dark(#1a192b, #999);
+  --xy-node-border-radius-default: 3px;
+
+  --xy-handle-background-color-default: light-dark(#1a192b, #bebebe);
+  --xy-handle-border-color-default: light-dark(#fff, #1e1e1e);
+
+  --xy-selection-background-color-default: light-dark(rgba(0, 89, 220, 0.08), rgba(200, 200, 220, 0.08));
+  --xy-selection-border-default: 1px dotted light-dark(rgba(0, 89, 220, 0.8), rgba(200, 200, 220, 0.8));
+
+  --xy-controls-button-background-color-default: light-dark(#fefefe, #2b2b2b);
+  --xy-controls-button-background-color-hover-default: light-dark(#f4f4f4, #3e3e3e);
+  --xy-controls-button-color-default: light-dark(CanvasText, #f8f8f8);
+  --xy-controls-button-color-hover-default: light-dark(CanvasText, #fff);
+  --xy-controls-button-border-color-default: light-dark(#eee, #5b5b5b);
+  --xy-controls-box-shadow-default: 0 0 2px 1px rgba(0, 0, 0, 0.08);
+
+  --xy-edge-label-background-color-default: light-dark(#ffffff, #141414);
+  --xy-edge-label-color-default: light-dark(CanvasText, #f8f8f8);
+  --xy-resize-background-color-default: #3367d9;
+}
+
+[data-theme='dark'] .react-flow,
+.dark .react-flow {
+  color-scheme: dark;
+}
+
+[data-theme='light'] .react-flow,
+.light .react-flow {
+  color-scheme: light;
+}
+
+/* forceColorMode: these must come last to override the theme */
+.react-flow.dark {
+  color-scheme: dark;
+}
+
+.react-flow.light {
+  color-scheme: light;
+}
+
+.react-flow__background {
+  background-color: var(--xy-background-color-props, var(--xy-background-color, var(--xy-background-color-default)));
+  pointer-events: none;
+  z-index: -1;
+}
+
+.react-flow__container {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  top: 0;
+  left: 0;
+}
+
+.react-flow__pane {
+  z-index: 1;
+  touch-action: none;
+}
+
+  /* Keep cursor changes off the pane so they aren't inherited by the entire flow.
+   * A pseudo-element still targets the pane for pointer and mouse events. */
+  .react-flow__pane::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+  }
+
+  .react-flow__pane.draggable::before {
+    cursor: grab;
+  }
+
+  .react-flow__pane.dragging::before {
+    cursor: grabbing;
+  }
+
+  /* selection uses pointer capture on the pane, so the cursor has to be on the pane itself */
+  .react-flow__pane.selection,
+  .react-flow__pane.selection::before {
+    cursor: pointer;
+  }
+
+.react-flow__viewport {
+  transform-origin: 0 0;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.react-flow__renderer {
+  z-index: 4;
+}
+
+.react-flow__selection {
+  z-index: 6;
+}
+
+.react-flow__nodesselection-rect:focus,
+.react-flow__nodesselection-rect:focus-visible {
+  outline: none;
+}
+
+.react-flow__edge-path {
+  stroke: var(--xy-edge-stroke, var(--xy-edge-stroke-default));
+  stroke-width: var(--xy-edge-stroke-width, var(--xy-edge-stroke-width-default));
+  fill: none;
+}
+
+.react-flow__connection-path {
+  stroke: var(--xy-connectionline-stroke, var(--xy-connectionline-stroke-default));
+  stroke-width: var(--xy-connectionline-stroke-width, var(--xy-connectionline-stroke-width-default));
+  fill: none;
+}
+
+.react-flow .react-flow__edges {
+  position: absolute;
+}
+
+  .react-flow .react-flow__edges svg {
+    overflow: visible;
+    position: absolute;
+    pointer-events: none;
+  }
+
+.react-flow__edge {
+  pointer-events: visibleStroke;
+}
+
+  .react-flow__edge.selectable {
+    cursor: pointer;
+  }
+
+  .react-flow__edge.animated path {
+    stroke-dasharray: 5;
+    animation: dashdraw 0.5s linear infinite;
+  }
+
+  .react-flow__edge.animated path.react-flow__edge-interaction {
+    stroke-dasharray: none;
+    animation: none;
+  }
+
+  .react-flow__edge.inactive {
+    pointer-events: none;
+  }
+
+  .react-flow__edge.selected,
+  .react-flow__edge:focus,
+  .react-flow__edge:focus-visible {
+    outline: none;
+  }
+
+  .react-flow__edge.selected .react-flow__edge-path,
+  .react-flow__edge.selectable:focus .react-flow__edge-path,
+  .react-flow__edge.selectable:focus-visible .react-flow__edge-path {
+    stroke: var(--xy-edge-stroke-selected, var(--xy-edge-stroke-selected-default));
+  }
+
+  .react-flow__edge-textwrapper {
+    pointer-events: all;
+  }
+
+  .react-flow__edge .react-flow__edge-text {
+    pointer-events: none;
+    -webkit-user-select: none;
+       -moz-user-select: none;
+            user-select: none;
+  }
+
+/* Arrowhead marker styles - use CSS custom properties as default */
+.react-flow__arrowhead polyline {
+  stroke: var(--xy-edge-stroke, var(--xy-edge-stroke-default));
+}
+
+.react-flow__arrowhead polyline.arrowclosed {
+  fill: var(--xy-edge-stroke, var(--xy-edge-stroke-default));
+}
+
+.react-flow__connection {
+  pointer-events: none;
+}
+
+  .react-flow__connection .animated {
+    stroke-dasharray: 5;
+    animation: dashdraw 0.5s linear infinite;
+  }
+
+svg.react-flow__connectionline {
+  z-index: 1001;
+  overflow: visible;
+  position: absolute;
+}
+
+.react-flow__nodes {
+  pointer-events: none;
+  transform-origin: 0 0;
+}
+
+.react-flow__node {
+  position: absolute;
+  -webkit-user-select: none;
+     -moz-user-select: none;
+          user-select: none;
+  pointer-events: all;
+  transform-origin: 0 0;
+  box-sizing: border-box;
+  cursor: default;
+}
+
+  .react-flow__node.selectable {
+    cursor: pointer;
+  }
+
+  .react-flow__node.draggable {
+    cursor: grab;
+    pointer-events: all;
+  }
+
+    .react-flow__node.draggable.dragging {
+      cursor: grabbing;
+    }
+
+.react-flow__nodesselection {
+  z-index: 3;
+  transform-origin: left top;
+  pointer-events: none;
+}
+
+  .react-flow__nodesselection-rect {
+    position: absolute;
+    pointer-events: all;
+    cursor: grab;
+  }
+
+.react-flow__handle {
+  position: absolute;
+  pointer-events: none;
+  min-width: 5px;
+  min-height: 5px;
+  width: 6px;
+  height: 6px;
+  background-color: var(--xy-handle-background-color, var(--xy-handle-background-color-default));
+  border: 1px solid var(--xy-handle-border-color, var(--xy-handle-border-color-default));
+  border-radius: 100%;
+}
+
+  .react-flow__handle.connectingfrom {
+    pointer-events: all;
+  }
+
+  .react-flow__handle.connectionindicator {
+    pointer-events: all;
+    cursor: crosshair;
+  }
+
+  .react-flow__handle-bottom {
+    top: auto;
+    left: 50%;
+    bottom: 0;
+    transform: translate(-50%, 50%);
+  }
+
+  .react-flow__handle-top {
+    top: 0;
+    left: 50%;
+    transform: translate(-50%, -50%);
+  }
+
+  .react-flow__handle-left {
+    top: 50%;
+    left: 0;
+    transform: translate(-50%, -50%);
+  }
+
+  .react-flow__handle-right {
+    top: 50%;
+    right: 0;
+    transform: translate(50%, -50%);
+  }
+
+.react-flow__edgeupdater {
+  cursor: move;
+  pointer-events: all;
+}
+
+.react-flow__pane.selection .react-flow__panel {
+  pointer-events: none;
+}
+
+.react-flow__panel {
+  position: absolute;
+  z-index: 5;
+  margin: 15px;
+}
+
+  .react-flow__panel.top {
+    top: 0;
+  }
+
+  .react-flow__panel.bottom {
+    bottom: 0;
+  }
+    .react-flow__panel.top.center, .react-flow__panel.bottom.center {
+      left: 50%;
+      transform: translateX(-15px) translateX(-50%);
+    }
+
+  .react-flow__panel.left {
+    left: 0;
+  }
+
+  .react-flow__panel.right {
+    right: 0;
+  }
+    .react-flow__panel.left.center, .react-flow__panel.right.center {
+      top: 50%;
+      transform: translateY(-15px) translateY(-50%);
+    }
+
+.react-flow__attribution {
+  font-size: 10px;
+  background: var(--xy-attribution-background-color, var(--xy-attribution-background-color-default));
+  padding: 2px 3px;
+  margin: 0;
+}
+
+  .react-flow__attribution a {
+    text-decoration: none;
+    color: #999;
+  }
+
+@keyframes dashdraw {
+  from {
+    stroke-dashoffset: 10;
+  }
+}
+
+.react-flow__edgelabel-renderer {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  -webkit-user-select: none;
+     -moz-user-select: none;
+          user-select: none;
+  left: 0;
+  top: 0;
+}
+
+.react-flow__viewport-portal {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  left: 0;
+  top: 0;
+  -webkit-user-select: none;
+     -moz-user-select: none;
+          user-select: none;
+}
+
+.react-flow__minimap {
+  background: var(
+    --xy-minimap-background-color-props,
+    var(--xy-minimap-background-color, var(--xy-minimap-background-color-default))
+  );
+}
+
+  .react-flow__minimap-svg {
+    display: block;
+  }
+
+  .react-flow__minimap-mask {
+    fill: var(
+      --xy-minimap-mask-background-color-props,
+      var(--xy-minimap-mask-background-color, var(--xy-minimap-mask-background-color-default))
+    );
+    stroke: var(
+      --xy-minimap-mask-stroke-color-props,
+      var(--xy-minimap-mask-stroke-color, var(--xy-minimap-mask-stroke-color-default))
+    );
+    stroke-width: var(
+      --xy-minimap-mask-stroke-width-props,
+      var(--xy-minimap-mask-stroke-width, var(--xy-minimap-mask-stroke-width-default))
+    );
+  }
+
+  .react-flow__minimap-node {
+    fill: var(
+      --xy-minimap-node-background-color-props,
+      var(--xy-minimap-node-background-color, var(--xy-minimap-node-background-color-default))
+    );
+    stroke: var(
+      --xy-minimap-node-stroke-color-props,
+      var(--xy-minimap-node-stroke-color, var(--xy-minimap-node-stroke-color-default))
+    );
+    stroke-width: var(
+      --xy-minimap-node-stroke-width-props,
+      var(--xy-minimap-node-stroke-width, var(--xy-minimap-node-stroke-width-default))
+    );
+  }
+  .react-flow__background-pattern.dots {
+    fill: var(
+      --xy-background-pattern-color-props,
+      var(--xy-background-pattern-color, var(--xy-background-pattern-dots-color-default))
+    );
+  }
+
+  .react-flow__background-pattern.lines {
+    stroke: var(
+      --xy-background-pattern-color-props,
+      var(--xy-background-pattern-color, var(--xy-background-pattern-lines-color-default))
+    );
+  }
+
+  .react-flow__background-pattern.cross {
+    stroke: var(
+      --xy-background-pattern-color-props,
+      var(--xy-background-pattern-color, var(--xy-background-pattern-cross-color-default))
+    );
+  }
+
+.react-flow__controls {
+  display: flex;
+  flex-direction: column;
+  box-shadow: var(--xy-controls-box-shadow, var(--xy-controls-box-shadow-default));
+}
+
+  .react-flow__controls.horizontal {
+    flex-direction: row;
+  }
+
+  .react-flow__controls-button {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 26px;
+    width: 26px;
+    padding: 4px;
+    border: none;
+    background: var(--xy-controls-button-background-color, var(--xy-controls-button-background-color-default));
+    border-bottom: 1px solid
+      var(
+        --xy-controls-button-border-color-props,
+        var(--xy-controls-button-border-color, var(--xy-controls-button-border-color-default))
+      );
+    color: var(
+      --xy-controls-button-color-props,
+      var(--xy-controls-button-color, var(--xy-controls-button-color-default))
+    );
+    cursor: pointer;
+    -webkit-user-select: none;
+       -moz-user-select: none;
+            user-select: none;
+  }
+
+    .react-flow__controls-button svg {
+      width: 100%;
+      max-width: 12px;
+      max-height: 12px;
+      fill: currentColor;
+    }
+}
+
+@layer xyflow {
+    .react-flow__edge.updating .react-flow__edge-path {
+      stroke: #777;
+    }
+
+  .react-flow__edge-text {
+    font-size: 10px;
+  }
+  .react-flow__node.selectable:focus,
+  .react-flow__node.selectable:focus-visible {
+    outline: none;
+  }
+
+.react-flow__node-input,
+.react-flow__node-default,
+.react-flow__node-output,
+.react-flow__node-group {
+  padding: 10px;
+  border-radius: var(--xy-node-border-radius, var(--xy-node-border-radius-default));
+  width: 150px;
+  font-size: 12px;
+  color: var(--xy-node-color, var(--xy-node-color-default));
+  text-align: center;
+  border: var(--xy-node-border, var(--xy-node-border-default));
+  background-color: var(--xy-node-background-color, var(--xy-node-background-color-default));
+}
+    .react-flow__node-input.selectable:hover, .react-flow__node-default.selectable:hover, .react-flow__node-output.selectable:hover, .react-flow__node-group.selectable:hover {
+      box-shadow: var(--xy-node-boxshadow-hover, var(--xy-node-boxshadow-hover-default));
+    }
+
+    .react-flow__node-input.selectable.selected,
+    .react-flow__node-input.selectable:focus,
+    .react-flow__node-input.selectable:focus-visible,
+    .react-flow__node-default.selectable.selected,
+    .react-flow__node-default.selectable:focus,
+    .react-flow__node-default.selectable:focus-visible,
+    .react-flow__node-output.selectable.selected,
+    .react-flow__node-output.selectable:focus,
+    .react-flow__node-output.selectable:focus-visible,
+    .react-flow__node-group.selectable.selected,
+    .react-flow__node-group.selectable:focus,
+    .react-flow__node-group.selectable:focus-visible {
+      box-shadow: var(--xy-node-boxshadow-selected, var(--xy-node-boxshadow-selected-default));
+    }
+
+.react-flow__node-group {
+  background-color: var(--xy-node-group-background-color, var(--xy-node-group-background-color-default));
+}
+
+.react-flow__nodesselection-rect,
+.react-flow__selection {
+  background: var(--xy-selection-background-color, var(--xy-selection-background-color-default));
+  border: var(--xy-selection-border, var(--xy-selection-border-default));
+}
+
+  .react-flow__nodesselection-rect:focus,
+  .react-flow__nodesselection-rect:focus-visible,
+  .react-flow__selection:focus,
+  .react-flow__selection:focus-visible {
+    outline: none;
+  }
+
+    .react-flow__controls-button:hover {
+      background: var(
+        --xy-controls-button-background-color-hover-props,
+        var(--xy-controls-button-background-color-hover, var(--xy-controls-button-background-color-hover-default))
+      );
+      color: var(
+        --xy-controls-button-color-hover-props,
+        var(--xy-controls-button-color-hover, var(--xy-controls-button-color-hover-default))
+      );
+    }
+
+    .react-flow__controls-button:disabled {
+      pointer-events: none;
+    }
+
+      .react-flow__controls-button:disabled svg {
+        fill-opacity: 0.4;
+      }
+
+  .react-flow__controls-button:last-child {
+    border-bottom: none;
+  }
+
+  .react-flow__controls.horizontal .react-flow__controls-button {
+    border-bottom: none;
+    border-right: 1px solid
+      var(
+        --xy-controls-button-border-color-props,
+        var(--xy-controls-button-border-color, var(--xy-controls-button-border-color-default))
+      );
+  }
+
+  .react-flow__controls.horizontal .react-flow__controls-button:last-child {
+    border-right: none;
+  }
+}
+
+@layer xyflow {
+
+.react-flow__resize-control {
+  position: absolute;
+}
+
+.react-flow__resize-control.left,
+.react-flow__resize-control.right {
+  cursor: ew-resize;
+}
+
+.react-flow__resize-control.top,
+.react-flow__resize-control.bottom {
+  cursor: ns-resize;
+}
+
+.react-flow__resize-control.top.left,
+.react-flow__resize-control.bottom.right {
+  cursor: nwse-resize;
+}
+
+.react-flow__resize-control.bottom.left,
+.react-flow__resize-control.top.right {
+  cursor: nesw-resize;
+}
+
+/* handle styles */
+.react-flow__resize-control.handle {
+  width: 5px;
+  height: 5px;
+  border: 1px solid #fff;
+  border-radius: 1px;
+  background-color: var(--xy-resize-background-color, var(--xy-resize-background-color-default));
+  translate: -50% -50%;
+}
+
+.react-flow__resize-control.handle.left {
+  left: 0;
+  top: 50%;
+}
+.react-flow__resize-control.handle.right {
+  left: 100%;
+  top: 50%;
+}
+.react-flow__resize-control.handle.top {
+  left: 50%;
+  top: 0;
+}
+.react-flow__resize-control.handle.bottom {
+  left: 50%;
+  top: 100%;
+}
+.react-flow__resize-control.handle.top.left {
+  left: 0;
+}
+.react-flow__resize-control.handle.bottom.left {
+  left: 0;
+}
+.react-flow__resize-control.handle.top.right {
+  left: 100%;
+}
+.react-flow__resize-control.handle.bottom.right {
+  left: 100%;
+}
+
+/* line styles */
+.react-flow__resize-control.line {
+  border-color: var(--xy-resize-background-color, var(--xy-resize-background-color-default));
+  border-width: 0;
+  border-style: solid;
+}
+
+.react-flow__resize-control.line.left,
+.react-flow__resize-control.line.right {
+  width: 1px;
+  transform: translate(-50%, 0);
+  top: 0;
+  height: 100%;
+}
+
+.react-flow__resize-control.line.left {
+  left: 0;
+  border-left-width: 1px;
+}
+
+.react-flow__resize-control.line.right {
+  left: 100%;
+  border-right-width: 1px;
+}
+
+.react-flow__resize-control.line.top,
+.react-flow__resize-control.line.bottom {
+  height: 1px;
+  transform: translate(0, -50%);
+  left: 0;
+  width: 100%;
+}
+
+.react-flow__resize-control.line.top {
+  top: 0;
+  border-top-width: 1px;
+}
+
+.react-flow__resize-control.line.bottom {
+  border-bottom-width: 1px;
+  top: 100%;
+}
+}
+
+@layer xyflow {
+  .react-flow__edge-textbg {
+    fill: var(--xy-edge-label-background-color, var(--xy-edge-label-background-color-default));
+  }
+
+  .react-flow__edge-text {
+    fill: var(--xy-edge-label-color, var(--xy-edge-label-color-default));
+  }
+}
+/**
+ * 令牌 50 条，照 02-design-system.md §2 逐字抄（浅色默认、深色可切）。
+ * 这里只放变量定义与映射注释：不写选择器规则、不写 @media、不出现裸 hex 以外的重复定义。
+ */
+body[data-theme="light"]{
+  /* 原始色阶 · 浅：中性 8 阶（1 最深 → 8 最亮）+ 4 色族 ×4 阶 */
+  --pd-n-1:#1A1A20; --pd-n-2:#3F3B48; --pd-n-3:#6B6675; --pd-n-4:#85808F;
+  --pd-n-5:#9C97A6; --pd-n-6:#C6C1CC; --pd-n-7:#DEDAE4; --pd-n-8:#FFFFFF;
+  --pd-blue-1:#EEE8FB;  --pd-blue-2:#DCD2F5;  --pd-blue-3:#6E5CC4;  --pd-blue-4:#3B2F73;
+  --pd-teal-1:#E7EFD6;  --pd-teal-2:#CFE0B6;  --pd-teal-3:#5F8B45;  --pd-teal-4:#3E5C2B;
+  --pd-amber-1:#F9EFD9; --pd-amber-2:#EFDCAE; --pd-amber-3:#A8741F; --pd-amber-4:#7A5413;
+  --pd-red-1:#F9E5E3;   --pd-red-2:#F0C7C2;   --pd-red-3:#B4483F;   --pd-red-4:#7F322C;
+  /* 语义层 12 条：玻璃底板 / 白面板 / 微灰抬起卡片（亮差分不开时靠 --pd-sh-1） */
+  --pd-bg-1:#E9E5EC; --pd-bg-2:#FFFFFF; --pd-bg-3:#FBFAFC;
+  --pd-fg-1:#1A1A20; --pd-fg-2:#6B6675; --pd-fg-3:#9C97A6;
+  --pd-line-1:#D5D0DB; --pd-line-2:#BDB7C7;
+  --pd-accent:#6E5CC4; --pd-ring:#9B8CDB;
+  --pd-tint-bg:#EEE8FB; --pd-tint-fg:#3B2F73;
+}
+body[data-theme="dark"]{
+  /* 原始色阶 · 深：同族降饱和，不用亮蓝 / 亮青 */
+  --pd-n-1:#121216; --pd-n-2:#17171B; --pd-n-3:#1F1F25; --pd-n-4:#26262E;
+  --pd-n-5:#33333C; --pd-n-6:#4A4A55; --pd-n-7:#74747E; --pd-n-8:#A6A6B0;
+  --pd-blue-1:#241F38;  --pd-blue-2:#382E5C;  --pd-blue-3:#A99BF0;  --pd-blue-4:#D3CAFA;
+  --pd-teal-1:#1F2A18;  --pd-teal-2:#31452A;  --pd-teal-3:#9DC46F;  --pd-teal-4:#C6DEA4;
+  --pd-amber-1:#33260F; --pd-amber-2:#553F17; --pd-amber-3:#D9A441; --pd-amber-4:#EDC98A;
+  --pd-red-1:#361A18;   --pd-red-2:#5C2A26;   --pd-red-3:#E07068;   --pd-red-4:#F0ACA6;
+  /* 语义层 12 条：底板 / 面板 / 卡片逐级提亮 */
+  --pd-bg-1:#17171B; --pd-bg-2:#1F1F25; --pd-bg-3:#26262E;
+  --pd-fg-1:#EDEDF0; --pd-fg-2:#A6A6B0; --pd-fg-3:#74747E;
+  --pd-line-1:#33333C; --pd-line-2:#43434E;
+  --pd-accent:#A99BF0; --pd-ring:#C0B6F4;
+  --pd-tint-bg:rgba(169,155,240,.14); --pd-tint-fg:#D3CAFA;
+}
+/* ③ 与主题无关的 14 条：字号 5 / 间距 4 / 圆角 3 / 阴影 2（阴影两档固定，两个主题共用） */
+:root{
+  --pd-fs-1:11px; --pd-fs-2:12px; --pd-fs-3:13px; --pd-fs-4:15px; --pd-fs-5:19px;
+  --pd-sp-1:4px; --pd-sp-2:8px; --pd-sp-3:16px; --pd-sp-4:24px;
+  --pd-r-1:6px; --pd-r-2:10px; --pd-r-3:12px;
+  --pd-sh-1:0 1px 3px rgba(24,20,34,.10); --pd-sh-2:0 14px 34px rgba(24,20,34,.16);
+}
+/* reset 与全局字体（02 §8）：系统栈、零外部字体、零 CDN、零外链图片。 */
+*,*::before,*::after{box-sizing:border-box}
+html,body,#root{height:100%}
+body{
+  margin:0;
+  background:var(--pd-bg-1);
+  color:var(--pd-fg-1);
+  font-family:-apple-system,"Segoe UI","Noto Sans SC","Microsoft YaHei",sans-serif;
+  font-size:var(--pd-fs-3);
+  -webkit-font-smoothing:antialiased;
+}
+button{font:inherit;color:inherit;background:none;padding:0;border:0;cursor:pointer}
+input{font:inherit;color:inherit;background:none;border:0;padding:0}
+ul,ol{margin:0;padding:0;list-style:none}
+p{margin:0}
+h1,h2,h3{margin:0;font-weight:600}
+:focus-visible{outline:2px solid var(--pd-ring);outline-offset:2px}
+::-webkit-scrollbar{width:8px;height:8px}
+::-webkit-scrollbar-thumb{background:var(--pd-line-1);border-radius:999px}
+::-webkit-scrollbar-track{background:transparent}
+/* 组件层（02 §3/§3.1）：卡片不描边，只用底色三级 + 两档阴影 + 圆角；不写任何 1px 分隔线。 */
+
+/* 9 左列顶部行 ws-head（高 40）：工作区名 + 域切换，只有这两样 */
+.left-hd{display:flex;align-items:center;gap:var(--pd-sp-2);height:40px;padding:0 var(--pd-sp-2) 0 var(--pd-sp-3)}
+.ws-name{flex:1;min-width:0;font-size:14px;font-weight:600;color:var(--pd-fg-1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dom-switch{display:flex;gap:2px;padding:2px;border-radius:999px}
+.dom-switch button{width:52px;height:22px;border-radius:999px;font-size:var(--pd-fs-2);color:var(--pd-fg-2)}
+.dom-switch button[data-on="true"]{background:var(--pd-bg-3);color:var(--pd-accent);box-shadow:var(--pd-sh-1);font-weight:600}
+
+/* 树：行是 30px 胶囊，悬停淡底，选中 bg-3 + sh-1 */
+.tree{flex:1;min-height:0;overflow:auto;padding:0 var(--pd-sp-2) var(--pd-sp-1)}
+.tree-empty{padding:var(--pd-sp-3) var(--pd-sp-2);font-size:var(--pd-fs-2);color:var(--pd-fg-3);line-height:1.6}
+.tree-sec-head{display:flex;align-items:center;gap:var(--pd-sp-2);height:32px;padding:0 var(--pd-sp-2);font-size:var(--pd-fs-1);color:var(--pd-fg-3)}
+.tree-sec-count{color:var(--pd-fg-3);font-variant-numeric:tabular-nums}
+.tree-add{display:grid;place-items:center;width:16px;height:16px;margin-left:auto;border-radius:999px;color:var(--pd-fg-3);opacity:0}
+.tree-sec-head:hover .tree-add,.tree-sec-head:focus-within .tree-add{opacity:1;color:var(--pd-accent)}
+.tree-group{padding-top:var(--pd-sp-2)}
+.tree-group-head{height:24px;padding:0 var(--pd-sp-2);font-size:var(--pd-fs-1);color:var(--pd-fg-3)}
+.tree-kids{list-style:none}
+.row-wrap{position:relative}
+.row{display:flex;align-items:center;gap:var(--pd-sp-2);height:30px;padding:0 var(--pd-sp-2);border-radius:999px;cursor:pointer}
+.row:hover{background:color-mix(in srgb,var(--pd-bg-1) 45%,transparent)}
+.row[data-selected="true"]{background:var(--pd-bg-3);box-shadow:var(--pd-sh-1)}
+.code{min-width:34px;font-size:var(--pd-fs-1);color:var(--pd-fg-3);font-variant-numeric:tabular-nums}
+.title{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:var(--pd-fs-3);color:var(--pd-fg-1)}
+.status{font-size:var(--pd-fs-1);color:var(--pd-fg-3);white-space:nowrap}
+.dot{flex:none;width:6px;height:6px;border-radius:999px;background:var(--pd-fg-3)}
+.s-unclear{background:var(--pd-fg-3)}
+.s-analyzing{background:var(--pd-tint-fg)}
+.s-clarified{background:var(--pd-accent)}
+.s-answered{background:var(--pd-teal-3)}
+.s-deferred{background:var(--pd-n-5)}
+
+/* 13 行内操作 row-actions：静止 opacity 0，行 hover / focus-within 现形 */
+.row-actions{display:flex;gap:2px;margin-left:var(--pd-sp-1);opacity:0}
+.row:hover .row-actions,.row:focus-within .row-actions{opacity:1}
+.ract{display:grid;place-items:center;width:20px;height:20px;border-radius:999px;font-size:var(--pd-fs-2);color:var(--pd-fg-2)}
+.ract:hover{background:var(--pd-bg-2);color:var(--pd-accent)}
+.rowmenu{position:absolute;z-index:20;top:28px;right:var(--pd-sp-2);min-width:152px;padding:var(--pd-sp-1);background:var(--pd-bg-3);border-radius:var(--pd-r-2);box-shadow:var(--pd-sh-2)}
+.rowmenu button{display:block;width:100%;height:28px;padding:0 var(--pd-sp-2);border-radius:var(--pd-r-1);text-align:left;font-size:var(--pd-fs-2);color:var(--pd-fg-1)}
+.rowmenu button:hover{background:var(--pd-tint-bg);color:var(--pd-tint-fg)}
+.menu-label{display:flex;align-items:center;height:22px;padding:0 var(--pd-sp-2);font-size:var(--pd-fs-1);color:var(--pd-fg-3)}
+
+/* 行内输入：焦点用 ring 阴影，不画边框 */
+.inline-input{flex:1;min-width:0;height:22px;padding:0 var(--pd-sp-1);border-radius:var(--pd-r-1);background:var(--pd-bg-2);box-shadow:0 0 0 1.5px var(--pd-ring);font-size:var(--pd-fs-3);outline:none}
+
+/* 11 左列底部检查行 check-footer：高 36、margin 8，不是卡片 */
+.check-footer{display:flex;align-items:center;gap:var(--pd-sp-2);height:36px;margin:var(--pd-sp-2);padding:0 var(--pd-sp-2);font-size:var(--pd-fs-2);color:var(--pd-fg-2);cursor:pointer}
+.check-footer:hover{color:var(--pd-fg-1)}
+.check-dot{flex:none;width:6px;height:6px;border-radius:999px;background:var(--pd-amber-3)}
+.check-arrow{margin-left:auto;color:var(--pd-fg-3)}
+
+/* 1 右列顶部状态行 statusbar：无背景 / 无圆角 / 无阴影 / 无下边框 */
+.statusbar{display:flex;align-items:center;justify-content:space-between;height:44px;padding:0 var(--pd-sp-2)}
+.sb-left{display:flex;align-items:center;gap:var(--pd-sp-2);min-width:0}
+.sb-title{font-size:var(--pd-fs-4);font-weight:600;color:var(--pd-fg-1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sb-none{font-size:var(--pd-fs-2);color:var(--pd-fg-2)}
+.sb-right{display:flex;align-items:center;gap:var(--pd-sp-2)}
+.saved{font-size:var(--pd-fs-1);color:var(--pd-fg-3);white-space:nowrap}
+.theme-toggle{display:flex;gap:2px}
+.theme-toggle button{width:24px;height:20px;border-radius:999px;font-size:var(--pd-fs-1);color:var(--pd-fg-3)}
+.theme-toggle button[data-on="true"]{background:var(--pd-bg-3);color:var(--pd-accent);box-shadow:var(--pd-sh-1)}
+
+/* 画板占位与详情空壳 */
+.stage{position:relative;display:grid;place-items:center;min-width:0;min-height:0;overflow:hidden;background:var(--pd-bg-2);border-radius:var(--pd-r-3)}
+.stage-hint{padding:var(--pd-sp-2) var(--pd-sp-3);border-radius:999px;background:var(--pd-bg-3);box-shadow:var(--pd-sh-1);font-size:var(--pd-fs-2);color:var(--pd-fg-3)}
+.detail{display:flex;flex-direction:column;min-width:0;min-height:0;overflow:hidden;background:var(--pd-bg-2);border-radius:var(--pd-r-3)}
+.detail-hd{display:flex;align-items:center;justify-content:space-between;height:36px;padding:0 var(--pd-sp-3);font-size:var(--pd-fs-2);color:var(--pd-fg-2)}
+.detail-body{display:flex;flex-direction:column;gap:var(--pd-sp-2);padding:0 var(--pd-sp-3) var(--pd-sp-3);font-size:var(--pd-fs-2);color:var(--pd-fg-2)}
+.detail-line{font-size:var(--pd-fs-3);color:var(--pd-fg-1)}
+.detail-note{color:var(--pd-fg-3)}
+.detail-empty{padding-top:var(--pd-sp-2);color:var(--pd-fg-3)}
+
+/* 24px 把手：收起 / 展开的唯一入口，静止 opacity .4 */
+.handle{display:grid;place-items:center;width:24px;height:24px;border-radius:999px;background:var(--pd-bg-3);box-shadow:var(--pd-sh-2);font-size:var(--pd-fs-2);color:var(--pd-fg-2);opacity:.4}
+.handle:hover,.handle:focus-visible{opacity:1;color:var(--pd-accent)}
+.handle:disabled{opacity:.22;cursor:default;color:var(--pd-fg-3)}
+/* 撤销 / 重做按钮：沿用 24px 把手的无边框 + 底色 + 轻阴影，可用时常亮 */
+.hist-btns{display:flex;gap:2px}
+.hist-btns .handle{cursor:pointer;opacity:.75}
+.hist-btns .handle:hover:not(:disabled),.hist-btns .handle:focus-visible:not(:disabled){opacity:1;color:var(--pd-accent)}
+
+/* ---------- 解域（IMP3）：左树两段、支撑徽标、详情行 ---------- */
+.tree-sec-title{color:var(--pd-fg-2)}
+.support-badge{flex:none;display:grid;place-items:center;min-width:16px;height:16px;padding:0 4px;border-radius:999px;background:var(--pd-tint-bg);color:var(--pd-tint-fg);font-size:var(--pd-fs-1);font-variant-numeric:tabular-nums}
+.support-none{flex:none;margin-left:auto}
+.row-relation .title{font-size:var(--pd-fs-2)}
+.row-relation .status{margin-left:auto}
+
+.unit-row{display:flex;align-items:center;gap:var(--pd-sp-2);min-height:28px;padding:0 var(--pd-sp-1);border-radius:var(--pd-r-1)}
+.unit-row:hover{background:color-mix(in srgb,var(--pd-bg-1) 45%,transparent)}
+.unit-row[data-selected="true"]{background:var(--pd-bg-3);box-shadow:var(--pd-sh-1)}
+.unit-name{flex:1;min-width:0;text-align:left;font-size:var(--pd-fs-2);color:var(--pd-fg-1);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.unit-add{display:flex;align-items:center}
+
+.field-row{display:grid;grid-template-columns:minmax(0,1fr) 72px auto 20px;align-items:center;gap:4px}
+.field-row input{padding:2px 4px;border-radius:var(--pd-r-1);background:transparent;color:var(--pd-fg-1);font:inherit;min-width:0}
+.field-row input:focus{background:var(--pd-bg-3);outline:none;box-shadow:0 0 0 1.5px var(--pd-ring)}
+.field-req{display:flex;align-items:center;gap:2px;font-size:var(--pd-fs-1);color:var(--pd-fg-3);white-space:nowrap}
+
+.support-row{display:flex;align-items:center;gap:var(--pd-sp-2);min-height:28px;font-size:var(--pd-fs-2)}
+.support-jump{flex:1;min-width:0;text-align:left;font-size:var(--pd-fs-2);color:var(--pd-fg-1);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.support-jump:hover{color:var(--pd-tint-fg);text-decoration:underline}
+
+/* 问题详情「关联」五行（01 §4.3 的五条边）：已关联元素是胶囊，行尾一个 `＋` 就地开输入 */
+.link-row{display:flex;align-items:flex-start;gap:var(--pd-sp-2);min-height:24px}
+.link-label{flex:none;width:56px;line-height:20px;font-size:var(--pd-fs-1);color:var(--pd-fg-3)}
+.link-pills{display:flex;flex-wrap:wrap;align-items:center;gap:4px;flex:1;min-width:0}
+.link-pill{
+  display:flex;
+  align-items:center;
+  height:20px;
+  max-width:100%;
+  padding:0 var(--pd-sp-2);
+  border-radius:999px;
+  background:var(--pd-tint-bg);
+  color:var(--pd-tint-fg);
+  font-size:var(--pd-fs-1);
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+.link-pill:hover{box-shadow:var(--pd-sh-1)}
+.link-add{display:grid;place-items:center;width:20px;height:20px;border-radius:999px;font-size:var(--pd-fs-2);color:var(--pd-fg-3)}
+.link-add:hover{background:var(--pd-bg-3);color:var(--pd-accent)}
+.prop-row select{padding:2px var(--pd-sp-1);border-radius:var(--pd-r-1);background:transparent;color:var(--pd-fg-1);font:inherit}
+.prop-row select:focus{outline:none;box-shadow:0 0 0 1.5px var(--pd-ring)}
+
+.danger-btn{height:26px;padding:0 var(--pd-sp-2);border-radius:999px;font-size:var(--pd-fs-1);color:var(--pd-red-3);background:transparent}
+.danger-btn:hover{background:color-mix(in srgb,var(--pd-red-3) 12%,transparent)}
+.confirm-row{display:flex;flex-direction:column;gap:var(--pd-sp-1)}
+.confirm-actions{display:flex;align-items:center;gap:var(--pd-sp-2)}
+
+/* 导出菜单（01 §8 / 04 §2.2）：右列信息行右端的下载图标 + 四选一菜单 + TS 预览 */
+.export-menu{position:relative;display:flex;align-items:center;gap:var(--pd-sp-1)}
+.export-btn{width:24px;height:24px;display:grid;place-items:center;border:0;border-radius:var(--pd-r-1);background:transparent;color:var(--pd-fg-2);font-size:var(--pd-fs-4);line-height:1;cursor:pointer}
+.export-btn:hover{background:var(--pd-bg-3);color:var(--pd-fg-1)}
+.export-list{position:absolute;right:0;top:26px;z-index:30;display:flex;flex-direction:column;min-width:196px;padding:var(--pd-sp-1);background:var(--pd-bg-3);border-radius:var(--pd-r-1);box-shadow:var(--pd-sh-2)}
+.export-list button{border:0;background:transparent;text-align:left;padding:var(--pd-sp-1) var(--pd-sp-2);font-size:var(--pd-fs-2);color:var(--pd-fg-1);border-radius:var(--pd-r-1);cursor:pointer}
+.export-list button:hover{background:var(--pd-tint-bg);color:var(--pd-tint-fg)}
+.export-msg{position:absolute;right:0;top:28px;z-index:31;max-width:340px;padding:var(--pd-sp-1) var(--pd-sp-2);background:var(--pd-bg-3);border-radius:var(--pd-r-1);box-shadow:var(--pd-sh-1);font-size:var(--pd-fs-1);color:var(--pd-fg-2)}
+.export-preview{position:absolute;right:0;top:26px;z-index:32;width:520px;max-height:420px;display:flex;flex-direction:column;background:var(--pd-bg-3);border-radius:var(--pd-r-2);box-shadow:var(--pd-sh-2)}
+.ep-hd{padding:var(--pd-sp-2);background:var(--pd-bg-2);border-radius:var(--pd-r-2) var(--pd-r-2) 0 0;font-size:var(--pd-fs-2);color:var(--pd-fg-2)}
+.ep-body{margin:0;padding:var(--pd-sp-2);overflow:auto;font-family:var(--pd-font-mono,ui-monospace,monospace);font-size:var(--pd-fs-1);color:var(--pd-fg-1);white-space:pre}
+.ep-ft{display:flex;justify-content:flex-end;gap:var(--pd-sp-1);padding:var(--pd-sp-2);background:var(--pd-bg-2);border-radius:0 0 var(--pd-r-2) var(--pd-r-2)}
+.ep-ft button{background:var(--pd-bg-3);color:var(--pd-fg-1);font-size:var(--pd-fs-2);padding:calc(var(--pd-sp-1) + 1px) var(--pd-sp-2);border-radius:var(--pd-r-1);box-shadow:var(--pd-sh-1);cursor:pointer}
+/* 版式（03 §2）：两列，左 264 固定、右弹性，12px 间隙透底板；无页面级顶栏、零分隔线。 */
+.app{
+  display:grid;
+  grid-template-columns:264px minmax(0,1fr);
+  gap:12px;
+  height:100vh;
+  padding:12px;
+}
+.col{min-height:0}
+.col.left{display:flex;flex-direction:column;background:var(--pd-bg-2);border-radius:var(--pd-r-3)}
+.col.right{display:flex;flex-direction:column;min-width:0}
+
+/* 右列内容：画板弹性 + 详情 340；详情收到 0 时用把手放回来 */
+.content{position:relative;display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:12px;flex:1;min-height:0}
+.reopen-detail{position:absolute;top:50%;right:var(--pd-sp-1);transform:translateY(-50%)}
+
+@media (max-width:1199px){
+  .app{grid-template-columns:220px minmax(0,1fr)}
+  .content{grid-template-columns:minmax(0,1fr) 300px}
+}
+/* 画布与详情（03 §2.4 / 02 §3 组件 3、10、15、§3.1）：只用 tokens.css 的 50 个令牌，无裸 hex。 */
+
+/* 画板：网格 4px 实 / 5px 空的极淡虚线（02 §7 画布网格），本身不是 1px 分隔线 */
+.stage{
+  cursor:default;
+  background-image:
+    linear-gradient(var(--pd-line-1) 1px, transparent 1px),
+    linear-gradient(90deg, var(--pd-line-1) 1px, transparent 1px);
+  background-size:24px 24px;
+  background-position:0 0;
+  touch-action:none;
+}
+
+/* 节点卡（02 §3 组件 3 / §4）：无描边，选中 1.5px 主色环用 box-shadow。
+   卡片内容分两行：.node-head（编号 + 标题）+ .node-links（关联元素小胶囊，最多 3 个 + `+N`）。 */
+.node-card{
+  position:absolute;
+  display:flex;
+  flex-direction:column;
+  justify-content:center;
+  align-items:stretch;
+  gap:2px;
+  padding:0 var(--pd-sp-3);
+  background:var(--pd-bg-3);
+  border-radius:var(--pd-r-3);
+  box-shadow:var(--pd-sh-1);
+  cursor:grab;
+  user-select:none;
+}
+.node-head{display:flex;align-items:center;gap:var(--pd-sp-2);min-width:0}
+.node-links{display:flex;align-items:center;gap:4px;min-width:0;overflow:hidden}
+.node-link{
+  flex:none;
+  max-width:76px;
+  height:16px;
+  padding:0 6px;
+  border-radius:999px;
+  background:var(--pd-tint-bg);
+  color:var(--pd-tint-fg);
+  font-size:10px;
+  line-height:16px;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+.node-link:hover{box-shadow:var(--pd-sh-1)}
+.node-link-more{flex:none;padding:0 2px;font-size:10px;color:var(--pd-fg-3);font-variant-numeric:tabular-nums;white-space:nowrap}
+.node-card:hover{box-shadow:var(--pd-sh-2)}
+.node-card[data-dragging]{cursor:grabbing;box-shadow:var(--pd-sh-2);z-index:2}
+.node-card[data-core]{background:var(--pd-bg-2)}
+.node-card[data-selected]{box-shadow:0 0 0 1.5px var(--pd-accent), var(--pd-sh-1)}
+.node-code{font-size:var(--pd-fs-1);color:var(--pd-fg-3);font-variant-numeric:tabular-nums}
+.node-title{
+  min-width:0;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  font-size:var(--pd-fs-3);
+  color:var(--pd-fg-1);
+}
+.check-mark{
+  margin-left:auto;
+  display:grid;
+  place-items:center;
+  min-width:16px;
+  height:16px;
+  padding:0 4px;
+  border-radius:999px;
+  background:var(--pd-tint-bg);
+  color:var(--pd-tint-fg);
+  font-size:var(--pd-fs-1);
+  font-variant-numeric:tabular-nums;
+}
+
+/* 画布悬浮工具条（02 §3 组件 10）：高 30、胶囊、无边框、无 1px 直线 */
+.stage-tools{
+  position:absolute;
+  top:46px;
+  right:14px;
+  display:flex;
+  align-items:center;
+  gap:2px;
+  height:30px;
+  padding:0 var(--pd-sp-1);
+  border-radius:999px;
+  background:var(--pd-bg-3);
+  box-shadow:var(--pd-sh-2);
+  z-index:3;
+}
+.stage-tools button{
+  height:22px;
+  min-width:22px;
+  padding:0 var(--pd-sp-2);
+  border-radius:999px;
+  font-size:var(--pd-fs-1);
+  color:var(--pd-fg-2);
+  font-variant-numeric:tabular-nums;
+}
+.stage-tools button:hover{background:var(--pd-tint-bg);color:var(--pd-tint-fg)}
+
+/* 画布提示胶囊（02 §3 组件 15）：底部中央偏下，不拦鼠标 */
+.canvas-hint{
+  position:absolute;
+  bottom:20px;
+  left:50%;
+  transform:translateX(-50%);
+  display:flex;
+  align-items:center;
+  height:28px;
+  padding:0 12px;
+  border-radius:999px;
+  background:var(--pd-bg-3);
+  box-shadow:var(--pd-sh-1);
+  font-size:var(--pd-fs-2);
+  color:var(--pd-fg-3);
+  pointer-events:none;
+  z-index:3;
+}
+
+/* 连线模式提示条（03 §2.7）：比普通提示更亮，明确当前在连线 */
+.modebar{
+  position:absolute;
+  bottom:20px;
+  left:50%;
+  transform:translateX(-50%);
+  display:flex;
+  align-items:center;
+  height:28px;
+  padding:0 12px;
+  border-radius:999px;
+  background:var(--pd-bg-3);
+  box-shadow:var(--pd-sh-2);
+  font-size:var(--pd-fs-2);
+  color:var(--pd-tint-fg);
+  pointer-events:none;
+  z-index:3;
+}
+
+/* ---------- 解域领域模型（IMP3）：实体卡片、关系连线、空态卡 ---------- */
+.node-card.entity-card{
+  display:flex;
+  flex-direction:column;
+  align-items:stretch;
+  gap:4px;
+  padding:10px 12px;
+  overflow:hidden;
+}
+.node-card.entity-card[data-connect-source]{box-shadow:0 0 0 1.5px var(--pd-accent), var(--pd-sh-2)}
+.entity-head{display:flex;align-items:center;gap:6px;min-width:0}
+.entity-head .node-title{flex:1;font-weight:600}
+.entity-identity{font-size:var(--pd-fs-1);color:var(--pd-fg-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.entity-fields{list-style:none;display:flex;flex-direction:column;gap:2px;margin:0;padding:0;font-size:var(--pd-fs-1);color:var(--pd-fg-2);min-height:0;overflow:hidden}
+.entity-fields li{display:flex;align-items:center;gap:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.entity-fields .field-type{color:var(--pd-fg-3)}
+.entity-fields .field-req{color:var(--pd-fg-3);font-size:10px}
+.entity-tags{display:flex;flex-wrap:wrap;gap:4px;margin-top:auto}
+.tag{display:grid;place-items:center;height:18px;padding:0 6px;border-radius:999px;background:var(--pd-tint-bg);color:var(--pd-tint-fg);font-size:var(--pd-fs-1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.tag-constraint{background:var(--pd-bg-2);box-shadow:var(--pd-sh-1)}
+.tag[data-unsupported]{box-shadow:0 0 0 1px var(--pd-red-3)}
+.tag-support{margin-left:4px;font-size:10px;opacity:.75}
+.entity-card .support-badge{margin-left:0}
+.entity-card .check-mark{background:color-mix(in srgb,var(--pd-red-3) 14%,transparent);color:var(--pd-red-3)}
+
+/* 解域空态卡（01 §3.3 / 03 §2.7 ④）：画板正中，只有树与画布都空时出现 */
+.emptycard{
+  position:absolute;
+  left:50%;
+  top:50%;
+  transform:translate(-50%,-50%);
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  gap:var(--pd-sp-2);
+  padding:20px;
+  border-radius:var(--pd-r-3);
+  background:var(--pd-bg-3);
+  box-shadow:var(--pd-sh-2);
+  z-index:2;
+  text-align:center;
+}
+.emptycard .ghost-btn{margin-left:0}
+
+/* 详情栏（03 §2.4.4）：分组 = 嵌套淡色块 + 圆角 12，无边框；聚焦分组浮 1.5px 主色环 */
+.detail-body{flex:1;min-height:0;overflow:auto;gap:var(--pd-sp-2)}
+.dgroup{
+  display:flex;
+  flex-direction:column;
+  gap:var(--pd-sp-1);
+  padding:var(--pd-sp-2);
+  border-radius:var(--pd-r-3);
+  background:color-mix(in srgb,var(--pd-bg-1) 32%,var(--pd-bg-2));
+}
+.dgroup[data-focus="true"]{box-shadow:0 0 0 1.5px var(--pd-accent)}
+.dgroup-title{font-size:var(--pd-fs-1);color:var(--pd-fg-3)}
+.prop-row{
+  display:grid;
+  grid-template-columns:88px minmax(0,1fr);
+  align-items:center;
+  gap:var(--pd-sp-2);
+  min-height:28px;
+  font-size:var(--pd-fs-2);
+}
+.prop-row-list{align-items:start}
+.prop-label{color:var(--pd-fg-3);font-size:var(--pd-fs-1)}
+.prop-value{display:flex;align-items:center;gap:var(--pd-sp-2);color:var(--pd-fg-1);min-width:0}
+.prop-row input,.prop-row textarea{
+  width:100%;
+  padding:2px var(--pd-sp-1);
+  border-radius:var(--pd-r-1);
+  background:transparent;
+  color:var(--pd-fg-1);
+  font:inherit;
+  resize:vertical;
+}
+.prop-row input:focus,.prop-row textarea:focus{
+  background:var(--pd-bg-3);
+  outline:none;
+  box-shadow:0 0 0 1.5px var(--pd-ring);
+}
+.ghost-btn{
+  margin-left:auto;
+  height:20px;
+  padding:0 var(--pd-sp-2);
+  border-radius:999px;
+  font-size:var(--pd-fs-1);
+  color:var(--pd-fg-3);
+}
+.ghost-btn:hover{background:var(--pd-tint-bg);color:var(--pd-tint-fg)}
+
+/* 检查项（02 §3 组件 6）：行高 40、圆角 10、卡片底 + sh-1 */
+.check-item{
+  display:flex;
+  align-items:center;
+  gap:var(--pd-sp-2);
+  min-height:40px;
+  padding:0 var(--pd-sp-2);
+  border-radius:10px;
+  background:var(--pd-bg-3);
+  box-shadow:var(--pd-sh-1);
+  cursor:pointer;
+  font-size:var(--pd-fs-2);
+}
+.check-item:hover{box-shadow:var(--pd-sh-2)}
+.check-code{font-size:var(--pd-fs-1);color:var(--pd-fg-3)}
+.check-text{min-width:0;color:var(--pd-fg-2)}
+
+.status-picks{display:flex;flex-wrap:wrap;gap:var(--pd-sp-1)}
+.status-pick{
+  height:24px;
+  padding:0 var(--pd-sp-2);
+  border-radius:999px;
+  font-size:var(--pd-fs-1);
+  color:var(--pd-fg-2);
+}
+.status-pick[data-on="true"]{background:var(--pd-bg-3);color:var(--pd-fg-1);box-shadow:var(--pd-sh-1)}
+
+/* 右列信息行：父级路径（12px 弱字），已保存 11px 弱字 */
+.sb-path{font-size:var(--pd-fs-2);color:var(--pd-fg-3)}
+.sb-left{display:flex;align-items:center;gap:var(--pd-sp-2);min-width:0}
+.sb-title{font-size:calc(var(--pd-fs-4) + 1px);font-weight:600;color:var(--pd-fg-1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sb-none{font-size:var(--pd-fs-2);color:var(--pd-fg-2)}
+.sb-right{display:flex;align-items:center;gap:var(--pd-sp-2)}
+.saved{font-size:var(--pd-fs-1);color:var(--pd-fg-3)}
+
+/* 检查行是 <button>：贴左列底部，仍是「不是卡片」的观感（03 §2.2） */
+.check-footer{width:calc(100% - var(--pd-sp-3));text-align:left;background:none;box-shadow:none;border-radius:0}
+
+/* 严重度两档（02 §2.2）：错误红、提示琥珀；只有 6px 圆点用色 */
+.dot.s-error{background:var(--pd-red-3)}
+.dot.s-warning{background:var(--pd-amber-3)}
+
+/* 详情收起（03 §2.4.2）：右列第二列收到 0，不是缩成窄条 */
+.app[data-right="off"] .content{grid-template-columns:minmax(0,1fr) 0}
+.reopen-detail{
+  position:absolute;
+  right:0;
+  top:50%;
+  width:24px;
+  height:24px;
+  border-radius:999px;
+  background:var(--pd-bg-3);
+  box-shadow:var(--pd-sh-2);
+  color:var(--pd-fg-2);
+  z-index:3;
+}
+/* 画布皮肤收口（IMP7）：先引 @xyflow/react 的默认皮，再在这里整条换掉。
+   02 的线条预算：全站 0 条 1px 边框——节点用底色 + 阴影表达，选中是 1.5px 主色环。
+   覆盖清单（见 IMP7 报告）：
+   ① 节点外框 --xy-node-border-default（默认 1px solid）、圆角、底色、选中环、hover 阴影
+   ② 连线默认色 / 线宽 / 选中色、连接预览线
+   ③ 句柄（handle）底色与描边
+   ④ Controls 皮肤（我们不用它，但样式先收口，避免以后误用冒出库默认皮）
+   ⑤ Attribution（MIT 署名保留，压到 9px 放右下角）
+   ⑥ Background 点阵色、Minimap 底/遮罩/节点色、框选框颜色
+   ⑦ 边标签底色/字色（自绘边 .pdc-edge-label 自己的令牌另写） */
+
+/* ⓪ 库的 CSS 变量一次改完：深/浅主题都跟着 body[data-theme] 的令牌走 */
+.react-flow{
+  --xy-node-border-default:0;
+  --xy-node-border-radius-default:var(--pd-r-3);
+  --xy-node-background-color-default:transparent;
+  --xy-node-color-default:var(--pd-fg-1);
+  --xy-node-boxshadow-hover-default:none;
+  --xy-node-boxshadow-selected-default:0 0 0 1.5px var(--pd-accent);
+  --xy-edge-stroke-default:var(--pd-accent);
+  --xy-edge-stroke-width-default:2;
+  --xy-edge-stroke-selected-default:var(--pd-accent);
+  --xy-handle-background-color-default:var(--pd-bg-3);
+  --xy-handle-border-color-default:transparent;
+  --xy-connectionline-stroke-default:var(--pd-accent);
+  --xy-connectionline-stroke-width-default:2;
+  --xy-attribution-background-color-default:transparent;
+  --xy-minimap-background-color-default:var(--pd-bg-3);
+  --xy-minimap-mask-background-color-default:color-mix(in srgb,var(--pd-bg-1) 45%,transparent);
+  --xy-minimap-mask-stroke-width-default:0;
+  --xy-minimap-node-background-color-default:var(--pd-bg-2);
+  --xy-minimap-node-stroke-width-default:0;
+  --xy-background-pattern-dots-color-default:var(--pd-line-1);
+  --xy-selection-background-color-default:color-mix(in srgb,var(--pd-accent) 10%,transparent);
+  --xy-selection-border-default:1.5px dashed var(--pd-accent);
+  --xy-edge-label-background-color-default:var(--pd-bg-2);
+  --xy-edge-label-color-default:var(--pd-fg-1);
+  background:transparent;
+}
+
+/* 画板定位：.stage 里铺满一块 React Flow（视口与平移缩放交给库） */
+.stage[data-flow="on"]{position:relative;background-image:none}
+.stage[data-flow="on"] .flow-stage{position:absolute;inset:0}
+.stage[data-flow="on"] .react-flow{width:100%;height:100%}
+.stage[data-flow="on"] .react-flow__pane{cursor:default}
+
+/* ① 节点外框：库默认的 border / padding / 圆角 / 背景 / 字体全抹掉，尺寸由节点 style 给 */
+.react-flow__node{
+  padding:0;
+  border:0;
+  border-radius:0;
+  background:none;
+  box-shadow:none;
+  color:inherit;
+  font:inherit;
+  cursor:grab;
+}
+.react-flow__node:active{cursor:grabbing}
+.react-flow__node .node-card{position:relative;width:100%;height:100%;box-sizing:border-box}
+
+/* ② 连线：默认色与线宽（自绘边另有内联 style，这里给库内建边兜底） */
+.react-flow__edge-path{stroke:var(--pd-accent);stroke-width:2;stroke-linecap:round}
+.react-flow__edge.selected .react-flow__edge-path{stroke-width:3}
+.react-flow__edge-textbg{fill:var(--pd-bg-2)}
+.react-flow__edge-text{fill:var(--pd-fg-1)}
+
+/* ③ 句柄：隐形圆点，hover 实体卡才显形；用 1.5px 主色环，不用边框 */
+.react-flow__handle{
+  width:7px;
+  height:7px;
+  min-width:0;
+  min-height:0;
+  border:0;
+  background:var(--pd-bg-3);
+  box-shadow:0 0 0 1.5px var(--pd-accent);
+  opacity:0;
+  transition:opacity .12s ease;
+}
+.react-flow__node:hover .react-flow__handle,
+.react-flow__handle.connectingfrom,
+.react-flow__handle.connectingto,
+.react-flow__handle.valid{opacity:1}
+
+/* ④ Controls：我们用自己的工具条；库的皮肤也收口，避免以后误用时冒默认白块 */
+.react-flow__controls{
+  overflow:hidden;
+  border-radius:var(--pd-r-3);
+  background:var(--pd-bg-3);
+  box-shadow:var(--pd-sh-1);
+}
+.react-flow__controls-button{
+  width:26px;
+  height:26px;
+  border:0;
+  background:var(--pd-bg-3);
+  color:var(--pd-fg-2);
+}
+.react-flow__controls-button:hover{background:var(--pd-tint-bg);color:var(--pd-tint-fg)}
+
+/* ⑤ Attribution：MIT 允许商用但要署名，保留「React Flow」，压到 9px 的弱字放右下角 */
+.react-flow__attribution{
+  right:8px;
+  bottom:4px;
+  padding:0 4px;
+  border-radius:var(--pd-r-1);
+  background:none;
+  font-size:9px;
+  line-height:1.2;
+  opacity:.45;
+}
+.react-flow__attribution a{color:var(--pd-fg-3);font-size:9px}
+
+/* ⑥ 点阵、缩略图、框选框都吃令牌（深/浅主题各一份，值来自 body[data-theme]） */
+.react-flow__background{opacity:.9}
+.react-flow__minimap{
+  right:14px;
+  bottom:52px;
+  overflow:hidden;
+  border-radius:var(--pd-r-3);
+  background:var(--pd-bg-3);
+  box-shadow:var(--pd-sh-1);
+}
+.react-flow__selection{border-radius:var(--pd-r-1)}
+
+/* ⑦ 自绘边（flow/edges.tsx）：EdgeLabelRenderer 里的标签，关系名 11px 600 + 基数 10px 弱字 */
+.pdc-edge-label{
+  position:absolute;
+  top:0;
+  left:0;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  padding:1px 6px;
+  border-radius:var(--pd-r-1);
+  background:var(--pd-bg-2);
+  box-shadow:var(--pd-sh-1);
+  pointer-events:none;
+}
+.pdc-edge-label-name{font-size:11px;font-weight:600;color:var(--pd-fg-1)}
+.pdc-edge-label-cardinality{font-size:10px;color:var(--pd-fg-3);font-variant-numeric:tabular-nums}
+
+/* 箭头 defs 容器：零尺寸、不拦鼠标 */
+.pdc-markers{position:absolute;left:0;top:0;width:0;height:0;overflow:hidden;pointer-events:none}
+
+/* ⑧ 问题卡的句柄幽灵（IMPFIX3）：只给 decomposesTo / dependsOn 当锚点，不可见、不可连。
+   不能 display:none —— React Flow 用 getBoundingClientRect 取锚点，display:none 取不到框；
+   这里保留 1px 的框（视觉上仍是透明），跟着节点卡定位，边就能画到卡的上/下沿。
+   问题域不手动拉线（连线走左树），所以 isConnectable=false，hover 也不显形。 */
+.react-flow__handle.pdc-handle-ghost,
+.react-flow__node:hover .react-flow__handle.pdc-handle-ghost{
+  width:1px;
+  height:1px;
+  min-width:0;
+  min-height:0;
+  border:0;
+  background:none;
+  box-shadow:none;
+  opacity:0;
+  pointer-events:none;
+}

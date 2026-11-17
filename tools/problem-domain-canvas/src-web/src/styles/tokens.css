@@ -1,0 +1,41 @@
+/**
+ * 令牌 50 条，照 02-design-system.md §2 逐字抄（浅色默认、深色可切）。
+ * 这里只放变量定义与映射注释：不写选择器规则、不写 @media、不出现裸 hex 以外的重复定义。
+ */
+body[data-theme="light"]{
+  /* 原始色阶 · 浅：中性 8 阶（1 最深 → 8 最亮）+ 4 色族 ×4 阶 */
+  --pd-n-1:#1A1A20; --pd-n-2:#3F3B48; --pd-n-3:#6B6675; --pd-n-4:#85808F;
+  --pd-n-5:#9C97A6; --pd-n-6:#C6C1CC; --pd-n-7:#DEDAE4; --pd-n-8:#FFFFFF;
+  --pd-blue-1:#EEE8FB;  --pd-blue-2:#DCD2F5;  --pd-blue-3:#6E5CC4;  --pd-blue-4:#3B2F73;
+  --pd-teal-1:#E7EFD6;  --pd-teal-2:#CFE0B6;  --pd-teal-3:#5F8B45;  --pd-teal-4:#3E5C2B;
+  --pd-amber-1:#F9EFD9; --pd-amber-2:#EFDCAE; --pd-amber-3:#A8741F; --pd-amber-4:#7A5413;
+  --pd-red-1:#F9E5E3;   --pd-red-2:#F0C7C2;   --pd-red-3:#B4483F;   --pd-red-4:#7F322C;
+  /* 语义层 12 条：玻璃底板 / 白面板 / 微灰抬起卡片（亮差分不开时靠 --pd-sh-1） */
+  --pd-bg-1:#E9E5EC; --pd-bg-2:#FFFFFF; --pd-bg-3:#FBFAFC;
+  --pd-fg-1:#1A1A20; --pd-fg-2:#6B6675; --pd-fg-3:#9C97A6;
+  --pd-line-1:#D5D0DB; --pd-line-2:#BDB7C7;
+  --pd-accent:#6E5CC4; --pd-ring:#9B8CDB;
+  --pd-tint-bg:#EEE8FB; --pd-tint-fg:#3B2F73;
+}
+body[data-theme="dark"]{
+  /* 原始色阶 · 深：同族降饱和，不用亮蓝 / 亮青 */
+  --pd-n-1:#121216; --pd-n-2:#17171B; --pd-n-3:#1F1F25; --pd-n-4:#26262E;
+  --pd-n-5:#33333C; --pd-n-6:#4A4A55; --pd-n-7:#74747E; --pd-n-8:#A6A6B0;
+  --pd-blue-1:#241F38;  --pd-blue-2:#382E5C;  --pd-blue-3:#A99BF0;  --pd-blue-4:#D3CAFA;
+  --pd-teal-1:#1F2A18;  --pd-teal-2:#31452A;  --pd-teal-3:#9DC46F;  --pd-teal-4:#C6DEA4;
+  --pd-amber-1:#33260F; --pd-amber-2:#553F17; --pd-amber-3:#D9A441; --pd-amber-4:#EDC98A;
+  --pd-red-1:#361A18;   --pd-red-2:#5C2A26;   --pd-red-3:#E07068;   --pd-red-4:#F0ACA6;
+  /* 语义层 12 条：底板 / 面板 / 卡片逐级提亮 */
+  --pd-bg-1:#17171B; --pd-bg-2:#1F1F25; --pd-bg-3:#26262E;
+  --pd-fg-1:#EDEDF0; --pd-fg-2:#A6A6B0; --pd-fg-3:#74747E;
+  --pd-line-1:#33333C; --pd-line-2:#43434E;
+  --pd-accent:#A99BF0; --pd-ring:#C0B6F4;
+  --pd-tint-bg:rgba(169,155,240,.14); --pd-tint-fg:#D3CAFA;
+}
+/* ③ 与主题无关的 14 条：字号 5 / 间距 4 / 圆角 3 / 阴影 2（阴影两档固定，两个主题共用） */
+:root{
+  --pd-fs-1:11px; --pd-fs-2:12px; --pd-fs-3:13px; --pd-fs-4:15px; --pd-fs-5:19px;
+  --pd-sp-1:4px; --pd-sp-2:8px; --pd-sp-3:16px; --pd-sp-4:24px;
+  --pd-r-1:6px; --pd-r-2:10px; --pd-r-3:12px;
+  --pd-sh-1:0 1px 3px rgba(24,20,34,.10); --pd-sh-2:0 14px 34px rgba(24,20,34,.16);
+}

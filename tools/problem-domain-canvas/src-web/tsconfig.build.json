@@ -1,0 +1,19 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "allowImportingTsExtensions": false,
+    "rewriteRelativeImportExtensions": true,
+    "noEmit": false,
+    "declaration": false,
+    "sourceMap": false,
+    "outDir": ".build",
+    "rootDir": "src",
+    "module": "ESNext"
+  },
+  "include": ["src"],
+  "exclude": [
+    "src/domain/doc.test.ts",
+    "src/domain/export.test.ts",
+    "src/store/persistence.test.ts"
+  ]
+}

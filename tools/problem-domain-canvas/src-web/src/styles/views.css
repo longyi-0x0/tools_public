@@ -1,0 +1,20 @@
+/* 版式（03 §2）：两列，左 264 固定、右弹性，12px 间隙透底板；无页面级顶栏、零分隔线。 */
+.app{
+  display:grid;
+  grid-template-columns:264px minmax(0,1fr);
+  gap:12px;
+  height:100vh;
+  padding:12px;
+}
+.col{min-height:0}
+.col.left{display:flex;flex-direction:column;background:var(--pd-bg-2);border-radius:var(--pd-r-3)}
+.col.right{display:flex;flex-direction:column;min-width:0}
+
+/* 右列内容：画板弹性 + 详情 340；详情收到 0 时用把手放回来 */
+.content{position:relative;display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:12px;flex:1;min-height:0}
+.reopen-detail{position:absolute;top:50%;right:var(--pd-sp-1);transform:translateY(-50%)}
+
+@media (max-width:1199px){
+  .app{grid-template-columns:220px minmax(0,1fr)}
+  .content{grid-template-columns:minmax(0,1fr) 300px}
+}

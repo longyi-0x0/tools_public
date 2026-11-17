@@ -1,0 +1,160 @@
+/* 画布皮肤收口（IMP7）：先引 @xyflow/react 的默认皮，再在这里整条换掉。
+   02 的线条预算：全站 0 条 1px 边框——节点用底色 + 阴影表达，选中是 1.5px 主色环。
+   覆盖清单（见 IMP7 报告）：
+   ① 节点外框 --xy-node-border-default（默认 1px solid）、圆角、底色、选中环、hover 阴影
+   ② 连线默认色 / 线宽 / 选中色、连接预览线
+   ③ 句柄（handle）底色与描边
+   ④ Controls 皮肤（我们不用它，但样式先收口，避免以后误用冒出库默认皮）
+   ⑤ Attribution（MIT 署名保留，压到 9px 放右下角）
+   ⑥ Background 点阵色、Minimap 底/遮罩/节点色、框选框颜色
+   ⑦ 边标签底色/字色（自绘边 .pdc-edge-label 自己的令牌另写） */
+
+/* ⓪ 库的 CSS 变量一次改完：深/浅主题都跟着 body[data-theme] 的令牌走 */
+.react-flow{
+  --xy-node-border-default:0;
+  --xy-node-border-radius-default:var(--pd-r-3);
+  --xy-node-background-color-default:transparent;
+  --xy-node-color-default:var(--pd-fg-1);
+  --xy-node-boxshadow-hover-default:none;
+  --xy-node-boxshadow-selected-default:0 0 0 1.5px var(--pd-accent);
+  --xy-edge-stroke-default:var(--pd-accent);
+  --xy-edge-stroke-width-default:2;
+  --xy-edge-stroke-selected-default:var(--pd-accent);
+  --xy-handle-background-color-default:var(--pd-bg-3);
+  --xy-handle-border-color-default:transparent;
+  --xy-connectionline-stroke-default:var(--pd-accent);
+  --xy-connectionline-stroke-width-default:2;
+  --xy-attribution-background-color-default:transparent;
+  --xy-minimap-background-color-default:var(--pd-bg-3);
+  --xy-minimap-mask-background-color-default:color-mix(in srgb,var(--pd-bg-1) 45%,transparent);
+  --xy-minimap-mask-stroke-width-default:0;
+  --xy-minimap-node-background-color-default:var(--pd-bg-2);
+  --xy-minimap-node-stroke-width-default:0;
+  --xy-background-pattern-dots-color-default:var(--pd-line-1);
+  --xy-selection-background-color-default:color-mix(in srgb,var(--pd-accent) 10%,transparent);
+  --xy-selection-border-default:1.5px dashed var(--pd-accent);
+  --xy-edge-label-background-color-default:var(--pd-bg-2);
+  --xy-edge-label-color-default:var(--pd-fg-1);
+  background:transparent;
+}
+
+/* 画板定位：.stage 里铺满一块 React Flow（视口与平移缩放交给库） */
+.stage[data-flow="on"]{position:relative;background-image:none}
+.stage[data-flow="on"] .flow-stage{position:absolute;inset:0}
+.stage[data-flow="on"] .react-flow{width:100%;height:100%}
+.stage[data-flow="on"] .react-flow__pane{cursor:default}
+
+/* ① 节点外框：库默认的 border / padding / 圆角 / 背景 / 字体全抹掉，尺寸由节点 style 给 */
+.react-flow__node{
+  padding:0;
+  border:0;
+  border-radius:0;
+  background:none;
+  box-shadow:none;
+  color:inherit;
+  font:inherit;
+  cursor:grab;
+}
+.react-flow__node:active{cursor:grabbing}
+.react-flow__node .node-card{position:relative;width:100%;height:100%;box-sizing:border-box}
+
+/* ② 连线：默认色与线宽（自绘边另有内联 style，这里给库内建边兜底） */
+.react-flow__edge-path{stroke:var(--pd-accent);stroke-width:2;stroke-linecap:round}
+.react-flow__edge.selected .react-flow__edge-path{stroke-width:3}
+.react-flow__edge-textbg{fill:var(--pd-bg-2)}
+.react-flow__edge-text{fill:var(--pd-fg-1)}
+
+/* ③ 句柄：隐形圆点，hover 实体卡才显形；用 1.5px 主色环，不用边框 */
+.react-flow__handle{
+  width:7px;
+  height:7px;
+  min-width:0;
+  min-height:0;
+  border:0;
+  background:var(--pd-bg-3);
+  box-shadow:0 0 0 1.5px var(--pd-accent);
+  opacity:0;
+  transition:opacity .12s ease;
+}
+.react-flow__node:hover .react-flow__handle,
+.react-flow__handle.connectingfrom,
+.react-flow__handle.connectingto,
+.react-flow__handle.valid{opacity:1}
+
+/* ④ Controls：我们用自己的工具条；库的皮肤也收口，避免以后误用时冒默认白块 */
+.react-flow__controls{
+  overflow:hidden;
+  border-radius:var(--pd-r-3);
+  background:var(--pd-bg-3);
+  box-shadow:var(--pd-sh-1);
+}
+.react-flow__controls-button{
+  width:26px;
+  height:26px;
+  border:0;
+  background:var(--pd-bg-3);
+  color:var(--pd-fg-2);
+}
+.react-flow__controls-button:hover{background:var(--pd-tint-bg);color:var(--pd-tint-fg)}
+
+/* ⑤ Attribution：MIT 允许商用但要署名，保留「React Flow」，压到 9px 的弱字放右下角 */
+.react-flow__attribution{
+  right:8px;
+  bottom:4px;
+  padding:0 4px;
+  border-radius:var(--pd-r-1);
+  background:none;
+  font-size:9px;
+  line-height:1.2;
+  opacity:.45;
+}
+.react-flow__attribution a{color:var(--pd-fg-3);font-size:9px}
+
+/* ⑥ 点阵、缩略图、框选框都吃令牌（深/浅主题各一份，值来自 body[data-theme]） */
+.react-flow__background{opacity:.9}
+.react-flow__minimap{
+  right:14px;
+  bottom:52px;
+  overflow:hidden;
+  border-radius:var(--pd-r-3);
+  background:var(--pd-bg-3);
+  box-shadow:var(--pd-sh-1);
+}
+.react-flow__selection{border-radius:var(--pd-r-1)}
+
+/* ⑦ 自绘边（flow/edges.tsx）：EdgeLabelRenderer 里的标签，关系名 11px 600 + 基数 10px 弱字 */
+.pdc-edge-label{
+  position:absolute;
+  top:0;
+  left:0;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  padding:1px 6px;
+  border-radius:var(--pd-r-1);
+  background:var(--pd-bg-2);
+  box-shadow:var(--pd-sh-1);
+  pointer-events:none;
+}
+.pdc-edge-label-name{font-size:11px;font-weight:600;color:var(--pd-fg-1)}
+.pdc-edge-label-cardinality{font-size:10px;color:var(--pd-fg-3);font-variant-numeric:tabular-nums}
+
+/* 箭头 defs 容器：零尺寸、不拦鼠标 */
+.pdc-markers{position:absolute;left:0;top:0;width:0;height:0;overflow:hidden;pointer-events:none}
+
+/* ⑧ 问题卡的句柄幽灵（IMPFIX3）：只给 decomposesTo / dependsOn 当锚点，不可见、不可连。
+   不能 display:none —— React Flow 用 getBoundingClientRect 取锚点，display:none 取不到框；
+   这里保留 1px 的框（视觉上仍是透明），跟着节点卡定位，边就能画到卡的上/下沿。
+   问题域不手动拉线（连线走左树），所以 isConnectable=false，hover 也不显形。 */
+.react-flow__handle.pdc-handle-ghost,
+.react-flow__node:hover .react-flow__handle.pdc-handle-ghost{
+  width:1px;
+  height:1px;
+  min-width:0;
+  min-height:0;
+  border:0;
+  background:none;
+  box-shadow:none;
+  opacity:0;
+  pointer-events:none;
+}

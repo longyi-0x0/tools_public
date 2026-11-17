@@ -1,0 +1,430 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>问题域画板 v6 · 静态稿（两列 / 2 屏 × 2 主题：问题域 · 解域 · 新建入口）</title>
+<link rel="stylesheet" href="mockup.css">
+</head>
+<body data-theme="light" data-domain="problem" data-canvas="on" data-right="on" data-sel="P1.1" data-focus="P1.1" data-pane="">
+
+<div class="app">
+
+  <!-- ══ 左列：整页高。顶部一行 40 = 工作区名（14/600）+ Spacer + 右侧 问题域│解域 切换（没有第二行）；
+       中间 = 树（占满剩余、可滚、不可收）；底部 36 = 检查摘要行 ══ -->
+  <aside class="col left" aria-label="工作区与树">
+    <div class="left-hd">
+      <span class="ws-name" id="ws-name">选课问题域</span>
+      <span class="spacer" aria-hidden="true"></span>
+      <div class="dom-switch" role="group" aria-label="域切换">
+        <button type="button" data-domain="problem" class="on">问题域</button>
+        <button type="button" data-domain="solve">解域</button>
+      </div>
+    </div>
+
+    <!-- 问题域 = 问题树（5 个问题：P0 → P1 → P1.1 / P1.2；P2）
+         新建入口①：段头 `问题` 右侧 .gadd（16px 线图标，常态 opacity:0，段头 hover 现形）→ 新建问题
+         新建入口②：行 hover 时行尾派生 .ri（⋯ 更多 + ＋ 新建同级）；P1.2 这一行用 li.demo 固定展开，供静态稿查看 -->
+    <ul class="tree problem" aria-label="问题树">
+      <li class="gsec"><span class="gh">问题</span><span class="gc">5</span><button type="button" class="gadd" title="新建问题（N）" aria-label="新建问题"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button></li>
+      <li class="lv0"><button type="button" class="item" data-id="P0"><span class="car">▾</span><span class="dot"></span><span class="ttl">P0 如何正确处理选课？</span></button></li>
+      <li class="lv1"><button type="button" class="item" data-id="P1"><span class="car">▾</span><span class="dot t"></span><span class="ttl">P1 选课资格</span><span class="meta">已回答</span></button></li>
+      <li class="lv2"><button type="button" class="item sel" data-id="P1.1"><span class="dot"></span><span class="ttl">P1.1 容量检查</span><span class="meta">分析中</span></button></li>
+      <li class="lv2 demo"><button type="button" class="item" data-id="P1.2"><span class="dot"></span><span class="ttl">P1.2 冲突检查</span><span class="meta">未澄清</span></button>
+        <span class="ri" role="group" aria-label="行内操作">
+          <button type="button" class="ract" title="更多" aria-label="更多">⋯</button>
+          <button type="button" class="ract" title="新建同级（Shift+N）" aria-label="新建同级">＋</button>
+        </span>
+        <div class="rowmenu" role="menu" aria-label="问题行菜单">
+          <button type="button" class="mi" role="menuitem">新建子问题</button>
+          <button type="button" class="mi" role="menuitem">重命名</button>
+          <button type="button" class="mi" role="menuitem">删除</button>
+          <button type="button" class="mi" role="menuitem">标记状态</button>
+        </div>
+      </li>
+      <li class="lv1"><button type="button" class="item" data-id="P2"><span class="dot n"></span><span class="ttl">P2 状态更新</span><span class="meta">暂缓</span></button></li>
+    </ul>
+
+    <!-- 解域 = 两段扁平树：实体（名称 + 类型点）· 关系（A —关系名→ B · 基数）。
+         字段 / 行为 / 约束 / 支撑哪个问题全部落在右侧详情栏，左树不展开、不加第三组。
+         新建入口①：两段各一个 .gadd —— 实体段→新建实体、关系段→新建关系（关系走连线模式）
+         新建入口②：行 hover 派生 ⋯ / ＋；解域菜单给 新建关系 / 重命名 / 删除，课程班次行固定展开作演示 -->
+    <ul class="tree solve" aria-label="实体与关系">
+      <li class="gsec"><span class="gh">实体</span><span class="gc">4</span><button type="button" class="gadd" title="新建实体（N）" aria-label="新建实体"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button></li>
+      <li class="lv0"><button type="button" class="item" data-id="ent-student"><span class="dot t"></span><span class="ttl">学生</span><span class="meta">P1.1</span></button></li>
+      <li class="lv0 demo"><button type="button" class="item" data-id="ent-class"><span class="dot t"></span><span class="ttl">课程班次</span><span class="meta">P1.1</span></button>
+        <span class="ri" role="group" aria-label="行内操作">
+          <button type="button" class="ract" title="更多" aria-label="更多">⋯</button>
+          <button type="button" class="ract" title="新建同级（Shift+N）" aria-label="新建同级">＋</button>
+        </span>
+        <div class="rowmenu" role="menu" aria-label="解域行菜单">
+          <button type="button" class="mi" role="menuitem">新建关系</button>
+          <button type="button" class="mi" role="menuitem">重命名</button>
+          <button type="button" class="mi" role="menuitem">删除</button>
+        </div>
+      </li>
+      <li class="lv0"><button type="button" class="item" data-id="ent-record"><span class="dot t"></span><span class="ttl">选课记录</span><span class="meta">P1.1</span></button></li>
+      <li class="lv0"><button type="button" class="item" data-id="ent-teacher"><span class="dot t"></span><span class="ttl">教师</span><span class="rd" title="未支撑任何问题 · C6"></span></button></li>
+      <li class="gsec"><span class="gh">关系</span><span class="gc">2</span><button type="button" class="gadd" title="新建关系" aria-label="新建关系"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button></li>
+      <li class="lv0"><button type="button" class="item rel" data-id="rel-hold"><span class="ttl">学生</span><span class="rn">—持有→</span><span class="ttl">选课记录</span><span class="meta">1:N</span></button></li>
+      <li class="lv0"><button type="button" class="item rel" data-id="rel-open"><span class="ttl">课程班次</span><span class="rn">—包含→</span><span class="ttl">选课记录</span><span class="meta">1:N</span></button></li>
+    </ul>
+
+    <!-- 底部检查摘要行：高 36、贴左列底、与树之间只隔 8px；不是卡片（无底色 / 无阴影 / 无边框）。
+         左 8px 严重度圆点 + 一句摘要 + 右 `›`；可点 → 详情栏切到「检查」分组 -->
+    <button type="button" class="left-ft" data-act="show-checks" title="查看检查详情">
+      <span class="dt only-problem" aria-hidden="true"></span>
+      <span class="dt tip only-solve" aria-hidden="true"></span>
+      <span class="only-problem">检查 3 条 · 2 警告 1 提示</span>
+      <span class="only-solve">检查 1 条 · 1 提示</span>
+      <span class="go" aria-hidden="true">›</span>
+    </button>
+  </aside>
+
+  <!-- ══ 右列：极简状态行（36，无背景、无圆角、无阴影，直接落在玻璃底板上：左「已保存」· 右 主题演示 + 两个收放图标）
+       + 12px 间隙 + 下方内容。缩放已搬到画布里的悬浮工具条，检查摘要已在左列底部 ══ -->
+  <div class="col right">
+
+    <!-- 顶部状态行 = 信息位：左「当前在看什么」（选中节点标题），右「已保存 + 主题演示」。收起图标不在这里 -->
+
+    <div class="statusbar" role="region" aria-label="顶部状态">
+
+      <div class="sb-title">
+        <span class="t-sel only-problem"><span class="sb-dot" aria-hidden="true"></span><b>P1.1 容量检查</b><span class="pp">P1 ›</span></span>
+        <span class="t-sel only-solve"><span class="sb-dot" aria-hidden="true"></span><b>学生</b><span class="pp">支撑 P1.1</span></span>
+        <span class="t-none">未选中</span>
+      </div>
+
+      <div class="sb-r">
+        <span class="saved"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M4 12l5 5L20 6"/></svg>已保存</span>
+        <!-- 主题切换：仅静态稿演示用，真产品不出现 -->
+        <div class="theme-switch" role="group" aria-label="主题切换" title="演示用">
+          <button type="button" data-theme="dark">深</button>
+          <button type="button" data-theme="light" class="on">浅</button>
+        </div>
+        <!-- 收起 / 展开只有一套入口：两条边界上的 24px 把手（+ [ ]）。这里不再放图标按钮。 -->
+      </div>
+    </div>
+
+    <div class="content">
+
+      <!-- 画板：弹性，可收到 0（把手 .hc 贴左边界；[ 键 / 工具条「只看详情」）；与详情不可同时收 -->
+      <section class="pane stage" id="stage" aria-label="画板">
+        <button class="handle hc" type="button" data-act="toggle-canvas" aria-expanded="true" aria-controls="stage"
+          title="收起画板（[）" aria-label="收起画板（[）">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>
+        </button>
+
+        <!-- 画布悬浮工具条：贴画板右上角，高 30、内距 4、胶囊、--pd-bg-3 + --pd-sh-2、无边框。
+             缩放四件全在这里：适配 · − · 100% · +（右列顶部不再有缩放） -->
+        <div class="stage-tools" role="toolbar" aria-label="缩放">
+          <button type="button" class="st-btn" title="适配画布（缩放到刚好放下）">适配</button>
+          <button type="button" class="st-btn" title="缩小">−</button>
+          <b class="st-zoom">100%</b>
+          <button type="button" class="st-btn" title="放大">+</button>
+        </div>
+
+        <section class="view problem on" id="problem" aria-label="问题树画布">
+          <div class="pane-hd"><span>画板 · 问题树画布 7 节点 / 6 条边</span><span>拖拽分层 · 双击空白新建 · 3 处检查</span></div>
+          <div class="board-wrap">
+            <div class="board">
+              <svg class="grid" aria-hidden="true"><defs>
+                <pattern id="gd1" width="24" height="24" patternUnits="userSpaceOnUse">
+                  <path d="M0 .5H24M.5 0V24" stroke-dasharray="4 5"/>
+                </pattern></defs>
+                <rect width="100%" height="100%" fill="url(#gd1)"/>
+              </svg>
+              <svg class="edges" viewBox="0 0 760 440" width="760" height="440" aria-hidden="true">
+                <defs>
+                  <marker id="ma" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="mark-a" d="M0 0 L8 4 L0 8 Z"/></marker>
+                  <marker id="mb" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="mark-b" d="M0 0 L8 4 L0 8 Z"/></marker>
+                </defs>
+                <path class="e-a" marker-end="url(#ma)" d="M380 64 V88 H256 V112"/>
+                <path class="e-a" marker-end="url(#ma)" d="M256 160 V180 H144 V200"/>
+                <path class="e-a" marker-end="url(#ma)" d="M256 160 V180 H364 V200"/>
+                <path class="e-a" marker-end="url(#ma)" d="M256 160 V288"/>
+                <path class="e-b" marker-end="url(#mb)" d="M344 136 H440"/>
+                <path class="e-b dashed" marker-end="url(#mb)" d="M144 248 V268 H584 V248"/>
+                <text class="edge-lb" x="296" y="84" text-anchor="middle">拆解</text>
+                <text class="edge-lb" x="356" y="130" text-anchor="start">涉及</text>
+                <text class="edge-lb" x="280" y="262" text-anchor="middle">受约束</text>
+              </svg>
+
+              <div class="node q-core" data-id="P0" style="left:276px;top:8px">
+                <span class="ndot"></span><span class="ttl">P0 如何正确处理选课？</span>
+              </div>
+              <div class="node q-sub" data-id="P1" style="left:168px;top:112px">
+                <span class="ndot" style="background:var(--pd-teal-3)"></span><span class="ttl">P1 选课资格</span><span class="pill t">已回答</span>
+              </div>
+              <div class="node q-sub sel" data-id="P1.1" style="left:56px;top:200px">
+                <span class="ndot"></span><span class="ttl">P1.1 容量检查</span><span class="pill">分析中</span>
+              </div>
+              <div class="node q-sub" data-id="P1.2" style="left:276px;top:200px">
+                <span class="ndot"></span><span class="ttl">P1.2 冲突检查</span><span class="pill g">未澄清</span>
+              </div>
+              <div class="node q-sub" data-id="P2" style="left:168px;top:288px">
+                <span class="ndot" style="background:var(--pd-n-5)"></span><span class="ttl">P2 状态更新</span><span class="pill g">暂缓</span>
+              </div>
+              <div class="node actor" data-id="actor-student" style="left:440px;top:120px">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="12" cy="8" r="3"/><path d="M5 20c0-4 3-6 7-6s7 2 7 6"/></svg>
+                <span class="ttl">学生</span><span class="ndot"></span>
+              </div>
+              <div class="node rule" data-id="rule-capacity" style="left:496px;top:200px">
+                <span class="ndot" style="background:var(--pd-amber-3)"></span><span class="ttl">容量不可突破</span>
+              </div>
+
+              <b class="mk" style="left:222px;top:190px" title="C4 警告">C4</b>
+              <b class="mk" style="left:442px;top:190px" title="C2 警告">C2</b>
+              <b class="mk tip" style="left:334px;top:278px" title="C5 提示">C5</b>
+
+              <!-- 新建入口③：画布空白处的常驻提示胶囊（中央偏下）；静态稿只给视觉，不写创建逻辑 -->
+              <div class="hint-pill" aria-hidden="false">双击空白新建问题 · 或按 <kbd>N</kbd></div>
+
+              <!-- 新建入口④：空态引导卡。静态稿用 ?empty=1 打开（见 03-ui.md §2.7），画板中央显示 -->
+              <div class="emptycard" role="region" aria-label="空态引导">
+                <span class="ec-h">还没有核心问题</span>
+                <span class="ec-p">先写下这个工作区要解决的那个问题；它下面再拆子问题。</span>
+                <span class="ec-acts">
+                  <button type="button" class="ec-btn pri">＋ 新建核心问题</button>
+                  <button type="button" class="ec-btn sec">导入 JSON</button>
+                </span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="view solve" id="solve" aria-label="领域模型画布">
+          <div class="pane-hd"><span>画板 · 领域模型 7 节点 / 6 条边</span><span>选中 P1.1 · 只留支撑它的元素</span></div>
+          <!-- 解域「新建关系」的连线模式提示条：?connect=1 可见（静态稿只给视觉） -->
+          <div class="modebar" role="status">先点起点实体，再点终点实体 · <kbd>Esc</kbd> 取消</div>
+          <div class="board-wrap">
+            <div class="board">
+              <svg class="grid" aria-hidden="true"><defs>
+                <pattern id="gd2" width="24" height="24" patternUnits="userSpaceOnUse">
+                  <path d="M0 .5H24M.5 0V24" stroke-dasharray="4 5"/>
+                </pattern></defs>
+                <rect width="100%" height="100%" fill="url(#gd2)"/>
+              </svg>
+              <svg class="edges" viewBox="0 0 760 440" width="760" height="440" aria-hidden="true">
+                <defs>
+                  <marker id="mc" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="mark-c" d="M0 0 L8 4 L0 8 Z"/></marker>
+                  <marker id="md" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="mark-c" d="M0 0 L8 4 L0 8 Z"/></marker>
+                </defs>
+                <path class="e-c" data-supports="P1.1" marker-end="url(#mc)" d="M100 104 V150 H292 V180"/>
+                <path class="e-c" data-supports="P1.1" marker-end="url(#mc)" d="M640 104 V150 H468 V180"/>
+                <path class="e-c" data-supports="P1.1" marker-end="url(#mc)" d="M116 300 V272 H380 V244"/>
+                <path class="e-c" data-supports="P1.1" marker-end="url(#mc)" d="M604 300 V104"/>
+                <path class="e-c" data-supports="P1.1" marker-end="url(#mc)" d="M504 380 H470 V244"/>
+                <path class="e-d" data-supports="P1.1" marker-end="url(#md)" d="M380 180 V32"/>
+                <text class="edge-lb" x="200" y="144" text-anchor="middle">1 : n</text>
+                <text class="edge-lb" x="556" y="144" text-anchor="middle">1 : n</text>
+                <text class="edge-lb" x="300" y="266" text-anchor="middle">作用于</text>
+                <text class="edge-lb" x="616" y="200" text-anchor="middle">守护</text>
+                <text class="edge-lb c" x="386" y="120" text-anchor="start">支撑 P1.1</text>
+              </svg>
+
+              <div class="node ref" data-supports="P1.1" style="left:272px;top:4px">
+                <span class="ttl">↗ 当前上下文：P1.1 容量检查</span>
+              </div>
+              <div class="node ent" data-id="ent-student" data-supports="P1.1 P1.2" style="left:40px;top:40px">
+                <span class="ndot"></span><span class="hd">学生</span><span class="fl">studentId · 姓名</span>
+              </div>
+              <div class="node ent" data-id="ent-class" data-supports="P1.1" style="left:544px;top:40px">
+                <span class="ndot"></span><span class="hd">课程班次</span><span class="fl">capacity · 已选人数</span>
+              </div>
+              <div class="node ent" data-id="ent-record" data-supports="P1.1" style="left:292px;top:180px">
+                <span class="ndot"></span><span class="hd">选课记录</span><span class="fl">状态：待确认 / 已选上 / 候补</span>
+              </div>
+              <div class="node ent" data-id="ent-teacher" data-supports="" style="left:40px;top:176px">
+                <span class="ndot" style="background:var(--pd-red-3)"></span><span class="hd">教师</span><span class="fl">teacherId · 姓名</span><span class="flag">未支撑</span>
+              </div>
+              <div class="node beh" data-id="beh-submit" data-supports="P1.1" style="left:40px;top:300px">
+                <span class="ndot"></span><span class="ttl">提交选课</span>
+              </div>
+              <div class="node con" data-id="con-capacity" data-supports="P1.1" style="left:504px;top:300px">
+                <span class="ttl">容量不可突破 · 已选人数 &lt; 容量</span>
+              </div>
+              <div class="node con" data-id="con-prereq" data-supports="P1.1" style="left:504px;top:372px">
+                <span class="ttl">先修课已修</span>
+              </div>
+
+              <b class="mk tip" style="left:190px;top:166px" title="C6 提示">C6</b>
+
+              <!-- 新建入口③（解域文案）：双击空白新建实体 -->
+              <div class="hint-pill" aria-hidden="false">双击空白新建实体 · 或按 <kbd>N</kbd></div>
+
+              <!-- 新建入口④（解域空态）：?empty=1 时画板中央显示 -->
+              <div class="emptycard" role="region" aria-label="空态引导">
+                <span class="ec-h">解域还是空的</span>
+                <span class="ec-p">先从问题树挑一个已回答的问题，再给它建第一个实体。</span>
+                <span class="ec-acts">
+                  <button type="button" class="ec-btn pri">＋ 新建第一个实体</button>
+                </span>
+              </div>
+            </div>
+          </div>
+        </section>
+      </section>
+
+      <!-- 详情：320–360，可收起；把手压在两栏 12px 间隙里 -->
+      <aside class="pane detail" id="detail" aria-label="详情">
+        <button class="handle hd" type="button" data-act="toggle-right" aria-expanded="true" aria-controls="detail"
+          title="收起详情（]）" aria-label="收起详情（]）">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+        </button>
+
+        <div class="rp-scroll">
+          <div class="rp">
+            <div class="pane-hd"><span>详情</span><span>P1.1</span></div>
+
+            <div class="grp">
+              <div class="grp-h"><span>属性</span><span class="only-problem">question</span><span class="only-solve">entity</span></div>
+              <div class="prop only-problem">
+                <div class="k">类型</div><div class="v">question · 子问题</div>
+                <div class="k">状态</div><div class="v">分析中</div>
+                <div class="k">上级</div><div class="v">P1 选课资格</div>
+                <div class="k">已知 / 假设</div><div class="v">2 条 / 1 条</div>
+                <div class="k">正例 / 反例</div><div class="v">1 / 0</div>
+              </div>
+              <div class="prop only-solve">
+                <div class="k">类型</div><div class="v">entity · 学生</div>
+                <div class="k">主键</div><div class="v">studentId</div>
+                <div class="k">字段</div><div class="v">studentId · 姓名</div>
+                <div class="k">支撑</div><div class="v">P1.1 容量检查</div>
+              </div>
+            </div>
+
+            <div class="grp">
+              <div class="grp-h"><span>关联</span><span>4 条</span></div>
+              <div class="chips">
+                <span class="chip p">上级 · P1 选课资格</span>
+                <span class="chip p">子问题 · 无</span>
+                <span class="chip p">涉及 · 学生</span>
+                <span class="chip p">受约束 · 容量不可突破</span>
+              </div>
+            </div>
+
+            <div class="grp checks">
+              <div class="grp-h"><span>检查</span><span class="only-problem">3 条 · 2 警告 1 提示</span><span class="only-solve">1 条 · 1 提示</span></div>
+              <div class="only-problem">
+                <button type="button" class="check"><span class="dt"></span><span class="txt"><b>C4</b> P1.1 只有正例，没有反例</span><span class="go">→</span></button>
+                <button type="button" class="check"><span class="dt"></span><span class="txt"><b>C2</b> P1.2 未澄清，且与其它问题无关联</span><span class="go">→</span></button>
+                <button type="button" class="check tip"><span class="dt"></span><span class="txt"><b>C5</b> P2 暂缓：等容量规则确认</span><span class="go">→</span></button>
+              </div>
+              <div class="only-solve">
+                <button type="button" class="check tip"><span class="dt"></span><span class="txt"><b>C6</b> 实体「教师」不支撑任何问题</span><span class="go">→</span></button>
+                <div class="hint">解域画布上其余元素已降到 30% 不透明度</div>
+              </div>
+            </div>
+
+            <div class="grp only-solve">
+              <div class="grp-h"><span>支撑的问题</span><span>4 个元素</span></div>
+              <div class="chips">
+                <span class="chip">课程班次</span>
+                <span class="chip">选课记录</span>
+                <span class="chip">提交选课</span>
+                <span class="chip">容量不可突破</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- 未选中态：工作区概览 -->
+          <div class="rp ov">
+            <div class="pane-hd"><span>工作区概览</span><span>未选中</span></div>
+            <div class="grp">
+              <div class="grp-h"><span>工作区</span><span>5 个问题</span></div>
+              <div class="prop">
+                <div class="k">工作区</div><div class="v">选课问题域</div>
+                <div class="k">范围内</div><div class="v">提交入口的容量与冲突判定</div>
+                <div class="k">范围外</div><div class="v">候补队列排序 · 教务排课</div>
+                <div class="k">检查摘要</div><div class="v">3 条 · 2 警告 1 提示</div>
+              </div>
+            </div>
+            <div class="empty">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M8 12h8"/></svg>
+              左边点一个节点<br>这里显示它的详情
+            </div>
+          </div>
+        </div>
+      </aside>
+    </div>
+  </div>
+</div>
+
+<script>
+const body = document.body;
+const domBtns = [...document.querySelectorAll('.dom-switch button')];
+const themeBtns = [...document.querySelectorAll('.theme-switch button')];
+function setDomain(d){
+  body.dataset.domain = d;
+  document.querySelectorAll('.view').forEach(v => v.classList.toggle('on', v.classList.contains(d)));
+  domBtns.forEach(b => b.classList.toggle('on', b.dataset.domain === d));
+}
+function setTheme(t){
+  body.dataset.theme = t;
+  themeBtns.forEach(b => b.classList.toggle('on', b.dataset.theme === t));
+}
+// 把手是唯一入口：title 随收起态换文案（收起 → 展开），chevron 由 CSS 翻转
+function sync(){
+  document.querySelectorAll('[data-act="toggle-right"]').forEach(x => {
+    const open = body.dataset.right !== 'off';
+    x.setAttribute('aria-expanded', String(open));
+    x.title = x.ariaLabel = open ? '收起详情（]）' : '展开详情（]）';
+  });
+  document.querySelectorAll('[data-act="toggle-canvas"]').forEach(x => {
+    const open = body.dataset.canvas !== 'off';
+    x.setAttribute('aria-expanded', String(open));
+    x.title = x.ariaLabel = open ? '收起画板（[）' : '展开画板（[）';
+  });
+}
+// 画板与详情互斥：一块要收、另一块已经收了，先把另一块放回来（右列不能只剩工具条）
+function toggleRight(){
+  const next = body.dataset.right === 'off' ? 'on' : 'off';
+  if(next === 'off' && body.dataset.canvas === 'off') body.dataset.canvas = 'on';
+  body.dataset.right = next;
+  sync();
+}
+function toggleCanvas(){
+  const next = body.dataset.canvas === 'off' ? 'on' : 'off';
+  if(next === 'off' && body.dataset.right === 'off') body.dataset.right = 'on';
+  body.dataset.canvas = next;
+  sync();
+}
+function showChecks(){
+  body.dataset.right = 'on';
+  body.dataset.pane = 'checks';
+}
+// 只有演示态开关，没有创建逻辑：?empty=1 看空态引导卡，?connect=1 看「新建关系」连线模式提示条
+const qs = new URLSearchParams(location.search);
+if(qs.get('empty') === '1'){ body.dataset.empty = 'on'; body.dataset.sel = 'none'; }
+if(qs.get('connect') === '1'){ body.dataset.mode = 'connect'; setDomain('solve'); }
+domBtns.forEach(b => b.addEventListener('click', () => setDomain(b.dataset.domain)));
+themeBtns.forEach(b => b.addEventListener('click', () => setTheme(b.dataset.theme)));
+document.querySelectorAll('[data-act="toggle-right"]').forEach(x => x.addEventListener('click', toggleRight));
+document.querySelectorAll('[data-act="toggle-canvas"]').forEach(x => x.addEventListener('click', toggleCanvas));
+document.querySelector('[data-act="show-checks"]').addEventListener('click', showChecks);
+document.addEventListener('keydown', e => {
+  if(e.key === ']'){ e.preventDefault(); toggleRight(); }
+  if(e.key === '['){ e.preventDefault(); toggleCanvas(); }
+});
+document.querySelectorAll('.tree .item').forEach(x => x.addEventListener('click', () => {
+  document.querySelectorAll('.tree .item').forEach(y => y.classList.remove('sel'));
+  x.classList.add('sel');
+  const id = x.dataset.id;
+  // 顶部标题位跟着走：显示刚点的这一行（父级路径只在 P1.1 上给）
+  const t = x.querySelector('.ttl');
+  if(t){
+    document.querySelectorAll('.sb-title b').forEach(b => b.textContent = t.textContent.trim());
+    const pp = document.querySelector('.sb-title .only-problem .pp');
+    if(pp) pp.style.display = id === 'P1.1' ? '' : 'none';
+  }
+  document.querySelectorAll('.board .node').forEach(n => n.classList.toggle('hl', n.dataset.id === id));
+  body.dataset.pane = '';
+  if(matchMedia('(max-width:1200px)').matches) body.dataset.right = 'on';
+}));
+if(matchMedia('(max-width:1200px)').matches) body.dataset.right = 'off';
+setTheme('light');
+sync();
+</script>
+</body>
+</html>
