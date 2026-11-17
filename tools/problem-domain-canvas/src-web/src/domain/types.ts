@@ -119,10 +119,17 @@ export type EdgeType =
   | 'constraintOnEntity'
   | 'supportsQuestion';
 
+/** 端口 id：节点四条边各一个连接点（IMP10），与 React Flow 的 Position 同值。 */
+export type PortId = 'top' | 'right' | 'bottom' | 'left';
+
 /**
  * 端点类型不进类型系统（04 §1.2 第 3 条），由 schema.ts 的 EDGE_RULES 在 validate 与连线交互里判。
  * `label` 只给 `entityRelation` 用（关系名，如「持有」）：01 §4.3 只定义了基数，
  * 而 03 §1/§2.2 的关系行与画布连线都要显示关系名，这里按最小增量补一个可选字段。
+ *
+ * IMP11：`sourcePort` / `targetPort` 是用户选的端点端口，**边上的字段是唯一真相**。
+ * 两个字段都可选：老文档（含左树菜单建的两条边）没有它们，载入照常，
+ * 渲染时按两卡几何推导（ui/flow/ports.ts 的 resolveEdgePorts），迁移链不补写。
  */
 export interface Edge {
   type: EdgeType;
@@ -130,6 +137,8 @@ export interface Edge {
   target: NodeId;
   cardinality?: Cardinality;
   label?: string;
+  sourcePort?: PortId;
+  targetPort?: PortId;
 }
 
 export interface Workspace {

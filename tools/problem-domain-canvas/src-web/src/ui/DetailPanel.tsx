@@ -8,8 +8,10 @@ import type {
   Edge,
   EdgeKey,
   NodeId,
+  PortId,
 } from '../domain/types.ts';
 import { CARDINALITIES, NODE_LABEL, QUESTION_STATUSES, edgeKey, isSolveNodeType } from '../domain/schema.ts';
+import { PORT_IDS } from './flow/ports.ts';
 import {
   ELEMENT_EDGE,
   ELEMENT_FIELDS,
@@ -38,6 +40,7 @@ import {
   setConstraintKind,
   setConstraintText,
   setDetailOpen,
+  setEdgePorts,
   setElementList,
   setElementText,
   setEntityFieldValue,
@@ -107,7 +110,10 @@ export function DetailPanel() {
       </div>
       <div className="detail-body">
         {node && compatible ? (
-          <NodeDetail node={node} checksRef={checksRef} />
+          <>
+            <NodeDetail node={node} checksRef={checksRef} />
+            {node.type === 'question' && <QuestionEdgePorts nodeId={node.id} />}
+          </>
         ) : edge && selectedEdgeKey ? (
           <RelationDetail edge={edge} edgeKey={selectedEdgeKey} />
         ) : (
@@ -880,6 +886,75 @@ function SolveUnitDetail({
   );
 }
 
+/* ---------- IMP11：改连线端口（详情栏下拉，不新增画布交互模式） ---------- */
+
+const PORT_LABEL: Record<PortId, string> = { top: '上', right: '右', bottom: '下', left: '左' };
+
+/** 一端端口的下拉：四个端口 + 「自动」（字段为空 = 按两卡相对位置推导）。 */
+function PortSelect({
+  value,
+  onChange,
+}: {
+  value: PortId | undefined;
+  onChange: (port: PortId | null) => void;
+}) {
+  return (
+    <select
+      value={value ?? ''}
+      onChange={(event) => {
+        const next = event.target.value;
+        onChange(next === '' ? null : (next as PortId));
+      }}
+    >
+      <option value="">自动</option>
+      {PORT_IDS.map((port) => (
+        <option key={port} value={port}>
+          {PORT_LABEL[port]}
+        </option>
+      ))}
+    </select>
+  );
+}
+
+/** 一条边的两端端口下拉：改一次一条撤销记录。 */
+function EdgePortRow({ edge }: { edge: Edge }) {
+  const doc = useDoc();
+  const key = edgeKey(edge);
+  const from = doc.index.byId.get(edge.source)?.title || '未命名';
+  const to = doc.index.byId.get(edge.target)?.title || '未命名';
+  return (
+    <div className="prop-row">
+      <span className="prop-label">
+        {from} → {to}
+      </span>
+      <PortSelect value={edge.sourcePort} onChange={(port) => setEdgePorts(key, { sourcePort: port })} />
+      <PortSelect value={edge.targetPort} onChange={(port) => setEdgePorts(key, { targetPort: port })} />
+    </div>
+  );
+}
+
+/** 问题详情里的「关系端口」：分解 / 依赖边各一行（问题域画布不支持选边，从这里改）。 */
+function QuestionEdgePorts({ nodeId }: { nodeId: NodeId }) {
+  const doc = useDoc();
+  const keys = Array.from(new Set(doc.index.edgesByNode.get(nodeId) ?? []));
+  const edges = keys
+    .map((key) => doc.index.edgeByKey.get(key))
+    .filter((edge): edge is Edge => edge !== undefined)
+    .filter((edge) => edge.type === 'decomposesTo' || edge.type === 'dependsOn');
+  if (edges.length === 0) return null;
+  return (
+    <div className="dgroup">
+      <div className="dgroup-title">关系端口</div>
+      <p className="detail-note">
+        线的两端贴在哪条边上；「自动」= 按两卡的相对位置推导。改一次可撤销一次。
+      </p>
+      {edges.map((edge) => (
+        <EdgePortRow key={edgeKey(edge)} edge={edge} />
+      ))}
+    </div>
+  );
+}
+
 /* ---------- 解域：关系详情 ---------- */
 
 function RelationDetail({ edge, edgeKey: key }: { edge: Edge; edgeKey: EdgeKey }) {
@@ -925,6 +1000,20 @@ function RelationDetail({ edge, edgeKey: key }: { edge: Edge; edgeKey: EdgeKey }
             ))}
           </select>
         </label>
+        <div className="prop-row">
+          <span className="prop-label">起点端口</span>
+          <PortSelect
+            value={edge.sourcePort}
+            onChange={(port) => setEdgePorts(key, { sourcePort: port })}
+          />
+        </div>
+        <div className="prop-row">
+          <span className="prop-label">终点端口</span>
+          <PortSelect
+            value={edge.targetPort}
+            onChange={(port) => setEdgePorts(key, { targetPort: port })}
+          />
+        </div>
         <div className="prop-row">
           <span className="prop-label">行内</span>
           <span className="prop-value">

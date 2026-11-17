@@ -23,6 +23,7 @@ import { cardSizeOf, layoutProblemTree, layoutSolveModel, resolvePositions } fro
 import { edgeKey } from '../../domain/schema.ts';
 import { ELEMENT_EDGE, PROBLEM_ELEMENT_TYPES } from '../../domain/elementFields.ts';
 import { statusClassOf, statusOf } from '../nodeStyle.ts';
+import { resolveEdgePorts, type EdgePorts, type PortRect } from './ports.ts';
 
 export const QUESTION_NODE_TYPE = 'question';
 export const ENTITY_NODE_TYPE = 'entity';
@@ -117,11 +118,16 @@ export function edgeStyleOf(kind: PdcEdgeKind, selected = false): CSSProperties 
   };
 }
 
+/**
+ * 一条边进 React Flow 的形状：kind 决定几何（flow/edges.tsx），ports 决定端点贴哪个端口
+ * （IMP10：用户拖的端口记在 ui/flow/ports.ts，没记录就按两卡相对位置推）。
+ */
 function makeEdge(
   id: string,
   source: NodeId,
   target: NodeId,
   kind: PdcEdgeKind,
+  ports: EdgePorts,
   extra: { label?: string; cardinality?: string; selected?: boolean } = {},
 ): Edge {
   const data: PdcEdgeData = { kind, ...extra };
@@ -129,6 +135,8 @@ function makeEdge(
     id,
     source,
     target,
+    sourceHandle: ports.source,
+    targetHandle: ports.target,
     type: FLOW_EDGE_TYPE,
     data,
     style: edgeStyleOf(kind, extra.selected === true),
@@ -185,6 +193,7 @@ export function toProblemFlow(input: ProblemFlowInput): { nodes: Node[]; edges: 
   const layout = layoutProblemTree(ws, index);
   const positions = resolvePositions(ws, index, layout);
   const links = linksByQuestion(ws, index);
+  const rects = new Map<NodeId, PortRect>();
 
   const nodes: Node[] = [];
   for (const node of ws.nodes) {
@@ -192,6 +201,7 @@ export function toProblemFlow(input: ProblemFlowInput): { nodes: Node[]; edges: 
     const pos = positions.get(node.id);
     if (!pos) continue;
     const size = cardSizeOf(ws.coreQuestionId, node.id);
+    rects.set(node.id, { x: pos.x, y: pos.y, w: size.width, h: size.height });
     const linked = (links.get(node.id) ?? []).map((id) => ({
       id,
       title: index.byId.get(id)?.title || '未命名',
@@ -226,8 +236,15 @@ export function toProblemFlow(input: ProblemFlowInput): { nodes: Node[]; edges: 
     if (index.byId.get(edge.target)?.type !== 'question') continue;
     if (!positions.has(edge.source) || !positions.has(edge.target)) continue;
     const kind: PdcEdgeKind = edge.type === 'dependsOn' ? 'depends' : 'decomposes';
+    const key = edgeKey(edge);
+    // IMP11：端口以边上的字段为准，缺的一端按几何推导补（老数据行为不变）。
+    const ports = resolveEdgePorts(
+      edge,
+      rects.get(edge.source) as PortRect,
+      rects.get(edge.target) as PortRect,
+    );
     edges.push(
-      makeEdge(edgeKey(edge), edge.source, edge.target, kind, edge.label ? { label: edge.label } : {}),
+      makeEdge(key, edge.source, edge.target, kind, ports, edge.label ? { label: edge.label } : {}),
     );
   }
   return { nodes, edges };
@@ -269,6 +286,7 @@ export function toSolveFlow(input: SolveFlowInput): { nodes: Node[]; edges: Edge
     tagsByEntity.set(edge.target, list);
   }
 
+  const rects = new Map<NodeId, PortRect>();
   const nodes: Node[] = [];
   for (const node of ws.nodes) {
     if (node.type !== 'entity') continue;
@@ -276,6 +294,7 @@ export function toSolveFlow(input: SolveFlowInput): { nodes: Node[]; edges: Edge
     const size = layout.sizes.get(node.id);
     if (!placed || !size) continue;
     const pos = placed;
+    rects.set(node.id, { x: pos.x, y: pos.y, w: size.width, h: size.height });
     const supportCodes = supportCodesOf(node.id);
     const fields: EntityFieldData[] = (node.data.fields ?? []).map((field: EntityField) => ({
       name: field.name,
@@ -308,9 +327,16 @@ export function toSolveFlow(input: SolveFlowInput): { nodes: Node[]; edges: Edge
     if (edge.type !== 'entityRelation') continue;
     if (!layout.positions.has(edge.source) || !layout.positions.has(edge.target)) continue;
     const key = edgeKey(edge);
+    // IMP11：同上——边上的端口优先，缺失的端按几何推导。
+    const ports = resolveEdgePorts(
+      edge,
+      rects.get(edge.source) as PortRect,
+      rects.get(edge.target) as PortRect,
+    );
     edges.push(
-      makeEdge(key, edge.source, edge.target, 'relation', {
-        label: edge.label ?? '关系',
+      makeEdge(key, edge.source, edge.target, 'relation', ports, {
+        // 端口连线默认不写关系名（label 留空），屏幕上显示「关系」；写过的名照原样显示。
+        label: edge.label || '关系',
         cardinality: edge.cardinality ?? '1:N',
         selected: input.selectedEdgeKey === key,
       }),

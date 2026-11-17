@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "node scripts/build.mjs",
     "typecheck": "tsc --noEmit",
-    "test": "node src/domain/export.test.ts && node src/domain/doc.test.ts && node src/domain/layout.test.ts && node src/domain/checks.test.ts && node src/domain/solve.test.ts && node src/store/persistence.test.ts && node src/store/drag.test.ts && node src/store/history.test.ts && node src/store/solve.test.ts && node src/store/elements.test.ts && node src/ui/flow/toFlow.test.ts && node src/ui/flow/nodeSync.test.ts && node src/ui/flow/selection.test.ts && node src/ui/flow/dragCancel.test.ts && node src/store/uiReview.test.ts && node src/store/depends.test.ts && node scripts/render.test.mjs && node scripts/edges.test.mjs",
+    "test": "node src/domain/export.test.ts && node src/domain/doc.test.ts && node src/domain/layout.test.ts && node src/domain/checks.test.ts && node src/domain/solve.test.ts && node src/store/persistence.test.ts && node src/store/drag.test.ts && node src/store/history.test.ts && node src/store/solve.test.ts && node src/store/elements.test.ts && node src/ui/flow/toFlow.test.ts && node src/ui/flow/nodeSync.test.ts && node src/ui/flow/selection.test.ts && node src/ui/flow/dragCancel.test.ts && node src/ui/flow/ports.test.ts && node src/store/uiReview.test.ts && node src/store/depends.test.ts && node scripts/render.test.mjs && node scripts/edges.test.mjs",
     "check:site": "node scripts/serve-check.mjs"
   },
   "dependencies": {

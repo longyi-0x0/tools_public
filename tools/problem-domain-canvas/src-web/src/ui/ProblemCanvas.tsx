@@ -19,6 +19,7 @@ import type { ChangeEvent, MouseEvent as ReactMouseEvent } from 'react';
 import {
   Background,
   BackgroundVariant,
+  ConnectionMode,
   MiniMap,
   ReactFlow,
   ReactFlowProvider,
@@ -26,11 +27,13 @@ import {
   useNodesState,
   useReactFlow,
 } from '@xyflow/react';
-import type { Node } from '@xyflow/react';
+import type { Connection, Node } from '@xyflow/react';
 import {
   beginDraft,
   beginDrag,
   cancelDepends,
+  clearConnectTip,
+  connectPorts,
   createQuestionAt,
   dragTo,
   endDrag,
@@ -46,12 +49,15 @@ import { createDragGuard, restoreDragged } from './flow/dragCancel.ts';
 import { settleNode, syncNodes } from './flow/nodeSync.ts';
 import { FlowEdgeMarkers, edgeTypes } from './flow/edges.tsx';
 import { nodeTypes } from './flow/nodes.tsx';
+import { portOf } from './flow/ports.ts';
 
 function ProblemFlow() {
   const doc = useDoc();
   const ui = useUi();
   const flow = useReactFlow();
   const [minimap, setMinimap] = useState(false);
+  /** 拖线中（IMP10）：端口常亮、可落点高亮、目标节点挂主色环，松手复位。 */
+  const [connecting, setConnecting] = useState(false);
   const dragGuard = useRef(createDragGuard());
   const fileInput = useRef<HTMLInputElement | null>(null);
 
@@ -120,11 +126,25 @@ function ProblemFlow() {
 
   const questionCount = doc.ws.nodes.filter((node) => node.type === 'question').length;
 
+  /** 端口连线（IMP10）：起点/终点端口都由用户选，语义判断在 commands 的 connectPorts。 */
+  const onConnect = (connection: Connection): void => {
+    const { source, target } = connection;
+    if (!source || !target) return;
+    connectPorts({
+      domain: 'problem',
+      source,
+      target,
+      sourcePort: portOf(connection.sourceHandle, 'bottom'),
+      targetPort: portOf(connection.targetHandle, 'top'),
+    });
+  };
+
   return (
     <section
       className="stage"
       data-flow="on"
       data-canvas={ui.canvasOpen ? 'on' : 'off'}
+      data-connecting={connecting || undefined}
       aria-label="画板"
       onDoubleClick={onDoubleClick}
     >
@@ -134,6 +154,13 @@ function ProblemFlow() {
           nodes={nodes}
           edges={derived.edges}
           onNodesChange={onNodesChange}
+          connectionMode={ConnectionMode.Loose}
+          onConnect={onConnect}
+          onConnectStart={() => {
+            setConnecting(true);
+            clearConnectTip();
+          }}
+          onConnectEnd={() => setConnecting(false)}
           nodeTypes={nodeTypes}
           edgeTypes={edgeTypes}
           defaultViewport={ui.views.problem}
@@ -225,8 +252,10 @@ function ProblemFlow() {
           {doc.index.byId.get(ui.dependsSourceId)?.title || '未命名'} · 点另一个问题完成 · Esc 取消
           {ui.dependsTip && <span className="modebar-tip"> · {ui.dependsTip}</span>}
         </div>
+      ) : ui.connectTip ? (
+        <div className="modebar" role="status">{ui.connectTip}</div>
       ) : (
-        <div className="canvas-hint">拖拽平移 · Shift+拖拽框选 · 双击空白新建问题 · 或按 N</div>
+        <div className="canvas-hint">拖拽平移 · Shift+拖拽框选 · 双击空白新建问题 · 从端口拖线连接 · 或按 N</div>
       )}
     </section>
   );

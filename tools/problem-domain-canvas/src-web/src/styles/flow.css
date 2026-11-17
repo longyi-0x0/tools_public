@@ -3,7 +3,7 @@
    覆盖清单（见 IMP7 报告）：
    ① 节点外框 --xy-node-border-default（默认 1px solid）、圆角、底色、选中环、hover 阴影
    ② 连线默认色 / 线宽 / 选中色、连接预览线
-   ③ 句柄（handle）底色与描边
+   ③ 端口（handle）：8px 圆点、悬停显形、拖线时常亮、可落点高亮（IMP10）
    ④ Controls 皮肤（我们不用它，但样式先收口，避免以后误用冒出库默认皮）
    ⑤ Attribution（MIT 署名保留，压到 9px 放右下角）
    ⑥ Background 点阵色、Minimap 底/遮罩/节点色、框选框颜色
@@ -20,7 +20,7 @@
   --xy-edge-stroke-default:var(--pd-accent);
   --xy-edge-stroke-width-default:2;
   --xy-edge-stroke-selected-default:var(--pd-accent);
-  --xy-handle-background-color-default:var(--pd-bg-3);
+  --xy-handle-background-color-default:var(--pd-accent);
   --xy-handle-border-color-default:transparent;
   --xy-connectionline-stroke-default:var(--pd-accent);
   --xy-connectionline-stroke-width-default:2;
@@ -64,22 +64,48 @@
 .react-flow__edge-textbg{fill:var(--pd-bg-2)}
 .react-flow__edge-text{fill:var(--pd-fg-1)}
 
-/* ③ 句柄：隐形圆点，hover 实体卡才显形；用 1.5px 主色环，不用边框 */
-.react-flow__handle{
-  width:7px;
-  height:7px;
+/* ③ 端口（IMP10）：四边各一个 8px 圆点，颜色 --pd-accent，环用 1.5px 底色（不画 1px 边框）。
+   静止不显形；悬停节点四点亮起（opacity .7）；悬停到某个点该点放大 1.3 倍（8 → 10.4px）且 opacity 1。
+   拖线中（.stage[data-connecting="true"]）所有端口常亮：能落点的主色实心 + 放大，不能落的转灰。
+   端口只在能连时才吃鼠标（悬停节点 / 拖线中），其余时间 pointer-events:none，不挡卡片拖动。 */
+.react-flow__handle.pdc-port{
+  width:8px;
+  height:8px;
   min-width:0;
   min-height:0;
   border:0;
-  background:var(--pd-bg-3);
-  box-shadow:0 0 0 1.5px var(--pd-accent);
+  border-radius:100%;
+  background:var(--pd-accent);
+  box-shadow:0 0 0 1.5px var(--pd-bg-3);
   opacity:0;
-  transition:opacity .12s ease;
+  pointer-events:none;
+  transition:opacity .12s ease, width .12s ease, height .12s ease, background-color .12s ease;
 }
-.react-flow__node:hover .react-flow__handle,
-.react-flow__handle.connectingfrom,
-.react-flow__handle.connectingto,
-.react-flow__handle.valid{opacity:1}
+.react-flow__node:hover .react-flow__handle.pdc-port,
+.stage[data-connecting="true"] .react-flow__handle.pdc-port{
+  opacity:.7;
+  pointer-events:auto;
+}
+.react-flow__handle.pdc-port:hover,
+.react-flow__handle.pdc-port.connectingfrom{
+  width:10.4px;
+  height:10.4px;
+  opacity:1;
+}
+.stage[data-connecting="true"] .react-flow__handle.pdc-port.valid{
+  width:10.4px;
+  height:10.4px;
+  background:var(--pd-accent);
+  opacity:1;
+}
+.stage[data-connecting="true"] .react-flow__handle.pdc-port:not(.valid):not(.connectingfrom){
+  background:var(--pd-line-2);
+  opacity:.55;
+}
+/* 吸附感：目标节点整体轻微高亮（端口 + 卡片 1.5px 主色环），松手后恢复 */
+.stage[data-connecting="true"] .react-flow__node:hover .node-card{
+  box-shadow:0 0 0 1.5px var(--pd-accent), var(--pd-sh-2);
+}
 
 /* ④ Controls：我们用自己的工具条；库的皮肤也收口，避免以后误用时冒默认白块 */
 .react-flow__controls{
@@ -141,20 +167,3 @@
 
 /* 箭头 defs 容器：零尺寸、不拦鼠标 */
 .pdc-markers{position:absolute;left:0;top:0;width:0;height:0;overflow:hidden;pointer-events:none}
-
-/* ⑧ 问题卡的句柄幽灵（IMPFIX3）：只给 decomposesTo / dependsOn 当锚点，不可见、不可连。
-   不能 display:none —— React Flow 用 getBoundingClientRect 取锚点，display:none 取不到框；
-   这里保留 1px 的框（视觉上仍是透明），跟着节点卡定位，边就能画到卡的上/下沿。
-   问题域不手动拉线（连线走左树），所以 isConnectable=false，hover 也不显形。 */
-.react-flow__handle.pdc-handle-ghost,
-.react-flow__node:hover .react-flow__handle.pdc-handle-ghost{
-  width:1px;
-  height:1px;
-  min-width:0;
-  min-height:0;
-  border:0;
-  background:none;
-  box-shadow:none;
-  opacity:0;
-  pointer-events:none;
-}

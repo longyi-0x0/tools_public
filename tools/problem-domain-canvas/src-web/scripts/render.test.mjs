@@ -62,7 +62,7 @@ const QUESTION_DATA = {
   checks: [],
 };
 
-/** 深度遍历 React 元素树里的 Handle。 */
+/** 深度遍历 React 元素树里的 Handle；遇到自定义组件（NodePorts 这类无状态包装）展开它的返回值。 */
 function collectHandles(element) {
   const found = [];
   const walk = (node) => {
@@ -71,26 +71,41 @@ function collectHandles(element) {
       return;
     }
     if (!isValidElement(node)) return;
-    if (node.type === Handle) found.push(node);
+    if (node.type === Handle) {
+      found.push(node);
+      return;
+    }
+    if (typeof node.type === 'function') {
+      walk(node.type(node.props));
+      return;
+    }
     walk(node.props?.children);
   };
   walk(element);
   return found;
 }
 
-test('问题卡元素树里必须有 target/source 两个 Handle（没有就不是锚点，边静默不画）', () => {
+test('问题卡元素树里必须有四个端口 Handle（上/右/下/左，各带 data-port）', () => {
   const tree = nodesMod.QuestionNode({ id: 'q1', data: QUESTION_DATA });
   const handles = collectHandles(tree);
-  const types = handles.map((element) => element.props.type);
-  assert.equal(handles.length, 2, `问题卡应有 2 个 Handle，实际 ${handles.length}`);
-  assert.deepEqual([...types].sort(), ['source', 'target'], '一进一出：target 在上、source 在下');
+  assert.equal(handles.length, 4, `问题卡应有 4 个端口，实际 ${handles.length}`);
+  assert.deepEqual(
+    handles.map((element) => element.props['data-port']),
+    ['top', 'right', 'bottom', 'left'],
+    '四边各一个端口，顺序 = PORT_IDS',
+  );
+  assert.deepEqual(
+    handles.map((element) => element.props.position).sort(),
+    ['bottom', 'left', 'right', 'top'],
+    'Handle 的方位覆盖四边',
+  );
   for (const element of handles) {
-    assert.equal(element.props.isConnectable, false, '问题域不手动拉线（连线走左树）');
-    assert.match(String(element.props.className), /pdc-handle-ghost/, '句柄走透明样式类');
+    assert.equal(element.props.isConnectable, true, '端口要能拖出、也能接住');
+    assert.match(String(element.props.className), /pdc-port/, '端口走 .pdc-port 样式类');
   }
 });
 
-test('对照：实体卡本来就有左右两个 Handle（证明上面的断言方法不是空转）', () => {
+test('实体卡同样是四个端口（证明上面的断言方法不是空转）', () => {
   const tree = nodesMod.EntityNode({
     id: 'e1',
     data: {
@@ -105,16 +120,23 @@ test('对照：实体卡本来就有左右两个 Handle（证明上面的断言�
     },
   });
   const handles = collectHandles(tree);
-  assert.equal(handles.length, 2, '实体卡左右各一个可拖的句柄');
-  assert.deepEqual(handles.map((element) => element.props.position).sort(), ['left', 'right'].sort());
+  assert.equal(handles.length, 4, '实体卡四边各一个端口');
+  assert.deepEqual(
+    handles.map((element) => element.props['data-port']),
+    ['top', 'right', 'bottom', 'left'],
+  );
 });
 
-test('问题卡渲染成标记后带 react-flow__handle（Service 端渲染，ReactFlowProvider 上下文内）', () => {
+test('问题卡渲染成标记后带 4 个带 data-port 的 react-flow__handle（Service 端渲染）', () => {
   const html = renderToStaticMarkup(
     createElement(ReactFlowProvider, null, createElement(nodesMod.QuestionNode, { id: 'q1', data: QUESTION_DATA })),
   );
   const count = (html.match(/react-flow__handle/g) ?? []).length;
-  assert.ok(count >= 2, `期望标记里至少 2 个 react-flow__handle，实际 ${count}；标记：${html.slice(0, 400)}`);
+  assert.ok(count >= 4, `期望标记里至少 4 个 react-flow__handle，实际 ${count}；标记：${html.slice(0, 400)}`);
+  for (const port of ['top', 'right', 'bottom', 'left']) {
+    assert.ok(html.includes(`data-port="${port}"`), `标记里缺 data-port="${port}"：${html.slice(0, 600)}`);
+  }
+  console.log('  端口 DOM :', (html.match(/<div class="react-flow__handle[^>]*>/g) ?? []).join('\n            '));
 });
 
 /**

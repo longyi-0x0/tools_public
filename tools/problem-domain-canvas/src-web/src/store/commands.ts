@@ -10,12 +10,14 @@ import type {
   EntityField,
   NodeId,
   Point,
+  PortId,
   QuestionStatus,
   Viewport,
 } from '../domain/types.ts';
 import {
   addBehavior,
   addConstraint,
+  addDecomposesTo,
   addDependsOn,
   addEntity,
   addEntityField,
@@ -46,6 +48,7 @@ import { NODE_LABEL } from '../domain/schema.ts';
 import { isProblemElementType, type ProblemElementType } from '../domain/elementFields.ts';
 import { commitDoc, getDocState, getHistoryState, redo as redoDoc, undo as undoDoc } from './docStore.ts';
 import { getUiState, setUi } from './uiStore.ts';
+import { inferConnection } from '../ui/flow/ports.ts';
 
 const now = (): string => new Date().toISOString();
 
@@ -333,6 +336,160 @@ export function pickDependsTarget(id: NodeId): DependPickResult {
     selection: { ...ui.selection, problem: id },
   });
   return 'created';
+}
+
+/* ---------- 端口连线（IMP10）：拖端口 → 松手建边，语义由 ui/flow/ports.ts 判 ---------- */
+
+/**
+ * 端口连线的拒绝提示原文（三种被拒情形：自环 / 跨类型 / 已有上级；重复另算）。
+ * 一律不弹模态框：画布底部把 modebar 换一句话。
+ */
+export const CONNECT_TIPS = {
+  self: '不能连自己：起点和终点得是两个节点',
+  crossType: '只能连同类节点：问题连问题、实体连实体，跨域的那条线不建',
+  parentExists: '这个子问题已经有上一级了，删掉旧的那条再连',
+  duplicate: '这条线已经建过了',
+} as const;
+
+export type ConnectResult =
+  | 'created-decomposes'
+  | 'created-depends'
+  | 'created-relation'
+  | 'self'
+  | 'cross-type'
+  | 'parent-exists'
+  | 'duplicate'
+  | 'not-found';
+
+export function clearConnectTip(): void {
+  if (getUiState().connectTip) setUi({ connectTip: null });
+}
+
+export interface ConnectInput {
+  domain: Domain;
+  source: NodeId;
+  target: NodeId;
+  sourcePort: PortId;
+  targetPort: PortId;
+}
+
+/**
+ * 从端口连线（IMPP10）：起点/终点端口都由用户选，这里只做「读类型 → 判语义 → 一次 commit」。
+ * 语义判断顺序在 ui/flow/ports.ts 的 inferConnection 里（自环 → 跨类型 → 解域关系 →
+ * 问题域下→上分解 → 其余依赖）；文档层的兜底校验（重复边、子问题已有上级）在这里，
+ * 被拒一律只写一句提示，不 commit —— 撤销栈零增长。
+ */
+export function connectPorts(input: ConnectInput): ConnectResult {
+  const doc = getDocState();
+  const sourceNode = doc.ws.nodes.find((node) => node.id === input.source);
+  const targetNode = doc.ws.nodes.find((node) => node.id === input.target);
+  if (!sourceNode || !targetNode) return 'not-found';
+
+  const plan = inferConnection({
+    domain: input.domain,
+    self: input.source === input.target,
+    sourceType: sourceNode.type,
+    targetType: targetNode.type,
+    sourcePort: input.sourcePort,
+    targetPort: input.targetPort,
+  });
+
+  if ('rejected' in plan) {
+    setUi({ connectTip: plan.rejected === 'self' ? CONNECT_TIPS.self : CONNECT_TIPS.crossType });
+    return plan.rejected;
+  }
+
+  if (
+    plan.kind === 'decomposesTo' &&
+    doc.ws.edges.some((edge) => edge.type === 'decomposesTo' && edge.target === input.target)
+  ) {
+    setUi({ connectTip: CONNECT_TIPS.parentExists });
+    return 'parent-exists';
+  }
+  const sameEdge = (type: 'dependsOn' | 'entityRelation'): boolean =>
+    doc.ws.edges.some(
+      (edge) =>
+        edge.type === type && edge.source === input.source && edge.target === input.target,
+    );
+  if (plan.kind !== 'decomposesTo' && sameEdge(plan.kind)) {
+    setUi({ connectTip: CONNECT_TIPS.duplicate });
+    return 'duplicate';
+  }
+
+  let createdKey: EdgeKey | null = null;
+  if (plan.kind === 'decomposesTo') {
+    commitDoc(
+      (ws) => {
+        const result = addDecomposesTo(ws, {
+          parent: input.source,
+          child: input.target,
+          now: now(),
+          sourcePort: input.sourcePort,
+          targetPort: input.targetPort,
+        });
+        createdKey = result.key;
+        return result.ws;
+      },
+      { label: '建立分解' },
+    );
+  } else if (plan.kind === 'dependsOn') {
+    commitDoc(
+      (ws) => {
+        const result = addDependsOn(ws, {
+          source: input.source,
+          target: input.target,
+          now: now(),
+          sourcePort: input.sourcePort,
+          targetPort: input.targetPort,
+        });
+        createdKey = result.key;
+        return result.ws;
+      },
+      { label: '建立依赖' },
+    );
+  } else {
+    commitDoc(
+      (ws) => {
+        const result = addEntityRelation(ws, {
+          source: input.source,
+          target: input.target,
+          label: '',
+          cardinality: '1:N',
+          now: now(),
+          sourcePort: input.sourcePort,
+          targetPort: input.targetPort,
+        });
+        createdKey = result.key;
+        return result.ws;
+      },
+      { label: '新建关系' },
+    );
+  }
+  if (!createdKey) {
+    setUi({ connectTip: CONNECT_TIPS.duplicate });
+    return 'duplicate';
+  }
+
+  // 用户选的端口随边落进文档（Edge.sourcePort / targetPort），不再记 UI 侧的内存表（IMP11）。
+  const ui = getUiState();
+  const selection =
+    input.domain === 'problem'
+      ? { ...ui.selection, problem: input.target }
+      : { ...ui.selection, solve: input.target };
+  setUi({
+    connectTip: null,
+    selectedId: input.target,
+    selection,
+    selectedEdgeKey: plan.kind === 'entityRelation' ? createdKey : null,
+    connect: null,
+    dependsSourceId: null,
+    dependsTip: null,
+  });
+  return plan.kind === 'decomposesTo'
+    ? 'created-decomposes'
+    : plan.kind === 'dependsOn'
+      ? 'created-depends'
+      : 'created-relation';
 }
 
 export function beginDraft(parentId: NodeId | null): void {
@@ -782,6 +939,17 @@ export function commitRelationRename(key: EdgeKey, label: string): boolean {
 
 export function setRelationCardinality(key: EdgeKey, cardinality: Cardinality): void {
   commitDoc((ws) => setEdgeProps(ws, key, { cardinality }, now()), { label: '改基数' });
+}
+
+/**
+ * 改连线端口（IMP11）：详情栏「关系端口」下拉进来，一次 commit 一条撤销记录。
+ * 传 null = 退回几何推导（字段删掉）；没传的一端保持原样。
+ */
+export function setEdgePorts(
+  key: EdgeKey,
+  patch: { sourcePort?: PortId | null; targetPort?: PortId | null },
+): void {
+  commitDoc((ws) => setEdgeProps(ws, key, patch, now()), { label: '改连线端口' });
 }
 
 export function deleteRelation(key: EdgeKey): void {

@@ -19,13 +19,14 @@ import {
   useNodesState,
   useReactFlow,
 } from '@xyflow/react';
-import type { Node } from '@xyflow/react';
+import type { Connection, Node } from '@xyflow/react';
 import {
   beginDrag,
   beginEntityDraft,
   cancelConnect,
+  clearConnectTip,
+  connectPorts,
   createEntityAt,
-  createRelation,
   dragTo,
   endDrag,
   pickConnectEntity,
@@ -39,6 +40,7 @@ import { createDragGuard, restoreDragged } from './flow/dragCancel.ts';
 import { settleNode, syncNodes } from './flow/nodeSync.ts';
 import { FlowEdgeMarkers, edgeTypes } from './flow/edges.tsx';
 import { nodeTypes } from './flow/nodes.tsx';
+import { portOf } from './flow/ports.ts';
 import { pickFromLibrary, pickNode } from './flow/selection.ts';
 
 function SolveFlow() {
@@ -46,6 +48,8 @@ function SolveFlow() {
   const ui = useUi();
   const flow = useReactFlow();
   const [minimap, setMinimap] = useState(false);
+  /** 拖线中（IMP10）：端口常亮、可落点高亮、目标节点挂主色环，松手复位。 */
+  const [connecting, setConnecting] = useState(false);
   const dragGuard = useRef(createDragGuard());
 
   const derived = useMemo(
@@ -91,11 +95,25 @@ function SolveFlow() {
 
   const entityCount = nodes.length;
 
+  /** 端口连线（IMP10）：任意两端端口 → entityRelation，label 留空、屏幕上显示「关系」。 */
+  const onConnect = (connection: Connection): void => {
+    const { source, target } = connection;
+    if (!source || !target) return;
+    connectPorts({
+      domain: 'solve',
+      source,
+      target,
+      sourcePort: portOf(connection.sourceHandle, 'right'),
+      targetPort: portOf(connection.targetHandle, 'left'),
+    });
+  };
+
   return (
     <section
       className="stage"
       data-flow="on"
       data-canvas={ui.canvasOpen ? 'on' : 'off'}
+      data-connecting={connecting || undefined}
       data-domain="solve"
       aria-label="领域模型画板"
       onDoubleClick={onDoubleClick}
@@ -106,6 +124,12 @@ function SolveFlow() {
           nodes={nodes}
           edges={derived.edges}
           onNodesChange={onNodesChange}
+          onConnect={onConnect}
+          onConnectStart={() => {
+            setConnecting(true);
+            clearConnectTip();
+          }}
+          onConnectEnd={() => setConnecting(false)}
           nodeTypes={nodeTypes}
           edgeTypes={edgeTypes}
           defaultViewport={ui.views.solve}
@@ -121,12 +145,6 @@ function SolveFlow() {
           zoomOnDoubleClick={false}
           deleteKeyCode={null}
           connectionMode={ConnectionMode.Loose}
-          isValidConnection={(connection) => connection.source !== connection.target}
-          onConnect={(connection) => {
-            const { source, target } = connection;
-            if (source && target && source !== target) createRelation(source, target);
-            cancelConnect();
-          }}
           onNodeClick={(_, node) => {
             if (getUiState().connect) pickConnectEntity(node.id);
             else pickNode(node.id);
@@ -193,8 +211,10 @@ function SolveFlow() {
         <div className="modebar" role="status">
           先点起点实体，再点终点实体 · Esc 取消
         </div>
+      ) : ui.connectTip ? (
+        <div className="modebar" role="status">{ui.connectTip}</div>
       ) : (
-        <div className="canvas-hint">拖拽平移 · Shift+拖拽框选 · 双击空白新建实体 · 或按 N</div>
+        <div className="canvas-hint">拖拽平移 · Shift+拖拽框选 · 双击空白新建实体 · 从端口拖线连接 · 或按 N</div>
       )}
     </section>
   );

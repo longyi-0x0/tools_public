@@ -54,6 +54,8 @@ export interface UiState {
   dependsSourceId: NodeId | null;
   /** 依赖模式的拒绝提示（自环 / 重复 / 非问题）；用 modebar 文案，不弹模态框。 */
   dependsTip: string | null;
+  /** 端口连线的拒绝提示（自环 / 跨类型 / 已有上级 / 重复）；同样用 modebar 文案，不弹模态框。 */
+  connectTip: string | null;
   drag: DragState | null;
   /** 详情栏当前聚焦的分组：点左列检查行会切到 'checks'。 */
   detailSection: DetailSection;
@@ -85,6 +87,7 @@ let state: UiState = {
   connect: null,
   dependsSourceId: null,
   dependsTip: null,
+  connectTip: null,
   drag: null,
   detailSection: 'props',
 };

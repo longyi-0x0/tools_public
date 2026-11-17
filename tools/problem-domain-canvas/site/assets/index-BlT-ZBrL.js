@@ -20187,6 +20187,18 @@ function createEdge(type, source, target, nodes) {
     }
     return { type, source, target };
 }
+/**
+ * 用户从端口拖出来的边（IMP11）：把两端端口写进边本身，成为唯一真相。
+ * 没传的一端不写字段（老文档、左树菜单建的两条边都走这条路径），渲染时按几何推导。
+ */
+function withPorts(edge, ports) {
+    const next = { ...edge };
+    if (ports.sourcePort)
+        next.sourcePort = ports.sourcePort;
+    if (ports.targetPort)
+        next.targetPort = ports.targetPort;
+    return next;
+}
 function touch(ws, now) {
     return { createdAt: ws.meta.createdAt || now, updatedAt: now };
 }
@@ -20386,7 +20398,7 @@ function addEntityRelation(ws, input) {
         return { ws, key: null };
     }
     const edge = {
-        ...createEdge('entityRelation', input.source, input.target, ws.nodes),
+        ...withPorts(createEdge('entityRelation', input.source, input.target, ws.nodes), input),
         cardinality: input.cardinality ?? '1:N',
         label: input.label ?? '关系',
     };
@@ -20413,7 +20425,30 @@ function addDependsOn(ws, input) {
         edge.target === input.target)) {
         return { ws, key: null };
     }
-    const edge = createEdge('dependsOn', input.source, input.target, ws.nodes);
+    const edge = withPorts(createEdge('dependsOn', input.source, input.target, ws.nodes), input);
+    return {
+        ws: { ...ws, edges: [...ws.edges, edge], meta: touch(ws, input.now) },
+        key: edgeKey(edge),
+    };
+}
+/**
+ * 建 `decomposesTo`（IMP10：问题卡「下端口 → 上端口」松手时走这里）：
+ * 两端都必须是 question；一个子问题只能有一个上级，所以 child 已有上游时直接拒绝
+ * （返回原 ws，撤销栈零增长——提示文案在 store/commands.ts 的 CONNECT_TIPS.parentExists）。
+ */
+function addDecomposesTo(ws, input) {
+    if (input.parent === input.child)
+        return { ws, key: null };
+    const parentNode = byId(ws, input.parent);
+    const childNode = byId(ws, input.child);
+    if (!parentNode || parentNode.type !== 'question')
+        return { ws, key: null };
+    if (!childNode || childNode.type !== 'question')
+        return { ws, key: null };
+    if (ws.edges.some((edge) => edge.type === 'decomposesTo' && edge.target === input.child)) {
+        return { ws, key: null };
+    }
+    const edge = withPorts(createEdge('decomposesTo', input.parent, input.child, ws.nodes), input);
     return {
         ws: { ...ws, edges: [...ws.edges, edge], meta: touch(ws, input.now) },
         key: edgeKey(edge),
@@ -20466,14 +20501,34 @@ function removeEntityField(ws, id, index, now) {
         return ws;
     return updateEntity(ws, id, { fields: (node.data.fields ?? []).filter((_, position) => position !== index) }, now);
 }
-/** 关系属性（关系名 / 基数）：键是 `type|source>target`，改属性不换键。 */
+/**
+ * 边属性（关系名 / 基数 / 两端端口）：键是 `type|source>target`，改属性不换键。
+ * 端口传 null = 退回几何推导（字段删掉，不留空值）。
+ */
 function setEdgeProps(ws, key, patch, now) {
     let changed = false;
     const edges = ws.edges.map((edge) => {
         if (edgeKey(edge) !== key)
             return edge;
         changed = true;
-        return { ...edge, ...patch };
+        const next = { ...edge };
+        if (patch.label !== undefined)
+            next.label = patch.label;
+        if (patch.cardinality !== undefined)
+            next.cardinality = patch.cardinality;
+        if (patch.sourcePort !== undefined) {
+            if (patch.sourcePort)
+                next.sourcePort = patch.sourcePort;
+            else
+                delete next.sourcePort;
+        }
+        if (patch.targetPort !== undefined) {
+            if (patch.targetPort)
+                next.targetPort = patch.targetPort;
+            else
+                delete next.targetPort;
+        }
+        return next;
     });
     return changed ? { ...ws, edges, meta: touch(ws, now) } : ws;
 }
@@ -21116,6 +21171,7 @@ let state = {
     connect: null,
     dependsSourceId: null,
     dependsTip: null,
+    connectTip: null,
     drag: null,
     detailSection: 'props',
 };
@@ -21156,6 +21212,58 @@ function sessionOf(ui) {
         detailOpen: ui.detailOpen,
         ignoredChecks: [...ui.ignoredChecks],
     };
+}
+
+/** 四边端口的顺序 = 渲染顺序（上/右/下/左），节点渲染与测试共用一份。 */
+const PORT_IDS = ['top', 'right', 'bottom', 'left'];
+/** 句柄 id → 端口：拿不到（没 id / 库给了别的）时退回 fallback。 */
+function portOf(handleId, fallback) {
+    return PORT_IDS.includes(handleId) ? handleId : fallback;
+}
+/** 域里能连的节点类型：问题域只认问题、解域只认实体（其余一律算「跨类型」）。 */
+function domainAccepts(domain, type) {
+    return domain === 'problem' ? type === 'question' : type === 'entity';
+}
+/**
+ * 松手后的语义映射（判断顺序，别调换）：
+ * ① 自环 → 拒；② 任一端不是本域的合法节点类型 → 跨类型，拒；
+ * ③ 解域 → entityRelation；④ 问题域且「起点在下方端口、终点在上方端口」→ decomposesTo；
+ * ⑤ 问题域其余任意端口组合 → dependsOn（方向 = 起点 → 终点）。
+ */
+function inferConnection(candidate) {
+    if (candidate.self)
+        return { rejected: 'self' };
+    if (!domainAccepts(candidate.domain, candidate.sourceType))
+        return { rejected: 'cross-type' };
+    if (!domainAccepts(candidate.domain, candidate.targetType))
+        return { rejected: 'cross-type' };
+    if (candidate.domain === 'solve')
+        return { kind: 'entityRelation' };
+    if (candidate.sourcePort === 'bottom' && candidate.targetPort === 'top') {
+        return { kind: 'decomposesTo' };
+    }
+    return { kind: 'dependsOn' };
+}
+/**
+ * 没有用户选择时的端口推导：两卡中心谁偏哪边就走哪边——
+ * 左右挨着 → 右 → 左（水平直线）；上下叠着 → 下 → 上（竖直直线）。
+ * 这样边不会全挤在顶部/底部（IMP10 验收 ⑤）。
+ */
+function portsBetween(source, target) {
+    const dx = target.x + target.w / 2 - (source.x + source.w / 2);
+    const dy = target.y + target.h / 2 - (source.y + source.h / 2);
+    if (Math.abs(dx) >= Math.abs(dy)) {
+        return dx >= 0 ? { source: 'right', target: 'left' } : { source: 'left', target: 'right' };
+    }
+    return dy >= 0 ? { source: 'bottom', target: 'top' } : { source: 'top', target: 'bottom' };
+}
+/**
+ * 一条边实际贴哪两个端口（IMP11）：边上的 `sourcePort` / `targetPort` 是唯一真相，
+ * 缺哪端就用几何推导补哪端。老文档没有这两个字段 → 与 IMP10 的几何推导完全一致。
+ */
+function resolveEdgePorts(edge, source, target) {
+    const auto = portsBetween(source, target);
+    return { source: edge.sourcePort ?? auto.source, target: edge.targetPort ?? auto.target };
 }
 
 const now$1 = () => new Date().toISOString();
@@ -21410,6 +21518,121 @@ function pickDependsTarget(id) {
         selection: { ...ui.selection, problem: id },
     });
     return 'created';
+}
+/* ---------- 端口连线（IMP10）：拖端口 → 松手建边，语义由 ui/flow/ports.ts 判 ---------- */
+/**
+ * 端口连线的拒绝提示原文（三种被拒情形：自环 / 跨类型 / 已有上级；重复另算）。
+ * 一律不弹模态框：画布底部把 modebar 换一句话。
+ */
+const CONNECT_TIPS = {
+    self: '不能连自己：起点和终点得是两个节点',
+    crossType: '只能连同类节点：问题连问题、实体连实体，跨域的那条线不建',
+    parentExists: '这个子问题已经有上一级了，删掉旧的那条再连',
+    duplicate: '这条线已经建过了',
+};
+function clearConnectTip() {
+    if (getUiState().connectTip)
+        setUi({ connectTip: null });
+}
+/**
+ * 从端口连线（IMPP10）：起点/终点端口都由用户选，这里只做「读类型 → 判语义 → 一次 commit」。
+ * 语义判断顺序在 ui/flow/ports.ts 的 inferConnection 里（自环 → 跨类型 → 解域关系 →
+ * 问题域下→上分解 → 其余依赖）；文档层的兜底校验（重复边、子问题已有上级）在这里，
+ * 被拒一律只写一句提示，不 commit —— 撤销栈零增长。
+ */
+function connectPorts(input) {
+    const doc = getDocState();
+    const sourceNode = doc.ws.nodes.find((node) => node.id === input.source);
+    const targetNode = doc.ws.nodes.find((node) => node.id === input.target);
+    if (!sourceNode || !targetNode)
+        return 'not-found';
+    const plan = inferConnection({
+        domain: input.domain,
+        self: input.source === input.target,
+        sourceType: sourceNode.type,
+        targetType: targetNode.type,
+        sourcePort: input.sourcePort,
+        targetPort: input.targetPort,
+    });
+    if ('rejected' in plan) {
+        setUi({ connectTip: plan.rejected === 'self' ? CONNECT_TIPS.self : CONNECT_TIPS.crossType });
+        return plan.rejected;
+    }
+    if (plan.kind === 'decomposesTo' &&
+        doc.ws.edges.some((edge) => edge.type === 'decomposesTo' && edge.target === input.target)) {
+        setUi({ connectTip: CONNECT_TIPS.parentExists });
+        return 'parent-exists';
+    }
+    const sameEdge = (type) => doc.ws.edges.some((edge) => edge.type === type && edge.source === input.source && edge.target === input.target);
+    if (plan.kind !== 'decomposesTo' && sameEdge(plan.kind)) {
+        setUi({ connectTip: CONNECT_TIPS.duplicate });
+        return 'duplicate';
+    }
+    let createdKey = null;
+    if (plan.kind === 'decomposesTo') {
+        commitDoc((ws) => {
+            const result = addDecomposesTo(ws, {
+                parent: input.source,
+                child: input.target,
+                now: now$1(),
+                sourcePort: input.sourcePort,
+                targetPort: input.targetPort,
+            });
+            createdKey = result.key;
+            return result.ws;
+        }, { label: '建立分解' });
+    }
+    else if (plan.kind === 'dependsOn') {
+        commitDoc((ws) => {
+            const result = addDependsOn(ws, {
+                source: input.source,
+                target: input.target,
+                now: now$1(),
+                sourcePort: input.sourcePort,
+                targetPort: input.targetPort,
+            });
+            createdKey = result.key;
+            return result.ws;
+        }, { label: '建立依赖' });
+    }
+    else {
+        commitDoc((ws) => {
+            const result = addEntityRelation(ws, {
+                source: input.source,
+                target: input.target,
+                label: '',
+                cardinality: '1:N',
+                now: now$1(),
+                sourcePort: input.sourcePort,
+                targetPort: input.targetPort,
+            });
+            createdKey = result.key;
+            return result.ws;
+        }, { label: '新建关系' });
+    }
+    if (!createdKey) {
+        setUi({ connectTip: CONNECT_TIPS.duplicate });
+        return 'duplicate';
+    }
+    // 用户选的端口随边落进文档（Edge.sourcePort / targetPort），不再记 UI 侧的内存表（IMP11）。
+    const ui = getUiState();
+    const selection = input.domain === 'problem'
+        ? { ...ui.selection, problem: input.target }
+        : { ...ui.selection, solve: input.target };
+    setUi({
+        connectTip: null,
+        selectedId: input.target,
+        selection,
+        selectedEdgeKey: plan.kind === 'entityRelation' ? createdKey : null,
+        connect: null,
+        dependsSourceId: null,
+        dependsTip: null,
+    });
+    return plan.kind === 'decomposesTo'
+        ? 'created-decomposes'
+        : plan.kind === 'dependsOn'
+            ? 'created-depends'
+            : 'created-relation';
 }
 function beginDraft(parentId) {
     setUi({ draft: { parentId }, renamingId: null, menuFor: null, solveDraft: false });
@@ -21795,6 +22018,13 @@ function commitRelationRename(key, label) {
 }
 function setRelationCardinality(key, cardinality) {
     commitDoc((ws) => setEdgeProps(ws, key, { cardinality }, now$1()), { label: '改基数' });
+}
+/**
+ * 改连线端口（IMP11）：详情栏「关系端口」下拉进来，一次 commit 一条撤销记录。
+ * 传 null = 退回几何推导（字段删掉）；没传的一端保持原样。
+ */
+function setEdgePorts(key, patch) {
+    commitDoc((ws) => setEdgeProps(ws, key, patch, now$1()), { label: '改连线端口' });
 }
 function deleteRelation(key) {
     commitDoc((ws) => removeEdgeByKey(ws, key, now$1()), { label: '删除关系' });
@@ -31810,12 +32040,18 @@ function edgeStyleOf(kind, selected = false) {
         opacity: kind === 'depends' ? 0.85 : 1,
     };
 }
-function makeEdge(id, source, target, kind, extra = {}) {
+/**
+ * 一条边进 React Flow 的形状：kind 决定几何（flow/edges.tsx），ports 决定端点贴哪个端口
+ * （IMP10：用户拖的端口记在 ui/flow/ports.ts，没记录就按两卡相对位置推）。
+ */
+function makeEdge(id, source, target, kind, ports, extra = {}) {
     const data = { kind, ...extra };
     return {
         id,
         source,
         target,
+        sourceHandle: ports.source,
+        targetHandle: ports.target,
         type: FLOW_EDGE_TYPE,
         data,
         style: edgeStyleOf(kind, extra.selected === true),
@@ -31848,6 +32084,7 @@ function toProblemFlow(input) {
     const layout = layoutProblemTree(ws, index);
     const positions = resolvePositions(ws, index, layout);
     const links = linksByQuestion(ws, index);
+    const rects = new Map();
     const nodes = [];
     for (const node of ws.nodes) {
         if (node.type !== 'question')
@@ -31856,6 +32093,7 @@ function toProblemFlow(input) {
         if (!pos)
             continue;
         const size = cardSizeOf(ws.coreQuestionId, node.id);
+        rects.set(node.id, { x: pos.x, y: pos.y, w: size.width, h: size.height });
         const linked = (links.get(node.id) ?? []).map((id) => ({
             id,
             title: index.byId.get(id)?.title || '未命名',
@@ -31893,7 +32131,10 @@ function toProblemFlow(input) {
         if (!positions.has(edge.source) || !positions.has(edge.target))
             continue;
         const kind = edge.type === 'dependsOn' ? 'depends' : 'decomposes';
-        edges.push(makeEdge(edgeKey(edge), edge.source, edge.target, kind, edge.label ? { label: edge.label } : {}));
+        const key = edgeKey(edge);
+        // IMP11：端口以边上的字段为准，缺的一端按几何推导补（老数据行为不变）。
+        const ports = resolveEdgePorts(edge, rects.get(edge.source), rects.get(edge.target));
+        edges.push(makeEdge(key, edge.source, edge.target, kind, ports, edge.label ? { label: edge.label } : {}));
     }
     return { nodes, edges };
 }
@@ -31924,6 +32165,7 @@ function toSolveFlow(input) {
         });
         tagsByEntity.set(edge.target, list);
     }
+    const rects = new Map();
     const nodes = [];
     for (const node of ws.nodes) {
         if (node.type !== 'entity')
@@ -31933,6 +32175,7 @@ function toSolveFlow(input) {
         if (!placed || !size)
             continue;
         const pos = placed;
+        rects.set(node.id, { x: pos.x, y: pos.y, w: size.width, h: size.height });
         const supportCodes = supportCodesOf(node.id);
         const fields = (node.data.fields ?? []).map((field) => ({
             name: field.name,
@@ -31966,8 +32209,11 @@ function toSolveFlow(input) {
         if (!layout.positions.has(edge.source) || !layout.positions.has(edge.target))
             continue;
         const key = edgeKey(edge);
-        edges.push(makeEdge(key, edge.source, edge.target, 'relation', {
-            label: edge.label ?? '关系',
+        // IMP11：同上——边上的端口优先，缺失的端按几何推导。
+        const ports = resolveEdgePorts(edge, rects.get(edge.source), rects.get(edge.target));
+        edges.push(makeEdge(key, edge.source, edge.target, 'relation', ports, {
+            // 端口连线默认不写关系名（label 留空），屏幕上显示「关系」；写过的名照原样显示。
+            label: edge.label || '关系',
             cardinality: edge.cardinality ?? '1:N',
             selected: input.selectedEdgeKey === key,
         }));
@@ -32094,24 +32340,38 @@ function FlowEdgeMarkers() {
     return (jsxRuntimeExports.jsx("svg", { className: "pdc-markers", "aria-hidden": "true", focusable: "false", children: jsxRuntimeExports.jsxs("defs", { children: [jsxRuntimeExports.jsx("marker", { id: "pdc-arrow", viewBox: "0 0 10 10", refX: "9", refY: "5", markerWidth: "7", markerHeight: "7", orient: "auto-start-reverse", children: jsxRuntimeExports.jsx("path", { d: "M0 0 L10 5 L0 10 z", fill: "var(--pd-accent)" }) }), jsxRuntimeExports.jsx("marker", { id: "pdc-arrow-hollow", viewBox: "0 0 10 10", refX: "9", refY: "5", markerWidth: "7", markerHeight: "7", orient: "auto-start-reverse", children: jsxRuntimeExports.jsx("path", { d: "M0 0 L10 5 L0 10 z", fill: "none", stroke: "var(--pd-accent)", strokeWidth: "1.5" }) })] }) }));
 }
 
+/** 端口 → React Flow 的方位枚举（值同字符串，与 PortId 一一对应）。 */
+const POSITION_OF = {
+    top: Position.Top,
+    right: Position.Right,
+    bottom: Position.Bottom,
+    left: Position.Left,
+};
+/**
+ * 四边端口：同一份 4 个句柄给问题卡和实体卡用。
+ * 不设 `isConnectable={false}`：端口要能拖出、也要能接住（落点由库的 ConnectionMode.Loose 放行）。
+ */
+function NodePorts() {
+    return (jsxRuntimeExports.jsx(jsxRuntimeExports.Fragment, { children: PORT_IDS.map((port) => (jsxRuntimeExports.jsx(fr, { id: port, type: "source", position: POSITION_OF[port], "data-port": port, className: "pdc-port", isConnectable: true }, port))) }));
+}
 /** 问题卡：结构是 `.node-card` + `.node-head` + `.node-links`，皮肤在 canvas.css。 */
 function QuestionNode({ data, dragging }) {
     const node = data;
-    return (jsxRuntimeExports.jsxs("div", { className: "node-card pdc-card", "data-selected": node.selected || undefined, "data-dragging": dragging || undefined, "data-core": node.core || undefined, title: node.title, children: [jsxRuntimeExports.jsx(fr, { type: "target", position: Position.Top, isConnectable: false, className: "pdc-handle-ghost" }), jsxRuntimeExports.jsxs("span", { className: "node-head", children: [jsxRuntimeExports.jsx("span", { className: node.statusClass, "aria-hidden": "true" }), jsxRuntimeExports.jsx("span", { className: "node-code", children: node.code }), jsxRuntimeExports.jsx("span", { className: "node-title", children: node.title }), node.checks.length > 0 && (jsxRuntimeExports.jsx("span", { className: "check-mark", title: node.checks.join(' / '), children: node.checks[0] }))] }), node.links.length > 0 && (jsxRuntimeExports.jsxs("span", { className: "node-links", children: [node.links.map((link) => (jsxRuntimeExports.jsx("button", { type: "button", className: "node-link nodrag", title: `关联元素：${link.title}`, onPointerDown: (event) => event.stopPropagation(), onClick: (event) => {
+    return (jsxRuntimeExports.jsxs("div", { className: "node-card pdc-card", "data-selected": node.selected || undefined, "data-dragging": dragging || undefined, "data-core": node.core || undefined, title: node.title, children: [jsxRuntimeExports.jsx(NodePorts, {}), jsxRuntimeExports.jsxs("span", { className: "node-head", children: [jsxRuntimeExports.jsx("span", { className: node.statusClass, "aria-hidden": "true" }), jsxRuntimeExports.jsx("span", { className: "node-code", children: node.code }), jsxRuntimeExports.jsx("span", { className: "node-title", children: node.title }), node.checks.length > 0 && (jsxRuntimeExports.jsx("span", { className: "check-mark", title: node.checks.join(' / '), children: node.checks[0] }))] }), node.links.length > 0 && (jsxRuntimeExports.jsxs("span", { className: "node-links", children: [node.links.map((link) => (jsxRuntimeExports.jsx("button", { type: "button", className: "node-link nodrag", title: `关联元素：${link.title}`, onPointerDown: (event) => event.stopPropagation(), onClick: (event) => {
                             event.stopPropagation();
                             select$1(link.id);
-                        }, children: link.title }, link.id))), node.linkMore > 0 && jsxRuntimeExports.jsxs("span", { className: "node-link-more", children: ["+", node.linkMore] })] })), jsxRuntimeExports.jsx(fr, { type: "source", position: Position.Bottom, isConnectable: false, className: "pdc-handle-ghost" })] }));
+                        }, children: link.title }, link.id))), node.linkMore > 0 && jsxRuntimeExports.jsxs("span", { className: "node-link-more", children: ["+", node.linkMore] })] }))] }));
 }
-/** 实体卡：右侧/左侧各一个圆点，拖出来就是 entityRelation（onConnect 落在画布上）。 */
+/** 实体卡：四边端口同问题卡，拖出来落在另一端实体上就是 entityRelation（onConnect）。 */
 function EntityNode({ data }) {
     const node = data;
-    return (jsxRuntimeExports.jsxs("div", { className: "node-card entity-card pdc-card", "data-selected": node.selected || undefined, "data-connect-source": node.connectSource || undefined, "data-unsupported": node.unsupported || undefined, children: [jsxRuntimeExports.jsx(fr, { type: "target", position: Position.Left }), jsxRuntimeExports.jsxs("div", { className: "entity-head", children: [jsxRuntimeExports.jsx("span", { className: "node-title", children: node.title }), node.supportCodes.length > 0 ? (node.supportCodes.map((entry) => (jsxRuntimeExports.jsx("button", { type: "button", className: "support-badge nodrag", title: `跳到问题 ${entry.code}`, onPointerDown: (event) => event.stopPropagation(), onClick: (event) => {
+    return (jsxRuntimeExports.jsxs("div", { className: "node-card entity-card pdc-card", "data-selected": node.selected || undefined, "data-connect-source": node.connectSource || undefined, "data-unsupported": node.unsupported || undefined, children: [jsxRuntimeExports.jsx(NodePorts, {}), jsxRuntimeExports.jsxs("div", { className: "entity-head", children: [jsxRuntimeExports.jsx("span", { className: "node-title", children: node.title }), node.supportCodes.length > 0 ? (node.supportCodes.map((entry) => (jsxRuntimeExports.jsx("button", { type: "button", className: "support-badge nodrag", title: `跳到问题 ${entry.code}`, onPointerDown: (event) => event.stopPropagation(), onClick: (event) => {
                             event.stopPropagation();
                             gotoQuestion(entry.questionId);
                         }, children: entry.code }, entry.questionId)))) : (jsxRuntimeExports.jsx("span", { className: "check-mark", title: "C6\uFF1A\u8FD9\u4E2A\u5B9E\u4F53\u4E0D\u652F\u6491\u4EFB\u4F55\u95EE\u9898", children: "C6" }))] }), jsxRuntimeExports.jsx("div", { className: "entity-identity", children: node.identity }), node.fields.length > 0 && (jsxRuntimeExports.jsx("ul", { className: "entity-fields", children: node.fields.map((field, index) => (jsxRuntimeExports.jsxs("li", { children: [jsxRuntimeExports.jsx("span", { className: "field-name", children: field.name || '未命名字段' }), field.type && jsxRuntimeExports.jsx("span", { className: "field-type", children: field.type }), field.required && jsxRuntimeExports.jsx("span", { className: "field-req", children: "\u5FC5\u586B" })] }, `${field.name}:${index}`))) })), node.tags.length > 0 && (jsxRuntimeExports.jsx("div", { className: "entity-tags", children: node.tags.map((tag) => (jsxRuntimeExports.jsxs("button", { type: "button", className: `tag tag-${tag.kind} nodrag`, "data-unsupported": tag.unsupported || undefined, title: `${tag.kind === 'behavior' ? '行为' : '约束'}：${tag.title}${tag.supportCode ? ` · 支撑 ${tag.supportCode}` : ' · 未支撑（C6）'}`, onPointerDown: (event) => event.stopPropagation(), onClick: (event) => {
                         event.stopPropagation();
                         select$1(tag.id);
-                    }, children: [tag.title, tag.supportCode && jsxRuntimeExports.jsx("span", { className: "tag-support", children: tag.supportCode })] }, tag.id))) })), jsxRuntimeExports.jsx(fr, { type: "source", position: Position.Right })] }));
+                    }, children: [tag.title, tag.supportCode && jsxRuntimeExports.jsx("span", { className: "tag-support", children: tag.supportCode })] }, tag.id))) }))] }));
 }
 /** nodeTypes 必须是模块级常量：每次渲染新建对象会让 React Flow 重挂全部节点。 */
 const nodeTypes = { question: QuestionNode, entity: EntityNode };
@@ -32121,6 +32381,8 @@ function ProblemFlow() {
     const ui = useUi();
     const flow = Sn();
     const [minimap, setMinimap] = reactExports.useState(false);
+    /** 拖线中（IMP10）：端口常亮、可落点高亮、目标节点挂主色环，松手复位。 */
+    const [connecting, setConnecting] = reactExports.useState(false);
     const dragGuard = reactExports.useRef(createDragGuard());
     const fileInput = reactExports.useRef(null);
     const derived = reactExports.useMemo(() => toProblemFlow({
@@ -32177,7 +32439,23 @@ function ProblemFlow() {
         reader.readAsText(file);
     };
     const questionCount = doc.ws.nodes.filter((node) => node.type === 'question').length;
-    return (jsxRuntimeExports.jsxs("section", { className: "stage", "data-flow": "on", "data-canvas": ui.canvasOpen ? 'on' : 'off', "aria-label": "\u753B\u677F", onDoubleClick: onDoubleClick, children: [jsxRuntimeExports.jsx(FlowEdgeMarkers, {}), jsxRuntimeExports.jsx("div", { className: "flow-stage", children: jsxRuntimeExports.jsxs(_a, { nodes: nodes, edges: derived.edges, onNodesChange: onNodesChange, nodeTypes: nodeTypes, edgeTypes: edgeTypes, defaultViewport: ui.views.problem, onMove: (_, viewport) => setView(viewport), minZoom: 0.3, maxZoom: 2.5, selectionOnDrag: false, selectionMode: SelectionMode.Partial, selectionKeyCode: "Shift", panOnDrag: true, panActivationKeyCode: null, zoomOnScroll: true, zoomOnDoubleClick: false, deleteKeyCode: null, proOptions: { hideAttribution: false }, onNodeClick: (_, node) => {
+    /** 端口连线（IMP10）：起点/终点端口都由用户选，语义判断在 commands 的 connectPorts。 */
+    const onConnect = (connection) => {
+        const { source, target } = connection;
+        if (!source || !target)
+            return;
+        connectPorts({
+            domain: 'problem',
+            source,
+            target,
+            sourcePort: portOf(connection.sourceHandle, 'bottom'),
+            targetPort: portOf(connection.targetHandle, 'top'),
+        });
+    };
+    return (jsxRuntimeExports.jsxs("section", { className: "stage", "data-flow": "on", "data-canvas": ui.canvasOpen ? 'on' : 'off', "data-connecting": connecting || undefined, "aria-label": "\u753B\u677F", onDoubleClick: onDoubleClick, children: [jsxRuntimeExports.jsx(FlowEdgeMarkers, {}), jsxRuntimeExports.jsx("div", { className: "flow-stage", children: jsxRuntimeExports.jsxs(_a, { nodes: nodes, edges: derived.edges, onNodesChange: onNodesChange, connectionMode: ConnectionMode.Loose, onConnect: onConnect, onConnectStart: () => {
+                        setConnecting(true);
+                        clearConnectTip();
+                    }, onConnectEnd: () => setConnecting(false), nodeTypes: nodeTypes, edgeTypes: edgeTypes, defaultViewport: ui.views.problem, onMove: (_, viewport) => setView(viewport), minZoom: 0.3, maxZoom: 2.5, selectionOnDrag: false, selectionMode: SelectionMode.Partial, selectionKeyCode: "Shift", panOnDrag: true, panActivationKeyCode: null, zoomOnScroll: true, zoomOnDoubleClick: false, deleteKeyCode: null, proOptions: { hideAttribution: false }, onNodeClick: (_, node) => {
                         // 建立依赖的选目标模式：点另一个问题 = 建边；点自己 / 非问题由命令拒绝并给提示。
                         if (ui.dependsSourceId)
                             pickDependsTarget(node.id);
@@ -32193,7 +32471,7 @@ function ProblemFlow() {
                         beginDrag(node.id);
                         dragTo(pos);
                         endDrag();
-                    }, children: [jsxRuntimeExports.jsx(Ua, { variant: Ra.Dots, gap: 24, size: 1, color: "var(--pd-line-1)" }), minimap && jsxRuntimeExports.jsx(Co, { pannable: true, zoomable: true, ariaLabel: "\u7F29\u7565\u56FE" })] }) }), questionCount === 0 && (jsxRuntimeExports.jsxs("div", { className: "emptycard", children: [jsxRuntimeExports.jsx("p", { className: "detail-line", children: "\u8FD8\u6CA1\u6709\u6838\u5FC3\u95EE\u9898" }), jsxRuntimeExports.jsx("p", { className: "detail-note", children: "\u5148\u5199\u4E00\u53E5\u300C\u8981\u89E3\u51B3\u4EC0\u4E48\u300D\uFF0C\u518D\u628A\u5B83\u62C6\u6210\u5B50\u95EE\u9898\u3002" }), jsxRuntimeExports.jsx("button", { type: "button", className: "primary-btn", onClick: () => beginDraft(null), children: "\uFF0B \u65B0\u5EFA\u6838\u5FC3\u95EE\u9898" }), jsxRuntimeExports.jsx("button", { type: "button", className: "ghost-btn", onClick: () => fileInput.current?.click(), children: "\u5BFC\u5165 JSON" }), jsxRuntimeExports.jsx("input", { ref: fileInput, type: "file", accept: "application/json,.json", hidden: true, onChange: onFile })] })), jsxRuntimeExports.jsxs("div", { className: "stage-tools", role: "toolbar", "aria-label": "\u753B\u5E03\u7F29\u653E", children: [jsxRuntimeExports.jsx("button", { type: "button", onClick: () => void flow.fitView({ padding: 0.15 }), children: "\u9002\u914D" }), jsxRuntimeExports.jsx("button", { type: "button", onClick: () => void flow.zoomOut({ duration: 120 }), title: "\u7F29\u5C0F", children: "\u2212" }), jsxRuntimeExports.jsxs("button", { type: "button", onClick: () => void flow.zoomTo(1, { duration: 120 }), title: "100%", children: [Math.round(ui.views.problem.zoom * 100), "%"] }), jsxRuntimeExports.jsx("button", { type: "button", onClick: () => void flow.zoomIn({ duration: 120 }), title: "\u653E\u5927", children: "+" }), jsxRuntimeExports.jsx("button", { type: "button", className: "minimap-toggle", onClick: () => setMinimap((on) => !on), title: "\u7F29\u7565\u56FE\uFF08\u9ED8\u8BA4\u5173\uFF09", "aria-pressed": minimap, children: "\u56FE" })] }), ui.dependsSourceId ? (jsxRuntimeExports.jsxs("div", { className: "modebar", role: "status", children: ["\u5DF2\u9009\u8D77\u70B9\uFF1A", doc.index.codes.get(ui.dependsSourceId) ?? '', ' ', doc.index.byId.get(ui.dependsSourceId)?.title || '未命名', " \u00B7 \u70B9\u53E6\u4E00\u4E2A\u95EE\u9898\u5B8C\u6210 \u00B7 Esc \u53D6\u6D88", ui.dependsTip && jsxRuntimeExports.jsxs("span", { className: "modebar-tip", children: [" \u00B7 ", ui.dependsTip] })] })) : (jsxRuntimeExports.jsx("div", { className: "canvas-hint", children: "\u62D6\u62FD\u5E73\u79FB \u00B7 Shift+\u62D6\u62FD\u6846\u9009 \u00B7 \u53CC\u51FB\u7A7A\u767D\u65B0\u5EFA\u95EE\u9898 \u00B7 \u6216\u6309 N" }))] }));
+                    }, children: [jsxRuntimeExports.jsx(Ua, { variant: Ra.Dots, gap: 24, size: 1, color: "var(--pd-line-1)" }), minimap && jsxRuntimeExports.jsx(Co, { pannable: true, zoomable: true, ariaLabel: "\u7F29\u7565\u56FE" })] }) }), questionCount === 0 && (jsxRuntimeExports.jsxs("div", { className: "emptycard", children: [jsxRuntimeExports.jsx("p", { className: "detail-line", children: "\u8FD8\u6CA1\u6709\u6838\u5FC3\u95EE\u9898" }), jsxRuntimeExports.jsx("p", { className: "detail-note", children: "\u5148\u5199\u4E00\u53E5\u300C\u8981\u89E3\u51B3\u4EC0\u4E48\u300D\uFF0C\u518D\u628A\u5B83\u62C6\u6210\u5B50\u95EE\u9898\u3002" }), jsxRuntimeExports.jsx("button", { type: "button", className: "primary-btn", onClick: () => beginDraft(null), children: "\uFF0B \u65B0\u5EFA\u6838\u5FC3\u95EE\u9898" }), jsxRuntimeExports.jsx("button", { type: "button", className: "ghost-btn", onClick: () => fileInput.current?.click(), children: "\u5BFC\u5165 JSON" }), jsxRuntimeExports.jsx("input", { ref: fileInput, type: "file", accept: "application/json,.json", hidden: true, onChange: onFile })] })), jsxRuntimeExports.jsxs("div", { className: "stage-tools", role: "toolbar", "aria-label": "\u753B\u5E03\u7F29\u653E", children: [jsxRuntimeExports.jsx("button", { type: "button", onClick: () => void flow.fitView({ padding: 0.15 }), children: "\u9002\u914D" }), jsxRuntimeExports.jsx("button", { type: "button", onClick: () => void flow.zoomOut({ duration: 120 }), title: "\u7F29\u5C0F", children: "\u2212" }), jsxRuntimeExports.jsxs("button", { type: "button", onClick: () => void flow.zoomTo(1, { duration: 120 }), title: "100%", children: [Math.round(ui.views.problem.zoom * 100), "%"] }), jsxRuntimeExports.jsx("button", { type: "button", onClick: () => void flow.zoomIn({ duration: 120 }), title: "\u653E\u5927", children: "+" }), jsxRuntimeExports.jsx("button", { type: "button", className: "minimap-toggle", onClick: () => setMinimap((on) => !on), title: "\u7F29\u7565\u56FE\uFF08\u9ED8\u8BA4\u5173\uFF09", "aria-pressed": minimap, children: "\u56FE" })] }), ui.dependsSourceId ? (jsxRuntimeExports.jsxs("div", { className: "modebar", role: "status", children: ["\u5DF2\u9009\u8D77\u70B9\uFF1A", doc.index.codes.get(ui.dependsSourceId) ?? '', ' ', doc.index.byId.get(ui.dependsSourceId)?.title || '未命名', " \u00B7 \u70B9\u53E6\u4E00\u4E2A\u95EE\u9898\u5B8C\u6210 \u00B7 Esc \u53D6\u6D88", ui.dependsTip && jsxRuntimeExports.jsxs("span", { className: "modebar-tip", children: [" \u00B7 ", ui.dependsTip] })] })) : ui.connectTip ? (jsxRuntimeExports.jsx("div", { className: "modebar", role: "status", children: ui.connectTip })) : (jsxRuntimeExports.jsx("div", { className: "canvas-hint", children: "\u62D6\u62FD\u5E73\u79FB \u00B7 Shift+\u62D6\u62FD\u6846\u9009 \u00B7 \u53CC\u51FB\u7A7A\u767D\u65B0\u5EFA\u95EE\u9898 \u00B7 \u4ECE\u7AEF\u53E3\u62D6\u7EBF\u8FDE\u63A5 \u00B7 \u6216\u6309 N" }))] }));
 }
 /** ReactFlowProvider 只包住画布：库的 store 不往 App 层漏。 */
 function ProblemCanvas() {
@@ -32205,6 +32483,8 @@ function SolveFlow() {
     const ui = useUi();
     const flow = Sn();
     const [minimap, setMinimap] = reactExports.useState(false);
+    /** 拖线中（IMP10）：端口常亮、可落点高亮、目标节点挂主色环，松手复位。 */
+    const [connecting, setConnecting] = reactExports.useState(false);
     const dragGuard = reactExports.useRef(createDragGuard());
     const derived = reactExports.useMemo(() => toSolveFlow({
         ws: doc.ws,
@@ -32241,12 +32521,23 @@ function SolveFlow() {
         createEntityAt({ x: Math.round(point.x), y: Math.round(point.y) });
     };
     const entityCount = nodes.length;
-    return (jsxRuntimeExports.jsxs("section", { className: "stage", "data-flow": "on", "data-canvas": ui.canvasOpen ? 'on' : 'off', "data-domain": "solve", "aria-label": "\u9886\u57DF\u6A21\u578B\u753B\u677F", onDoubleClick: onDoubleClick, children: [jsxRuntimeExports.jsx(FlowEdgeMarkers, {}), jsxRuntimeExports.jsx("div", { className: "flow-stage", children: jsxRuntimeExports.jsxs(_a, { nodes: nodes, edges: derived.edges, onNodesChange: onNodesChange, nodeTypes: nodeTypes, edgeTypes: edgeTypes, defaultViewport: ui.views.solve, onMove: (_, viewport) => setView(viewport), minZoom: 0.3, maxZoom: 2.5, selectionOnDrag: false, selectionMode: SelectionMode.Partial, selectionKeyCode: "Shift", panOnDrag: true, panActivationKeyCode: null, zoomOnScroll: true, zoomOnDoubleClick: false, deleteKeyCode: null, connectionMode: ConnectionMode.Loose, isValidConnection: (connection) => connection.source !== connection.target, onConnect: (connection) => {
-                        const { source, target } = connection;
-                        if (source && target && source !== target)
-                            createRelation(source, target);
-                        cancelConnect();
-                    }, onNodeClick: (_, node) => {
+    /** 端口连线（IMP10）：任意两端端口 → entityRelation，label 留空、屏幕上显示「关系」。 */
+    const onConnect = (connection) => {
+        const { source, target } = connection;
+        if (!source || !target)
+            return;
+        connectPorts({
+            domain: 'solve',
+            source,
+            target,
+            sourcePort: portOf(connection.sourceHandle, 'right'),
+            targetPort: portOf(connection.targetHandle, 'left'),
+        });
+    };
+    return (jsxRuntimeExports.jsxs("section", { className: "stage", "data-flow": "on", "data-canvas": ui.canvasOpen ? 'on' : 'off', "data-connecting": connecting || undefined, "data-domain": "solve", "aria-label": "\u9886\u57DF\u6A21\u578B\u753B\u677F", onDoubleClick: onDoubleClick, children: [jsxRuntimeExports.jsx(FlowEdgeMarkers, {}), jsxRuntimeExports.jsx("div", { className: "flow-stage", children: jsxRuntimeExports.jsxs(_a, { nodes: nodes, edges: derived.edges, onNodesChange: onNodesChange, onConnect: onConnect, onConnectStart: () => {
+                        setConnecting(true);
+                        clearConnectTip();
+                    }, onConnectEnd: () => setConnecting(false), nodeTypes: nodeTypes, edgeTypes: edgeTypes, defaultViewport: ui.views.solve, onMove: (_, viewport) => setView(viewport), minZoom: 0.3, maxZoom: 2.5, selectionOnDrag: false, selectionMode: SelectionMode.Partial, selectionKeyCode: "Shift", panOnDrag: true, panActivationKeyCode: null, zoomOnScroll: true, zoomOnDoubleClick: false, deleteKeyCode: null, connectionMode: ConnectionMode.Loose, onNodeClick: (_, node) => {
                         if (getUiState().connect)
                             pickConnectEntity(node.id);
                         else
@@ -32266,7 +32557,7 @@ function SolveFlow() {
                         beginDrag(node.id);
                         dragTo(pos);
                         endDrag();
-                    }, children: [jsxRuntimeExports.jsx(Ua, { variant: Ra.Dots, gap: 24, size: 1, color: "var(--pd-line-1)" }), minimap && jsxRuntimeExports.jsx(Co, { pannable: true, zoomable: true, ariaLabel: "\u7F29\u7565\u56FE" })] }) }), entityCount === 0 && (jsxRuntimeExports.jsxs("div", { className: "emptycard", children: [jsxRuntimeExports.jsx("p", { className: "detail-line", children: "\u89E3\u57DF\u8FD8\u662F\u7A7A\u7684" }), jsxRuntimeExports.jsx("p", { className: "detail-note", children: "\u5148\u4ECE\u95EE\u9898\u6811\u6311\u4E00\u4E2A\u5DF2\u56DE\u7B54\u7684\u95EE\u9898\uFF0C\u518D\u5EFA\u5B83\u7684\u7B2C\u4E00\u4E2A\u5B9E\u4F53\u3002" }), jsxRuntimeExports.jsx("button", { type: "button", className: "ghost-btn", onClick: () => beginEntityDraft(), children: "\uFF0B \u65B0\u5EFA\u7B2C\u4E00\u4E2A\u5B9E\u4F53" })] })), jsxRuntimeExports.jsxs("div", { className: "stage-tools", role: "toolbar", "aria-label": "\u753B\u5E03\u7F29\u653E", children: [jsxRuntimeExports.jsx("button", { type: "button", onClick: () => void flow.fitView({ padding: 0.15 }), children: "\u9002\u914D" }), jsxRuntimeExports.jsx("button", { type: "button", onClick: () => void flow.zoomOut({ duration: 120 }), title: "\u7F29\u5C0F", children: "\u2212" }), jsxRuntimeExports.jsxs("button", { type: "button", onClick: () => void flow.zoomTo(1, { duration: 120 }), title: "100%", children: [Math.round(ui.views.solve.zoom * 100), "%"] }), jsxRuntimeExports.jsx("button", { type: "button", onClick: () => void flow.zoomIn({ duration: 120 }), title: "\u653E\u5927", children: "+" }), jsxRuntimeExports.jsx("button", { type: "button", onClick: () => setMinimap((on) => !on), title: "\u7F29\u7565\u56FE\uFF08\u9ED8\u8BA4\u5173\uFF09", "aria-pressed": minimap, children: "\u56FE" })] }), ui.connect ? (jsxRuntimeExports.jsx("div", { className: "modebar", role: "status", children: "\u5148\u70B9\u8D77\u70B9\u5B9E\u4F53\uFF0C\u518D\u70B9\u7EC8\u70B9\u5B9E\u4F53 \u00B7 Esc \u53D6\u6D88" })) : (jsxRuntimeExports.jsx("div", { className: "canvas-hint", children: "\u62D6\u62FD\u5E73\u79FB \u00B7 Shift+\u62D6\u62FD\u6846\u9009 \u00B7 \u53CC\u51FB\u7A7A\u767D\u65B0\u5EFA\u5B9E\u4F53 \u00B7 \u6216\u6309 N" }))] }));
+                    }, children: [jsxRuntimeExports.jsx(Ua, { variant: Ra.Dots, gap: 24, size: 1, color: "var(--pd-line-1)" }), minimap && jsxRuntimeExports.jsx(Co, { pannable: true, zoomable: true, ariaLabel: "\u7F29\u7565\u56FE" })] }) }), entityCount === 0 && (jsxRuntimeExports.jsxs("div", { className: "emptycard", children: [jsxRuntimeExports.jsx("p", { className: "detail-line", children: "\u89E3\u57DF\u8FD8\u662F\u7A7A\u7684" }), jsxRuntimeExports.jsx("p", { className: "detail-note", children: "\u5148\u4ECE\u95EE\u9898\u6811\u6311\u4E00\u4E2A\u5DF2\u56DE\u7B54\u7684\u95EE\u9898\uFF0C\u518D\u5EFA\u5B83\u7684\u7B2C\u4E00\u4E2A\u5B9E\u4F53\u3002" }), jsxRuntimeExports.jsx("button", { type: "button", className: "ghost-btn", onClick: () => beginEntityDraft(), children: "\uFF0B \u65B0\u5EFA\u7B2C\u4E00\u4E2A\u5B9E\u4F53" })] })), jsxRuntimeExports.jsxs("div", { className: "stage-tools", role: "toolbar", "aria-label": "\u753B\u5E03\u7F29\u653E", children: [jsxRuntimeExports.jsx("button", { type: "button", onClick: () => void flow.fitView({ padding: 0.15 }), children: "\u9002\u914D" }), jsxRuntimeExports.jsx("button", { type: "button", onClick: () => void flow.zoomOut({ duration: 120 }), title: "\u7F29\u5C0F", children: "\u2212" }), jsxRuntimeExports.jsxs("button", { type: "button", onClick: () => void flow.zoomTo(1, { duration: 120 }), title: "100%", children: [Math.round(ui.views.solve.zoom * 100), "%"] }), jsxRuntimeExports.jsx("button", { type: "button", onClick: () => void flow.zoomIn({ duration: 120 }), title: "\u653E\u5927", children: "+" }), jsxRuntimeExports.jsx("button", { type: "button", onClick: () => setMinimap((on) => !on), title: "\u7F29\u7565\u56FE\uFF08\u9ED8\u8BA4\u5173\uFF09", "aria-pressed": minimap, children: "\u56FE" })] }), ui.connect ? (jsxRuntimeExports.jsx("div", { className: "modebar", role: "status", children: "\u5148\u70B9\u8D77\u70B9\u5B9E\u4F53\uFF0C\u518D\u70B9\u7EC8\u70B9\u5B9E\u4F53 \u00B7 Esc \u53D6\u6D88" })) : ui.connectTip ? (jsxRuntimeExports.jsx("div", { className: "modebar", role: "status", children: ui.connectTip })) : (jsxRuntimeExports.jsx("div", { className: "canvas-hint", children: "\u62D6\u62FD\u5E73\u79FB \u00B7 Shift+\u62D6\u62FD\u6846\u9009 \u00B7 \u53CC\u51FB\u7A7A\u767D\u65B0\u5EFA\u5B9E\u4F53 \u00B7 \u4ECE\u7AEF\u53E3\u62D6\u7EBF\u8FDE\u63A5 \u00B7 \u6216\u6309 N" }))] }));
 }
 /** ReactFlowProvider 只包住画布：库的 store 不往 App 层漏。 */
 function SolveFlowCanvas() {
@@ -32308,7 +32599,7 @@ function DetailPanel() {
         : false;
     const edge = ui.selectedEdgeKey ? doc.index.edgeByKey.get(ui.selectedEdgeKey) : undefined;
     const selectedEdgeKey = ui.selectedEdgeKey;
-    return (jsxRuntimeExports.jsxs("aside", { className: "detail", "data-open": ui.detailOpen, "aria-label": "\u8BE6\u60C5", children: [jsxRuntimeExports.jsxs("div", { className: "detail-hd", children: [jsxRuntimeExports.jsx("span", { children: "\u8BE6\u60C5" }), jsxRuntimeExports.jsx("button", { type: "button", className: "handle hd", title: "\u6536\u8D77\u8BE6\u60C5\uFF08]\uFF09", onClick: () => setDetailOpen(false), children: "\u203A" })] }), jsxRuntimeExports.jsx("div", { className: "detail-body", children: node && compatible ? (jsxRuntimeExports.jsx(NodeDetail, { node: node, checksRef: checksRef })) : edge && selectedEdgeKey ? (jsxRuntimeExports.jsx(RelationDetail, { edge: edge, edgeKey: selectedEdgeKey })) : (jsxRuntimeExports.jsx(Overview, {})) })] }));
+    return (jsxRuntimeExports.jsxs("aside", { className: "detail", "data-open": ui.detailOpen, "aria-label": "\u8BE6\u60C5", children: [jsxRuntimeExports.jsxs("div", { className: "detail-hd", children: [jsxRuntimeExports.jsx("span", { children: "\u8BE6\u60C5" }), jsxRuntimeExports.jsx("button", { type: "button", className: "handle hd", title: "\u6536\u8D77\u8BE6\u60C5\uFF08]\uFF09", onClick: () => setDetailOpen(false), children: "\u203A" })] }), jsxRuntimeExports.jsx("div", { className: "detail-body", children: node && compatible ? (jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [jsxRuntimeExports.jsx(NodeDetail, { node: node, checksRef: checksRef }), node.type === 'question' && jsxRuntimeExports.jsx(QuestionEdgePorts, { nodeId: node.id })] })) : edge && selectedEdgeKey ? (jsxRuntimeExports.jsx(RelationDetail, { edge: edge, edgeKey: selectedEdgeKey })) : (jsxRuntimeExports.jsx(Overview, {})) })] }));
 }
 /* ---------- 未选中：工作区概览（含「清空工作区」入口，二次确认） ---------- */
 function Overview() {
@@ -32446,6 +32737,35 @@ function SolveUnitDetail({ node, findings, checksRef, }) {
     const owner = ownerEdge ? doc.index.byId.get(ownerEdge.target) : undefined;
     return (jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [jsxRuntimeExports.jsxs("div", { className: "dgroup", children: [jsxRuntimeExports.jsxs("div", { className: "dgroup-title", children: ["\u5C5E\u6027 \u00B7 ", node.type === 'behavior' ? '行为' : '约束'] }), jsxRuntimeExports.jsxs("label", { className: "prop-row", children: [jsxRuntimeExports.jsx("span", { className: "prop-label", children: "\u540D\u79F0" }), jsxRuntimeExports.jsx("input", { defaultValue: node.title, placeholder: "\uFF08\u672A\u547D\u540D\uFF09", onBlur: (event) => commitRename(node.id, event.target.value) }, `${node.id}:title`)] }), jsxRuntimeExports.jsxs("div", { className: "prop-row", children: [jsxRuntimeExports.jsx("span", { className: "prop-label", children: "\u6240\u5C5E\u5B9E\u4F53" }), jsxRuntimeExports.jsx("span", { className: "prop-value", children: owner ? (jsxRuntimeExports.jsx("button", { type: "button", className: "support-jump", onClick: () => select$1(owner.id), children: owner.title || '未命名' })) : ('（无）') })] }), node.type === 'behavior' ? (jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [jsxRuntimeExports.jsxs("label", { className: "prop-row", children: [jsxRuntimeExports.jsx("span", { className: "prop-label", children: "\u8F93\u51FA" }), jsxRuntimeExports.jsx("input", { defaultValue: node.data.output ?? '', placeholder: "\uFF08\u672A\u586B\uFF09", onBlur: (event) => setBehaviorText(node.id, 'output', event.target.value) }, `${node.id}:output`)] }), jsxRuntimeExports.jsxs("label", { className: "prop-row prop-row-list", children: [jsxRuntimeExports.jsx("span", { className: "prop-label", children: "\u8F93\u5165" }), jsxRuntimeExports.jsx("textarea", { rows: 2, defaultValue: (node.data.inputs ?? []).join('\n'), placeholder: "\u4E00\u884C\u4E00\u6761", onBlur: (event) => setBehaviorList(node.id, 'inputs', event.target.value) }, `${node.id}:inputs`)] }), jsxRuntimeExports.jsxs("label", { className: "prop-row prop-row-list", children: [jsxRuntimeExports.jsx("span", { className: "prop-label", children: "\u524D\u7F6E\u6761\u4EF6" }), jsxRuntimeExports.jsx("textarea", { rows: 2, defaultValue: (node.data.preconditions ?? []).join('\n'), placeholder: "\u4E00\u884C\u4E00\u6761", onBlur: (event) => setBehaviorList(node.id, 'preconditions', event.target.value) }, `${node.id}:preconditions`)] }), jsxRuntimeExports.jsxs("label", { className: "prop-row prop-row-list", children: [jsxRuntimeExports.jsx("span", { className: "prop-label", children: "\u6548\u679C" }), jsxRuntimeExports.jsx("textarea", { rows: 2, defaultValue: (node.data.effects ?? []).join('\n'), placeholder: "\u4E00\u884C\u4E00\u6761", onBlur: (event) => setBehaviorList(node.id, 'effects', event.target.value) }, `${node.id}:effects`)] })] })) : (jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [jsxRuntimeExports.jsxs("label", { className: "prop-row", children: [jsxRuntimeExports.jsx("span", { className: "prop-label", children: "\u8868\u8FBE\u5F0F" }), jsxRuntimeExports.jsx("input", { defaultValue: node.data.expr ?? '', placeholder: "\u5DF2\u9009\u4EBA\u6570 < \u5BB9\u91CF", onBlur: (event) => setConstraintText(node.id, 'expr', event.target.value) }, `${node.id}:expr`)] }), jsxRuntimeExports.jsxs("label", { className: "prop-row", children: [jsxRuntimeExports.jsx("span", { className: "prop-label", children: "\u7C7B\u578B" }), jsxRuntimeExports.jsxs("select", { value: node.data.kind ?? '必须', onChange: (event) => setConstraintKind(node.id, event.target.value === '禁止' ? '禁止' : '必须'), children: [jsxRuntimeExports.jsx("option", { value: "\u5FC5\u987B", children: "\u5FC5\u987B" }), jsxRuntimeExports.jsx("option", { value: "\u7981\u6B62", children: "\u7981\u6B62" })] })] }), jsxRuntimeExports.jsxs("label", { className: "prop-row", children: [jsxRuntimeExports.jsx("span", { className: "prop-label", children: "\u6267\u884C\u70B9" }), jsxRuntimeExports.jsx("input", { defaultValue: node.data.enforcementPoint ?? '', placeholder: "\uFF08\u672A\u586B\uFF09", onBlur: (event) => setConstraintText(node.id, 'enforcementPoint', event.target.value) }, `${node.id}:enforcementPoint`)] })] }))] }), jsxRuntimeExports.jsx(SupportSection, { elementId: node.id }), jsxRuntimeExports.jsx(FindingsBlock, { findings: findings, checksRef: checksRef, emptyText: "\u8FD9\u4E2A\u5143\u7D20\u6CA1\u6709\u547D\u4E2D\u68C0\u67E5" }), jsxRuntimeExports.jsx("div", { className: "dgroup", children: jsxRuntimeExports.jsxs("button", { type: "button", className: "danger-btn", onClick: () => deleteSolveNode(node.id), children: ["\u5220\u9664", node.type === 'behavior' ? '行为' : '约束'] }) })] }));
 }
+/* ---------- IMP11：改连线端口（详情栏下拉，不新增画布交互模式） ---------- */
+const PORT_LABEL = { top: '上', right: '右', bottom: '下', left: '左' };
+/** 一端端口的下拉：四个端口 + 「自动」（字段为空 = 按两卡相对位置推导）。 */
+function PortSelect({ value, onChange, }) {
+    return (jsxRuntimeExports.jsxs("select", { value: value ?? '', onChange: (event) => {
+            const next = event.target.value;
+            onChange(next === '' ? null : next);
+        }, children: [jsxRuntimeExports.jsx("option", { value: "", children: "\u81EA\u52A8" }), PORT_IDS.map((port) => (jsxRuntimeExports.jsx("option", { value: port, children: PORT_LABEL[port] }, port)))] }));
+}
+/** 一条边的两端端口下拉：改一次一条撤销记录。 */
+function EdgePortRow({ edge }) {
+    const doc = useDoc();
+    const key = edgeKey(edge);
+    const from = doc.index.byId.get(edge.source)?.title || '未命名';
+    const to = doc.index.byId.get(edge.target)?.title || '未命名';
+    return (jsxRuntimeExports.jsxs("div", { className: "prop-row", children: [jsxRuntimeExports.jsxs("span", { className: "prop-label", children: [from, " \u2192 ", to] }), jsxRuntimeExports.jsx(PortSelect, { value: edge.sourcePort, onChange: (port) => setEdgePorts(key, { sourcePort: port }) }), jsxRuntimeExports.jsx(PortSelect, { value: edge.targetPort, onChange: (port) => setEdgePorts(key, { targetPort: port }) })] }));
+}
+/** 问题详情里的「关系端口」：分解 / 依赖边各一行（问题域画布不支持选边，从这里改）。 */
+function QuestionEdgePorts({ nodeId }) {
+    const doc = useDoc();
+    const keys = Array.from(new Set(doc.index.edgesByNode.get(nodeId) ?? []));
+    const edges = keys
+        .map((key) => doc.index.edgeByKey.get(key))
+        .filter((edge) => edge !== undefined)
+        .filter((edge) => edge.type === 'decomposesTo' || edge.type === 'dependsOn');
+    if (edges.length === 0)
+        return null;
+    return (jsxRuntimeExports.jsxs("div", { className: "dgroup", children: [jsxRuntimeExports.jsx("div", { className: "dgroup-title", children: "\u5173\u7CFB\u7AEF\u53E3" }), jsxRuntimeExports.jsx("p", { className: "detail-note", children: "\u7EBF\u7684\u4E24\u7AEF\u8D34\u5728\u54EA\u6761\u8FB9\u4E0A\uFF1B\u300C\u81EA\u52A8\u300D= \u6309\u4E24\u5361\u7684\u76F8\u5BF9\u4F4D\u7F6E\u63A8\u5BFC\u3002\u6539\u4E00\u6B21\u53EF\u64A4\u9500\u4E00\u6B21\u3002" }), edges.map((edge) => (jsxRuntimeExports.jsx(EdgePortRow, { edge: edge }, edgeKey(edge))))] }));
+}
 /* ---------- 解域：关系详情 ---------- */
 function RelationDetail({ edge, edgeKey: key }) {
     const doc = useDoc();
@@ -32453,7 +32773,7 @@ function RelationDetail({ edge, edgeKey: key }) {
     const to = doc.index.byId.get(edge.target);
     const label = edge.label ?? '关系';
     const cardinality = edge.cardinality ?? '1:N';
-    return (jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [jsxRuntimeExports.jsxs("div", { className: "dgroup", children: [jsxRuntimeExports.jsx("div", { className: "dgroup-title", children: "\u5C5E\u6027 \u00B7 \u5173\u7CFB" }), jsxRuntimeExports.jsxs("div", { className: "prop-row", children: [jsxRuntimeExports.jsx("span", { className: "prop-label", children: "\u8D77\u70B9" }), jsxRuntimeExports.jsx("span", { className: "prop-value", children: from?.title || '未命名' })] }), jsxRuntimeExports.jsxs("div", { className: "prop-row", children: [jsxRuntimeExports.jsx("span", { className: "prop-label", children: "\u7EC8\u70B9" }), jsxRuntimeExports.jsx("span", { className: "prop-value", children: to?.title || '未命名' })] }), jsxRuntimeExports.jsxs("label", { className: "prop-row", children: [jsxRuntimeExports.jsx("span", { className: "prop-label", children: "\u5173\u7CFB\u540D" }), jsxRuntimeExports.jsx("input", { defaultValue: label, placeholder: "\u6301\u6709", onBlur: (event) => setRelationLabel(key, event.target.value) }, `${key}:label`)] }), jsxRuntimeExports.jsxs("label", { className: "prop-row", children: [jsxRuntimeExports.jsx("span", { className: "prop-label", children: "\u57FA\u6570" }), jsxRuntimeExports.jsx("select", { value: cardinality, onChange: (event) => setRelationCardinality(key, event.target.value), children: CARDINALITIES.map((item) => (jsxRuntimeExports.jsx("option", { value: item, children: item }, item))) })] }), jsxRuntimeExports.jsxs("div", { className: "prop-row", children: [jsxRuntimeExports.jsx("span", { className: "prop-label", children: "\u884C\u5185" }), jsxRuntimeExports.jsxs("span", { className: "prop-value", children: [from?.title || '未命名', " \u2014", label, "\u2192 ", to?.title || '未命名', " \u00B7 ", cardinality] })] })] }), jsxRuntimeExports.jsx("div", { className: "dgroup", children: jsxRuntimeExports.jsx("button", { type: "button", className: "danger-btn", onClick: () => deleteRelation(key), children: "\u5220\u9664\u5173\u7CFB" }) })] }));
+    return (jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [jsxRuntimeExports.jsxs("div", { className: "dgroup", children: [jsxRuntimeExports.jsx("div", { className: "dgroup-title", children: "\u5C5E\u6027 \u00B7 \u5173\u7CFB" }), jsxRuntimeExports.jsxs("div", { className: "prop-row", children: [jsxRuntimeExports.jsx("span", { className: "prop-label", children: "\u8D77\u70B9" }), jsxRuntimeExports.jsx("span", { className: "prop-value", children: from?.title || '未命名' })] }), jsxRuntimeExports.jsxs("div", { className: "prop-row", children: [jsxRuntimeExports.jsx("span", { className: "prop-label", children: "\u7EC8\u70B9" }), jsxRuntimeExports.jsx("span", { className: "prop-value", children: to?.title || '未命名' })] }), jsxRuntimeExports.jsxs("label", { className: "prop-row", children: [jsxRuntimeExports.jsx("span", { className: "prop-label", children: "\u5173\u7CFB\u540D" }), jsxRuntimeExports.jsx("input", { defaultValue: label, placeholder: "\u6301\u6709", onBlur: (event) => setRelationLabel(key, event.target.value) }, `${key}:label`)] }), jsxRuntimeExports.jsxs("label", { className: "prop-row", children: [jsxRuntimeExports.jsx("span", { className: "prop-label", children: "\u57FA\u6570" }), jsxRuntimeExports.jsx("select", { value: cardinality, onChange: (event) => setRelationCardinality(key, event.target.value), children: CARDINALITIES.map((item) => (jsxRuntimeExports.jsx("option", { value: item, children: item }, item))) })] }), jsxRuntimeExports.jsxs("div", { className: "prop-row", children: [jsxRuntimeExports.jsx("span", { className: "prop-label", children: "\u8D77\u70B9\u7AEF\u53E3" }), jsxRuntimeExports.jsx(PortSelect, { value: edge.sourcePort, onChange: (port) => setEdgePorts(key, { sourcePort: port }) })] }), jsxRuntimeExports.jsxs("div", { className: "prop-row", children: [jsxRuntimeExports.jsx("span", { className: "prop-label", children: "\u7EC8\u70B9\u7AEF\u53E3" }), jsxRuntimeExports.jsx(PortSelect, { value: edge.targetPort, onChange: (port) => setEdgePorts(key, { targetPort: port }) })] }), jsxRuntimeExports.jsxs("div", { className: "prop-row", children: [jsxRuntimeExports.jsx("span", { className: "prop-label", children: "\u884C\u5185" }), jsxRuntimeExports.jsxs("span", { className: "prop-value", children: [from?.title || '未命名', " \u2014", label, "\u2192 ", to?.title || '未命名', " \u00B7 ", cardinality] })] })] }), jsxRuntimeExports.jsx("div", { className: "dgroup", children: jsxRuntimeExports.jsx("button", { type: "button", className: "danger-btn", onClick: () => deleteRelation(key), children: "\u5220\u9664\u5173\u7CFB" }) })] }));
 }
 
 /**

@@ -17,6 +17,7 @@ import type {
   NodeType,
   NodeDataOf,
   Point,
+  PortId,
   QuestionData,
   QuestionStatus,
   Workspace,
@@ -71,6 +72,17 @@ export function createEdge(
     );
   }
   return { type, source, target };
+}
+
+/**
+ * 用户从端口拖出来的边（IMP11）：把两端端口写进边本身，成为唯一真相。
+ * 没传的一端不写字段（老文档、左树菜单建的两条边都走这条路径），渲染时按几何推导。
+ */
+function withPorts(edge: Edge, ports: { sourcePort?: PortId; targetPort?: PortId }): Edge {
+  const next: Edge = { ...edge };
+  if (ports.sourcePort) next.sourcePort = ports.sourcePort;
+  if (ports.targetPort) next.targetPort = ports.targetPort;
+  return next;
 }
 
 function touch(ws: Workspace, now: string): Workspace['meta'] {
@@ -364,6 +376,8 @@ export function addEntityRelation(
     label?: string;
     cardinality?: Cardinality;
     now: string;
+    sourcePort?: PortId;
+    targetPort?: PortId;
   },
 ): { ws: Workspace; key: EdgeKey | null } {
   if (input.source === input.target) return { ws, key: null };
@@ -382,7 +396,7 @@ export function addEntityRelation(
     return { ws, key: null };
   }
   const edge: Edge = {
-    ...createEdge('entityRelation', input.source, input.target, ws.nodes),
+    ...withPorts(createEdge('entityRelation', input.source, input.target, ws.nodes), input),
     cardinality: input.cardinality ?? '1:N',
     label: input.label ?? '关系',
   };
@@ -398,7 +412,13 @@ export function addEntityRelation(
  */
 export function addDependsOn(
   ws: Workspace,
-  input: { source: NodeId; target: NodeId; now: string },
+  input: {
+    source: NodeId;
+    target: NodeId;
+    now: string;
+    sourcePort?: PortId;
+    targetPort?: PortId;
+  },
 ): { ws: Workspace; key: EdgeKey | null } {
   if (input.source === input.target) return { ws, key: null };
   const sourceNode = byId(ws, input.source);
@@ -415,7 +435,39 @@ export function addDependsOn(
   ) {
     return { ws, key: null };
   }
-  const edge = createEdge('dependsOn', input.source, input.target, ws.nodes);
+  const edge = withPorts(createEdge('dependsOn', input.source, input.target, ws.nodes), input);
+  return {
+    ws: { ...ws, edges: [...ws.edges, edge], meta: touch(ws, input.now) },
+    key: edgeKey(edge),
+  };
+}
+
+/**
+ * 建 `decomposesTo`（IMP10：问题卡「下端口 → 上端口」松手时走这里）：
+ * 两端都必须是 question；一个子问题只能有一个上级，所以 child 已有上游时直接拒绝
+ * （返回原 ws，撤销栈零增长——提示文案在 store/commands.ts 的 CONNECT_TIPS.parentExists）。
+ */
+export function addDecomposesTo(
+  ws: Workspace,
+  input: {
+    parent: NodeId;
+    child: NodeId;
+    now: string;
+    sourcePort?: PortId;
+    targetPort?: PortId;
+  },
+): { ws: Workspace; key: EdgeKey | null } {
+  if (input.parent === input.child) return { ws, key: null };
+  const parentNode = byId(ws, input.parent);
+  const childNode = byId(ws, input.child);
+  if (!parentNode || parentNode.type !== 'question') return { ws, key: null };
+  if (!childNode || childNode.type !== 'question') return { ws, key: null };
+  if (
+    ws.edges.some((edge) => edge.type === 'decomposesTo' && edge.target === input.child)
+  ) {
+    return { ws, key: null };
+  }
+  const edge = withPorts(createEdge('decomposesTo', input.parent, input.child, ws.nodes), input);
   return {
     ws: { ...ws, edges: [...ws.edges, edge], meta: touch(ws, input.now) },
     key: edgeKey(edge),
@@ -506,18 +558,37 @@ export function removeEntityField(ws: Workspace, id: NodeId, index: number, now:
   );
 }
 
-/** 关系属性（关系名 / 基数）：键是 `type|source>target`，改属性不换键。 */
+/**
+ * 边属性（关系名 / 基数 / 两端端口）：键是 `type|source>target`，改属性不换键。
+ * 端口传 null = 退回几何推导（字段删掉，不留空值）。
+ */
 export function setEdgeProps(
   ws: Workspace,
   key: EdgeKey,
-  patch: { label?: string; cardinality?: Cardinality },
+  patch: {
+    label?: string;
+    cardinality?: Cardinality;
+    sourcePort?: PortId | null;
+    targetPort?: PortId | null;
+  },
   now: string,
 ): Workspace {
   let changed = false;
   const edges = ws.edges.map((edge) => {
     if (edgeKey(edge) !== key) return edge;
     changed = true;
-    return { ...edge, ...patch };
+    const next: Edge = { ...edge };
+    if (patch.label !== undefined) next.label = patch.label;
+    if (patch.cardinality !== undefined) next.cardinality = patch.cardinality;
+    if (patch.sourcePort !== undefined) {
+      if (patch.sourcePort) next.sourcePort = patch.sourcePort;
+      else delete next.sourcePort;
+    }
+    if (patch.targetPort !== undefined) {
+      if (patch.targetPort) next.targetPort = patch.targetPort;
+      else delete next.targetPort;
+    }
+    return next;
   });
   return changed ? { ...ws, edges, meta: touch(ws, now) } : ws;
 }
