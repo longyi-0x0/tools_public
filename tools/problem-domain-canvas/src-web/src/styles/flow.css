@@ -9,7 +9,7 @@
    ⑥ Background 点阵色、Minimap 底/遮罩/节点色、框选框颜色
    ⑦ 边标签底色/字色（自绘边 .pdc-edge-label 自己的令牌另写） */
 
-/* ⓪ 库的 CSS 变量一次改完：深/浅主题都跟着 body[data-theme] 的令牌走 */
+/* ⓪ 库的 CSS 变量一次改完：深/浅主题都跟着 body 上 data-theme 的令牌走 */
 .react-flow{
   --xy-node-border-default:0;
   --xy-node-border-radius-default:var(--pd-r-3);
@@ -110,7 +110,7 @@
 }
 .react-flow__attribution a{color:var(--pd-fg-3);font-size:9px}
 
-/* ⑥ 点阵、缩略图、框选框都吃令牌（深/浅主题各一份，值来自 body[data-theme]） */
+/* ⑥ 点阵、缩略图、框选框都吃令牌（深/浅主题各一份，值来自 body 上 data-theme 的令牌） */
 .react-flow__background{opacity:.9}
 .react-flow__minimap{
   right:14px;

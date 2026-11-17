@@ -1,8 +1,10 @@
 import type { DocIndex } from '../domain/types.ts';
 import { isSolveNodeType } from '../domain/schema.ts';
 import { canRedo, canUndo, redo, setTheme, undo } from '../store/commands.ts';
+import { retrySave } from '../store/bootstrap.ts';
 import { useDoc, useUi } from './useStores.ts';
 import { statusClassOf } from './nodeStyle.ts';
+import { saveLabel } from './saveLabel.ts';
 import { ExportMenu } from './ExportMenu.tsx';
 
 /** 父级路径（03 §2.3）：极小字，不做面包屑导航条。 */
@@ -27,7 +29,7 @@ export function StatusBar() {
   const code = node ? doc.index.codes.get(node.id) : undefined;
   const path = node && node.type === 'question' ? parentPath(doc.index, node.id) : '';
   const edge = ui.selectedEdgeKey ? doc.index.edgeByKey.get(ui.selectedEdgeKey) : undefined;
-  const saved = !doc.dirty;
+  const save = saveLabel({ saveError: doc.saveError, dirty: doc.dirty });
   const solveNode = node && isSolveNodeType(node.type) ? node : undefined;
   const supportCodes = solveNode
     ? (doc.index.supportsByNode.get(solveNode.id) ?? [])
@@ -68,7 +70,17 @@ export function StatusBar() {
         )}
       </div>
       <div className="sb-right">
-        <span className="saved">{saved ? '✓ 已保存' : '保存中…'}</span>
+        {/* 落盘三态（03 §112）：已保存 / 保存中 / 失败可点重试；失败原因走 title，不弹模态框 */}
+        <span className="saved" data-tone={save.tone} title={doc.saveError ?? undefined}>
+          <span className={`dot ${save.tone === 'error' ? 's-error' : 's-clarified'}`} aria-hidden="true" />
+          {save.tone === 'error' ? (
+            <button type="button" className="saved-retry" onClick={retrySave}>
+              {save.text}
+            </button>
+          ) : (
+            <span className="saved-text">{save.text}</span>
+          )}
+        </span>
         <span className="theme-toggle">
           <button type="button" data-on={ui.theme === 'light'} onClick={() => setTheme('light')}>
             浅

@@ -98,6 +98,8 @@ export function saveSession(storage: StorageLike, session: SessionState): void {
 export interface WorkspacePersister {
   schedule(): void;
   flush(): void;
+  /** 保存失败后的「点击重试」：清掉只读降级，再写一次（03 §112 第三态）。 */
+  retry(): void;
   dispose(): void;
   isReadOnly(): boolean;
 }
@@ -112,37 +114,44 @@ export function createWorkspacePersister(options: {
   read: () => string;
   onSaved?: () => void;
   onReadOnly?: (reason: string) => void;
+  /** 写盘失败上报（03 §112：StatusBar 第三态 + 点击重试）；不再静默吞掉。 */
+  onSaveFailed?: (reason: string) => void;
 }): WorkspacePersister {
   let lastWrittenText = options.storage.getItem(STORAGE_KEYS.workspace) ?? '';
   let readOnly = false;
+
+  const write = (text: string): void => {
+    const previous = options.storage.getItem(STORAGE_KEYS.workspace);
+    if (previous && previous !== text) {
+      options.storage.setItem(STORAGE_KEYS.backup, previous);
+    }
+    options.storage.setItem(STORAGE_KEYS.workspace, text);
+  };
 
   const flush = (): void => {
     if (readOnly) return;
     const text = options.read();
     if (text === lastWrittenText) return;
     try {
-      const previous = options.storage.getItem(STORAGE_KEYS.workspace);
-      if (previous && previous !== text) {
-        options.storage.setItem(STORAGE_KEYS.backup, previous);
-      }
-      options.storage.setItem(STORAGE_KEYS.workspace, text);
+      write(text);
       lastWrittenText = text;
       options.onSaved?.();
-    } catch (error) {
-      // 配额超限：先删 backup，再删 session，最后只读降级并提示（04 §3.6）。
+      return;
+    } catch {
+      // 配额超限：先删 backup、再删 session，再写一次（04 §3.6）。
       try {
         options.storage.removeItem(STORAGE_KEYS.backup);
         options.storage.removeItem(STORAGE_KEYS.session);
-        options.storage.setItem(STORAGE_KEYS.workspace, text);
+        write(text);
         lastWrittenText = text;
         options.onSaved?.();
-      } catch {
+        return;
+      } catch (second) {
+        const reason = second instanceof Error ? second.message : String(second);
         readOnly = true;
-        options.onReadOnly?.(
-          error instanceof Error
-            ? `本机存储已满，已停止自动保存（${error.message}）`
-            : '本机存储已满，已停止自动保存',
-        );
+        // 先上报失败（StatusBar 显示可点重试），再降级只读提示（04 §3.6 不删）。
+        options.onSaveFailed?.(`写到本机存储失败：${reason}`);
+        options.onReadOnly?.(`本机存储写入失败，已停止自动保存（${reason}）`);
       }
     }
   };
@@ -154,6 +163,10 @@ export function createWorkspacePersister(options: {
       if (!readOnly) debounced();
     },
     flush: () => debounced.flush(),
+    retry: () => {
+      readOnly = false;
+      flush();
+    },
     dispose: () => debounced.cancel(),
     isReadOnly: () => readOnly,
   };

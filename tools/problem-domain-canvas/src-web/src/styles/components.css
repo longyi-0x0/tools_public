@@ -33,6 +33,8 @@
 
 /* 13 行内操作 row-actions：静止 opacity 0，行 hover / focus-within 现形 */
 .row-actions{display:flex;gap:2px;margin-left:var(--pd-sp-1);opacity:0}
+/* 问题行行尾的依赖角标（IMP9）：依赖边不进树，只留一个极小的 ↗ 提示它存在 */
+.dep-mark{font-size:var(--pd-fs-1);line-height:1;color:var(--pd-accent);cursor:default}
 .row:hover .row-actions,.row:focus-within .row-actions{opacity:1}
 .ract{display:grid;place-items:center;width:20px;height:20px;border-radius:999px;font-size:var(--pd-fs-2);color:var(--pd-fg-2)}
 .ract:hover{background:var(--pd-bg-2);color:var(--pd-accent)}
@@ -47,7 +49,8 @@
 /* 11 左列底部检查行 check-footer：高 36、margin 8，不是卡片 */
 .check-footer{display:flex;align-items:center;gap:var(--pd-sp-2);height:36px;margin:var(--pd-sp-2);padding:0 var(--pd-sp-2);font-size:var(--pd-fs-2);color:var(--pd-fg-2);cursor:pointer}
 .check-footer:hover{color:var(--pd-fg-1)}
-.check-dot{flex:none;width:6px;height:6px;border-radius:999px;background:var(--pd-amber-3)}
+/* 检查行的严重度圆点：8px（02 §127 / 03 §51；两档 error/warning 由 canvas.css 的 .dot.s-* 上色） */
+.check-footer .dot{width:8px;height:8px}
 .check-arrow{margin-left:auto;color:var(--pd-fg-3)}
 
 /* 1 右列顶部状态行 statusbar：无背景 / 无圆角 / 无阴影 / 无下边框 */
@@ -56,14 +59,17 @@
 .sb-title{font-size:var(--pd-fs-4);font-weight:600;color:var(--pd-fg-1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .sb-none{font-size:var(--pd-fs-2);color:var(--pd-fg-2)}
 .sb-right{display:flex;align-items:center;gap:var(--pd-sp-2)}
-.saved{font-size:var(--pd-fs-1);color:var(--pd-fg-3);white-space:nowrap}
+.saved{display:flex;align-items:center;gap:4px;font-size:var(--pd-fs-1);color:var(--pd-fg-3);white-space:nowrap}
+/* 圆点只在窄屏顶替文字（03 §72–74：窄屏隐去「已保存」只留图标） */
+.saved .dot{display:none}
+.saved-retry{padding:0;border:0;background:none;font-size:var(--pd-fs-1);color:var(--pd-red-3);cursor:pointer;white-space:nowrap}
+.saved-retry:hover{text-decoration:underline}
 .theme-toggle{display:flex;gap:2px}
 .theme-toggle button{width:24px;height:20px;border-radius:999px;font-size:var(--pd-fs-1);color:var(--pd-fg-3)}
 .theme-toggle button[data-on="true"]{background:var(--pd-bg-3);color:var(--pd-accent);box-shadow:var(--pd-sh-1)}
 
 /* 画板占位与详情空壳 */
 .stage{position:relative;display:grid;place-items:center;min-width:0;min-height:0;overflow:hidden;background:var(--pd-bg-2);border-radius:var(--pd-r-3)}
-.stage-hint{padding:var(--pd-sp-2) var(--pd-sp-3);border-radius:999px;background:var(--pd-bg-3);box-shadow:var(--pd-sh-1);font-size:var(--pd-fs-2);color:var(--pd-fg-3)}
 .detail{display:flex;flex-direction:column;min-width:0;min-height:0;overflow:hidden;background:var(--pd-bg-2);border-radius:var(--pd-r-3)}
 .detail-hd{display:flex;align-items:center;justify-content:space-between;height:36px;padding:0 var(--pd-sp-3);font-size:var(--pd-fs-2);color:var(--pd-fg-2)}
 .detail-body{display:flex;flex-direction:column;gap:var(--pd-sp-2);padding:0 var(--pd-sp-3) var(--pd-sp-3);font-size:var(--pd-fs-2);color:var(--pd-fg-2)}
@@ -138,6 +144,12 @@
 .export-list{position:absolute;right:0;top:26px;z-index:30;display:flex;flex-direction:column;min-width:196px;padding:var(--pd-sp-1);background:var(--pd-bg-3);border-radius:var(--pd-r-1);box-shadow:var(--pd-sh-2)}
 .export-list button{border:0;background:transparent;text-align:left;padding:var(--pd-sp-1) var(--pd-sp-2);font-size:var(--pd-fs-2);color:var(--pd-fg-1);border-radius:var(--pd-r-1);cursor:pointer}
 .export-list button:hover{background:var(--pd-tint-bg);color:var(--pd-tint-fg)}
+
+/* 窄屏 <1200（03 §72–74）：状态行隐去「已保存 / 保存中」文字，只留圆点图标 */
+@media (max-width:1199px){
+  .saved .dot{display:inline-block}
+  .saved[data-tone="muted"] .saved-text{display:none}
+}
 .export-msg{position:absolute;right:0;top:28px;z-index:31;max-width:340px;padding:var(--pd-sp-1) var(--pd-sp-2);background:var(--pd-bg-3);border-radius:var(--pd-r-1);box-shadow:var(--pd-sh-1);font-size:var(--pd-fs-1);color:var(--pd-fg-2)}
 .export-preview{position:absolute;right:0;top:26px;z-index:32;width:520px;max-height:420px;display:flex;flex-direction:column;background:var(--pd-bg-3);border-radius:var(--pd-r-2);box-shadow:var(--pd-sh-2)}
 .ep-hd{padding:var(--pd-sp-2);background:var(--pd-bg-2);border-radius:var(--pd-r-2) var(--pd-r-2) 0 0;font-size:var(--pd-fs-2);color:var(--pd-fg-2)}

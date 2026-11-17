@@ -392,6 +392,36 @@ export function addEntityRelation(
   };
 }
 
+/**
+ * 建 `dependsOn`（IMP9：右键菜单砍掉后，这是这条边唯一的界面入口，从问题行 `⋯` 进来）：
+ * 两端都必须是 question，自环与同向重复边直接拒绝（返回原 ws，撤销栈零增长）。
+ */
+export function addDependsOn(
+  ws: Workspace,
+  input: { source: NodeId; target: NodeId; now: string },
+): { ws: Workspace; key: EdgeKey | null } {
+  if (input.source === input.target) return { ws, key: null };
+  const sourceNode = byId(ws, input.source);
+  const targetNode = byId(ws, input.target);
+  if (!sourceNode || sourceNode.type !== 'question') return { ws, key: null };
+  if (!targetNode || targetNode.type !== 'question') return { ws, key: null };
+  if (
+    ws.edges.some(
+      (edge) =>
+        edge.type === 'dependsOn' &&
+        edge.source === input.source &&
+        edge.target === input.target,
+    )
+  ) {
+    return { ws, key: null };
+  }
+  const edge = createEdge('dependsOn', input.source, input.target, ws.nodes);
+  return {
+    ws: { ...ws, edges: [...ws.edges, edge], meta: touch(ws, input.now) },
+    key: edgeKey(edge),
+  };
+}
+
 export function updateEntity(
   ws: Workspace,
   id: NodeId,

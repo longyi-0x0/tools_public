@@ -17,6 +17,8 @@ export interface DocState {
   dirty: boolean;
   readOnly: boolean;
   notice: string | null;
+  /** 落盘失败原因（03 §112 第三态）；null = 没有未处理的失败。 */
+  saveError: string | null;
 }
 
 export interface HistoryEntry {
@@ -55,6 +57,7 @@ function makeState(ws: Workspace, extra: Partial<DocState> = {}): DocState {
     dirty: false,
     readOnly: false,
     notice: null,
+    saveError: null,
     ...extra,
   };
 }
@@ -166,7 +169,14 @@ export function getHistoryState(): {
 
 export function markSaved(): void {
   const current = getDocState();
-  state = { ...current, dirty: false };
+  state = { ...current, dirty: false, saveError: null };
+  emit();
+}
+
+/** 落盘失败（03 §112）：由 persistence 的 onSaveFailed 上报；StatusBar 显示「⚠ 保存失败（点击重试）」。 */
+export function setSaveError(reason: string | null): void {
+  const current = getDocState();
+  state = { ...current, saveError: reason };
   emit();
 }
 

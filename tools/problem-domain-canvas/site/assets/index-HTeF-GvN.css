@@ -807,6 +807,8 @@ h1,h2,h3{margin:0;font-weight:600}
 
 /* 13 行内操作 row-actions：静止 opacity 0，行 hover / focus-within 现形 */
 .row-actions{display:flex;gap:2px;margin-left:var(--pd-sp-1);opacity:0}
+/* 问题行行尾的依赖角标（IMP9）：依赖边不进树，只留一个极小的 ↗ 提示它存在 */
+.dep-mark{font-size:var(--pd-fs-1);line-height:1;color:var(--pd-accent);cursor:default}
 .row:hover .row-actions,.row:focus-within .row-actions{opacity:1}
 .ract{display:grid;place-items:center;width:20px;height:20px;border-radius:999px;font-size:var(--pd-fs-2);color:var(--pd-fg-2)}
 .ract:hover{background:var(--pd-bg-2);color:var(--pd-accent)}
@@ -821,7 +823,8 @@ h1,h2,h3{margin:0;font-weight:600}
 /* 11 左列底部检查行 check-footer：高 36、margin 8，不是卡片 */
 .check-footer{display:flex;align-items:center;gap:var(--pd-sp-2);height:36px;margin:var(--pd-sp-2);padding:0 var(--pd-sp-2);font-size:var(--pd-fs-2);color:var(--pd-fg-2);cursor:pointer}
 .check-footer:hover{color:var(--pd-fg-1)}
-.check-dot{flex:none;width:6px;height:6px;border-radius:999px;background:var(--pd-amber-3)}
+/* 检查行的严重度圆点：8px（02 §127 / 03 §51；两档 error/warning 由 canvas.css 的 .dot.s-* 上色） */
+.check-footer .dot{width:8px;height:8px}
 .check-arrow{margin-left:auto;color:var(--pd-fg-3)}
 
 /* 1 右列顶部状态行 statusbar：无背景 / 无圆角 / 无阴影 / 无下边框 */
@@ -830,14 +833,17 @@ h1,h2,h3{margin:0;font-weight:600}
 .sb-title{font-size:var(--pd-fs-4);font-weight:600;color:var(--pd-fg-1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .sb-none{font-size:var(--pd-fs-2);color:var(--pd-fg-2)}
 .sb-right{display:flex;align-items:center;gap:var(--pd-sp-2)}
-.saved{font-size:var(--pd-fs-1);color:var(--pd-fg-3);white-space:nowrap}
+.saved{display:flex;align-items:center;gap:4px;font-size:var(--pd-fs-1);color:var(--pd-fg-3);white-space:nowrap}
+/* 圆点只在窄屏顶替文字（03 §72–74：窄屏隐去「已保存」只留图标） */
+.saved .dot{display:none}
+.saved-retry{padding:0;border:0;background:none;font-size:var(--pd-fs-1);color:var(--pd-red-3);cursor:pointer;white-space:nowrap}
+.saved-retry:hover{text-decoration:underline}
 .theme-toggle{display:flex;gap:2px}
 .theme-toggle button{width:24px;height:20px;border-radius:999px;font-size:var(--pd-fs-1);color:var(--pd-fg-3)}
 .theme-toggle button[data-on="true"]{background:var(--pd-bg-3);color:var(--pd-accent);box-shadow:var(--pd-sh-1)}
 
 /* 画板占位与详情空壳 */
 .stage{position:relative;display:grid;place-items:center;min-width:0;min-height:0;overflow:hidden;background:var(--pd-bg-2);border-radius:var(--pd-r-3)}
-.stage-hint{padding:var(--pd-sp-2) var(--pd-sp-3);border-radius:999px;background:var(--pd-bg-3);box-shadow:var(--pd-sh-1);font-size:var(--pd-fs-2);color:var(--pd-fg-3)}
 .detail{display:flex;flex-direction:column;min-width:0;min-height:0;overflow:hidden;background:var(--pd-bg-2);border-radius:var(--pd-r-3)}
 .detail-hd{display:flex;align-items:center;justify-content:space-between;height:36px;padding:0 var(--pd-sp-3);font-size:var(--pd-fs-2);color:var(--pd-fg-2)}
 .detail-body{display:flex;flex-direction:column;gap:var(--pd-sp-2);padding:0 var(--pd-sp-3) var(--pd-sp-3);font-size:var(--pd-fs-2);color:var(--pd-fg-2)}
@@ -912,6 +918,12 @@ h1,h2,h3{margin:0;font-weight:600}
 .export-list{position:absolute;right:0;top:26px;z-index:30;display:flex;flex-direction:column;min-width:196px;padding:var(--pd-sp-1);background:var(--pd-bg-3);border-radius:var(--pd-r-1);box-shadow:var(--pd-sh-2)}
 .export-list button{border:0;background:transparent;text-align:left;padding:var(--pd-sp-1) var(--pd-sp-2);font-size:var(--pd-fs-2);color:var(--pd-fg-1);border-radius:var(--pd-r-1);cursor:pointer}
 .export-list button:hover{background:var(--pd-tint-bg);color:var(--pd-tint-fg)}
+
+/* 窄屏 <1200（03 §72–74）：状态行隐去「已保存 / 保存中」文字，只留圆点图标 */
+@media (max-width:1199px){
+  .saved .dot{display:inline-block}
+  .saved[data-tone="muted"] .saved-text{display:none}
+}
 .export-msg{position:absolute;right:0;top:28px;z-index:31;max-width:340px;padding:var(--pd-sp-1) var(--pd-sp-2);background:var(--pd-bg-3);border-radius:var(--pd-r-1);box-shadow:var(--pd-sh-1);font-size:var(--pd-fs-1);color:var(--pd-fg-2)}
 .export-preview{position:absolute;right:0;top:26px;z-index:32;width:520px;max-height:420px;display:flex;flex-direction:column;background:var(--pd-bg-3);border-radius:var(--pd-r-2);box-shadow:var(--pd-sh-2)}
 .ep-hd{padding:var(--pd-sp-2);background:var(--pd-bg-2);border-radius:var(--pd-r-2) var(--pd-r-2) 0 0;font-size:var(--pd-fs-2);color:var(--pd-fg-2)}
@@ -920,6 +932,8 @@ h1,h2,h3{margin:0;font-weight:600}
 .ep-ft button{background:var(--pd-bg-3);color:var(--pd-fg-1);font-size:var(--pd-fs-2);padding:calc(var(--pd-sp-1) + 1px) var(--pd-sp-2);border-radius:var(--pd-r-1);box-shadow:var(--pd-sh-1);cursor:pointer}
 /* 版式（03 §2）：两列，左 264 固定、右弹性，12px 间隙透底板；无页面级顶栏、零分隔线。 */
 .app{
+  /* 详情栏宽度只有一个来源（N1）：栅格列、窄屏抽屉宽度、画板把手的定位都引用它，不再各处写死 340 */
+  --pd-detail-w:340px;
   display:grid;
   grid-template-columns:264px minmax(0,1fr);
   gap:12px;
@@ -931,12 +945,61 @@ h1,h2,h3{margin:0;font-weight:600}
 .col.right{display:flex;flex-direction:column;min-width:0}
 
 /* 右列内容：画板弹性 + 详情 340；详情收到 0 时用把手放回来 */
-.content{position:relative;display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:12px;flex:1;min-height:0}
+.content{position:relative;display:grid;grid-template-columns:minmax(0,1fr) var(--pd-detail-w);gap:12px;flex:1;min-height:0}
 .reopen-detail{position:absolute;top:50%;right:var(--pd-sp-1);transform:translateY(-50%)}
 
+/* 详情收起（03 §2.4.2）：右列第二列收到 0，不是缩成窄条 */
+.app[data-right="off"] .content{grid-template-columns:minmax(0,1fr) 0}
+
+/* 画板收起（03 §2.4.2 / 02 §109）：第一列收到 0，画板隐藏、详情撑满；
+   把手留在同一条边界上（与详情把手对称，24px、静止 opacity .4、无边框、底色 + 轻阴影）。 */
+.app[data-canvas="off"] .content{grid-template-columns:0 minmax(0,1fr)}
+.app[data-canvas="off"] .stage{display:none}
+/* 把手贴「画板 / 详情」之间的 12px 缝隙中线：340 走变量，详情改宽时只有一处要动 */
+.handle.hc{position:absolute;top:50%;right:calc(var(--pd-detail-w) + 6px - 12px);transform:translateY(-50%);border:0;z-index:3}
+/* 收起后把手停在这条边界的最左端，图标翻成「›」 */
+.app[data-canvas="off"] .handle.hc{right:auto;left:0}
+
+/* 窄屏详情是覆盖式抽屉的遮罩：宽屏不出现 */
+.detail-scrim{display:none}
+
+/* 窄屏 <1200（03 §2.4.2 ③）：左 240；详情改覆盖式抽屉（绝对定位 + 遮罩，点遮罩关闭） */
 @media (max-width:1199px){
-  .app{grid-template-columns:220px minmax(0,1fr)}
-  .content{grid-template-columns:minmax(0,1fr) 300px}
+  .app{grid-template-columns:240px minmax(0,1fr)}
+  .content{grid-template-columns:minmax(0,1fr)}
+  .app[data-right="off"] .content{grid-template-columns:minmax(0,1fr)}
+  .app[data-canvas="off"] .content{grid-template-columns:0 minmax(0,1fr)}
+  .detail{
+    position:absolute;
+    top:0;
+    right:0;
+    bottom:0;
+    width:var(--pd-detail-w);
+    z-index:4;
+    box-shadow:var(--pd-sh-2);
+  }
+  .detail-scrim{
+    display:block;
+    position:absolute;
+    inset:0;
+    z-index:3;
+    background:color-mix(in srgb,var(--pd-bg-1) 45%,transparent);
+  }
+  /* 收起详情（REV2 N3 真回归）：窄屏 .detail 是绝对定位的覆盖层，栅格列收到 0 对它没有作用，
+     必须显式隐藏，否则「收起」后抽屉仍盖在画板上、既看得见也点得到。
+     选 visibility 而不选 transform:translateX(100%)：.content 没有 overflow:hidden，
+     移出去的是带 --pd-sh-2 的抽屉，阴影会在可见区外撑出横向滚动条（且隐藏态还占合成层）；
+     visibility:hidden 连同子元素一起不吃事件，pointer-events:none 只作显式兜底。 */
+  .app[data-right="off"] .detail,
+  .app[data-right="off"] .detail-scrim{
+    visibility:hidden;
+    pointer-events:none;
+  }
+  /* 画板把手跟抽屉走（N1）：抽屉开着贴抽屉左沿，收起详情后贴右列右沿 */
+  .app[data-right="on"] .handle.hc{right:var(--pd-detail-w)}
+  .app[data-right="off"] .handle.hc{right:0}
+  /* 画板自己收起时把手仍回到左边界（放在最后，同权重时它生效） */
+  .app[data-canvas="off"] .handle.hc{right:auto;left:0}
 }
 /* 画布与详情（03 §2.4 / 02 §3 组件 3、10、15、§3.1）：只用 tokens.css 的 50 个令牌，无裸 hex。 */
 
@@ -986,9 +1049,12 @@ h1,h2,h3{margin:0;font-weight:600}
 .node-link:hover{box-shadow:var(--pd-sh-1)}
 .node-link-more{flex:none;padding:0 2px;font-size:10px;color:var(--pd-fg-3);font-variant-numeric:tabular-nums;white-space:nowrap}
 .node-card:hover{box-shadow:var(--pd-sh-2)}
-.node-card[data-dragging]{cursor:grabbing;box-shadow:var(--pd-sh-2);z-index:2}
-.node-card[data-core]{background:var(--pd-bg-2)}
-.node-card[data-selected]{box-shadow:0 0 0 1.5px var(--pd-accent), var(--pd-sh-1)}
+.node-card[data-dragging="true"]{cursor:grabbing;box-shadow:var(--pd-sh-2);z-index:2}
+.node-card[data-core="true"]{background:var(--pd-bg-2)}
+/* 选中环（02 §选中态）：1.5px 主色环 + 卡片阴影。FIX6 —— 必须写 ="true"：
+   裸属性选择器 data-selected（不带 ="true"）连 "false" 也命中（React 会把布尔值渲染成字符串），
+   那样每张卡都挂环，点谁都看不出选中。REV2 N8：全表不再有裸属性选择器。 */
+.node-card[data-selected="true"]{box-shadow:0 0 0 1.5px var(--pd-accent), var(--pd-sh-1)}
 .node-code{font-size:var(--pd-fs-1);color:var(--pd-fg-3);font-variant-numeric:tabular-nums}
 .node-title{
   min-width:0;
@@ -1057,7 +1123,9 @@ h1,h2,h3{margin:0;font-weight:600}
   z-index:3;
 }
 
-/* 连线模式提示条（03 §2.7）：比普通提示更亮，明确当前在连线 */
+/* 连线模式提示条（03 §2.7 / 02 §131）：高 32、tint 底、无边框，比普通提示更亮 */
+/* 依赖模式被拒绝时追加在 modebar 尾部的提示（IMP9）：不弹模态框 */
+.modebar-tip{color:var(--pd-red-3);font-weight:600}
 .modebar{
   position:absolute;
   bottom:20px;
@@ -1065,10 +1133,11 @@ h1,h2,h3{margin:0;font-weight:600}
   transform:translateX(-50%);
   display:flex;
   align-items:center;
-  height:28px;
+  height:32px;
   padding:0 12px;
+  border:0;
   border-radius:999px;
-  background:var(--pd-bg-3);
+  background:var(--pd-tint-bg);
   box-shadow:var(--pd-sh-2);
   font-size:var(--pd-fs-2);
   color:var(--pd-tint-fg);
@@ -1085,7 +1154,7 @@ h1,h2,h3{margin:0;font-weight:600}
   padding:10px 12px;
   overflow:hidden;
 }
-.node-card.entity-card[data-connect-source]{box-shadow:0 0 0 1.5px var(--pd-accent), var(--pd-sh-2)}
+.node-card.entity-card[data-connect-source="true"]{box-shadow:0 0 0 1.5px var(--pd-accent), var(--pd-sh-2)}
 .entity-head{display:flex;align-items:center;gap:6px;min-width:0}
 .entity-head .node-title{flex:1;font-weight:600}
 .entity-identity{font-size:var(--pd-fs-1);color:var(--pd-fg-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -1096,7 +1165,8 @@ h1,h2,h3{margin:0;font-weight:600}
 .entity-tags{display:flex;flex-wrap:wrap;gap:4px;margin-top:auto}
 .tag{display:grid;place-items:center;height:18px;padding:0 6px;border-radius:999px;background:var(--pd-tint-bg);color:var(--pd-tint-fg);font-size:var(--pd-fs-1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
 .tag-constraint{background:var(--pd-bg-2);box-shadow:var(--pd-sh-1)}
-.tag[data-unsupported]{box-shadow:0 0 0 1px var(--pd-red-3)}
+/* 未支撑标签：细线走 1.5px 红环（与选中环同一口径，不再是 0 0 0 1px 的 1px 绕过） */
+.tag[data-unsupported="true"]{box-shadow:0 0 0 1.5px var(--pd-red-3)}
 .tag-support{margin-left:4px;font-size:10px;opacity:.75}
 .entity-card .support-badge{margin-left:0}
 .entity-card .check-mark{background:color-mix(in srgb,var(--pd-red-3) 14%,transparent);color:var(--pd-red-3)}
@@ -1111,7 +1181,9 @@ h1,h2,h3{margin:0;font-weight:600}
   flex-direction:column;
   align-items:center;
   gap:var(--pd-sp-2);
-  padding:20px;
+  padding:var(--pd-sp-4);
+  width:300px;
+  max-width:calc(100% - var(--pd-sp-4));
   border-radius:var(--pd-r-3);
   background:var(--pd-bg-3);
   box-shadow:var(--pd-sh-2);
@@ -1119,6 +1191,17 @@ h1,h2,h3{margin:0;font-weight:600}
   text-align:center;
 }
 .emptycard .ghost-btn{margin-left:0}
+/* 空态卡主按钮（02 §130 / 03 §85）：主色底 + 反白字；次按钮继续用 .ghost-btn。
+   反白取 --pd-bg-2：浅色主题是白、深色主题是深底，两个主题在主色上都够对比（不写裸 hex）。 */
+.primary-btn{
+  height:24px;
+  padding:0 var(--pd-sp-3);
+  border-radius:999px;
+  background:var(--pd-accent);
+  color:var(--pd-bg-2);
+  font-size:var(--pd-fs-2);
+}
+.primary-btn:hover{box-shadow:var(--pd-sh-1)}
 
 /* 详情栏（03 §2.4.4）：分组 = 嵌套淡色块 + 圆角 12，无边框；聚焦分组浮 1.5px 主色环 */
 .detail-body{flex:1;min-height:0;overflow:auto;gap:var(--pd-sp-2)}
@@ -1205,23 +1288,14 @@ h1,h2,h3{margin:0;font-weight:600}
 /* 检查行是 <button>：贴左列底部，仍是「不是卡片」的观感（03 §2.2） */
 .check-footer{width:calc(100% - var(--pd-sp-3));text-align:left;background:none;box-shadow:none;border-radius:0}
 
-/* 严重度两档（02 §2.2）：错误红、提示琥珀；只有 6px 圆点用色 */
+/* 严重度两档（02 §2.2 / IMP8 裁定）：错误红、警告琥珀；圆点用色（8px 由 .check-footer .dot 给） */
 .dot.s-error{background:var(--pd-red-3)}
 .dot.s-warning{background:var(--pd-amber-3)}
 
-/* 详情收起（03 §2.4.2）：右列第二列收到 0，不是缩成窄条 */
-.app[data-right="off"] .content{grid-template-columns:minmax(0,1fr) 0}
-.reopen-detail{
-  position:absolute;
-  right:0;
-  top:50%;
-  width:24px;
-  height:24px;
-  border-radius:999px;
-  background:var(--pd-bg-3);
-  box-shadow:var(--pd-sh-2);
-  color:var(--pd-fg-2);
-  z-index:3;
+/* 窄屏 <1200（03 §2.4.2 ③）：工具条第 5 枚「图」（缩略图开关）隐去——
+   它贴在画板右上角，窄屏下正好压在覆盖式抽屉/提示条的上方，内容会被挡。 */
+@media (max-width:1199px){
+  .minimap-toggle{display:none}
 }
 /* 画布皮肤收口（IMP7）：先引 @xyflow/react 的默认皮，再在这里整条换掉。
    02 的线条预算：全站 0 条 1px 边框——节点用底色 + 阴影表达，选中是 1.5px 主色环。
@@ -1234,7 +1308,7 @@ h1,h2,h3{margin:0;font-weight:600}
    ⑥ Background 点阵色、Minimap 底/遮罩/节点色、框选框颜色
    ⑦ 边标签底色/字色（自绘边 .pdc-edge-label 自己的令牌另写） */
 
-/* ⓪ 库的 CSS 变量一次改完：深/浅主题都跟着 body[data-theme] 的令牌走 */
+/* ⓪ 库的 CSS 变量一次改完：深/浅主题都跟着 body 上 data-theme 的令牌走 */
 .react-flow{
   --xy-node-border-default:0;
   --xy-node-border-radius-default:var(--pd-r-3);
@@ -1335,7 +1409,7 @@ h1,h2,h3{margin:0;font-weight:600}
 }
 .react-flow__attribution a{color:var(--pd-fg-3);font-size:9px}
 
-/* ⑥ 点阵、缩略图、框选框都吃令牌（深/浅主题各一份，值来自 body[data-theme]） */
+/* ⑥ 点阵、缩略图、框选框都吃令牌（深/浅主题各一份，值来自 body 上 data-theme 的令牌） */
 .react-flow__background{opacity:.9}
 .react-flow__minimap{
   right:14px;

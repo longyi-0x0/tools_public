@@ -116,3 +116,36 @@ test('问题卡渲染成标记后带 react-flow__handle（Service 端渲染，Re
   const count = (html.match(/react-flow__handle/g) ?? []).length;
   assert.ok(count >= 2, `期望标记里至少 2 个 react-flow__handle，实际 ${count}；标记：${html.slice(0, 400)}`);
 });
+
+/**
+ * FIX6「点节点后看不出它被选中」的静态 DOM 锚点：选中态与未选中态只差 data-selected。
+ * 之前的写法是 data-selected={false} → DOM 里留下 "false"，而 CSS 用裸属性选择器 [data-selected]，
+ * 连 "false" 也命中，于是每张卡都挂 1.5px 主色环。这里把两种态的开标签原样打出来当证据。
+ */
+function openingTag(html) {
+  return html.match(/<div class="node-card[^>]*>/)?.[0] ?? '';
+}
+
+test('选中态 / 未选中态的静态 DOM 只差 data-selected（FIX6）', () => {
+  const render = (selected) =>
+    renderToStaticMarkup(
+      createElement(
+        ReactFlowProvider,
+        null,
+        createElement(nodesMod.QuestionNode, { id: 'q1', data: { ...QUESTION_DATA, selected } }),
+      ),
+    );
+  const on = render(true);
+  const off = render(false);
+  const onTag = openingTag(on);
+  const offTag = openingTag(off);
+  console.log('  选中   :', onTag);
+  console.log('  未选中 :', offTag);
+
+  assert.match(onTag, /class="node-card pdc-card"/, '选中态 class 与未选中态一致（环由 CSS 按 data-selected 画）');
+  assert.match(offTag, /class="node-card pdc-card"/);
+  assert.match(onTag, /data-selected="true"/, '选中态必须带 data-selected="true"');
+  assert.doesNotMatch(offTag, /data-selected/, '未选中态不许留 data-selected="false"（裸属性选择器会误命中）');
+  // 除去 data-selected 这一项，两种态的标记必须逐字相同：不允许选中态偷偷换 class
+  assert.equal(onTag.replace(' data-selected="true"', ''), offTag, '两种态除 data-selected 外完全相同');
+});

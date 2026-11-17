@@ -41,11 +41,19 @@ export interface UiState {
   solveDraft: boolean;
   /** 打开行菜单的节点 id */
   menuFor: NodeId | null;
+  /** 打开行菜单的关系边（解域关系行 `⋯`；与 menuFor 互斥） */
+  menuForEdge: EdgeKey | null;
+  /** 正在行内改名的关系边 */
+  renamingEdgeKey: EdgeKey | null;
   ignoredChecks: readonly string[];
   /** 视口（缩放 + 平移）按域各一份；不进文档，避免拖动视口产生撤销记录。 */
   views: Record<Domain, Viewport>;
   /** 解域连线模式；null = 不在连线。 */
   connect: ConnectState | null;
+  /** 问题域「建立依赖…」的选目标模式：起点问题 id；null = 不在该模式（IMP9）。 */
+  dependsSourceId: NodeId | null;
+  /** 依赖模式的拒绝提示（自环 / 重复 / 非问题）；用 modebar 文案，不弹模态框。 */
+  dependsTip: string | null;
   drag: DragState | null;
   /** 详情栏当前聚焦的分组：点左列检查行会切到 'checks'。 */
   detailSection: DetailSection;
@@ -67,12 +75,16 @@ let state: UiState = {
   draft: null,
   solveDraft: false,
   menuFor: null,
+  menuForEdge: null,
+  renamingEdgeKey: null,
   ignoredChecks: [],
   views: {
     problem: { x: 48, y: 48, zoom: 1 },
     solve: { x: 48, y: 48, zoom: 1 },
   },
   connect: null,
+  dependsSourceId: null,
+  dependsTip: null,
   drag: null,
   detailSection: 'props',
 };

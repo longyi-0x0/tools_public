@@ -16,6 +16,7 @@ import type {
 import {
   addBehavior,
   addConstraint,
+  addDependsOn,
   addEntity,
   addEntityField,
   addEntityRelation,
@@ -255,7 +256,83 @@ export function gotoQuestion(questionId: NodeId): void {
     detailOpen: true,
     detailSection: 'props',
     connect: null,
+    dependsSourceId: null,
+    dependsTip: null,
   });
+}
+
+/* ---------- 问题域「建立依赖…」选目标模式（IMP9）：一次 commit 一条撤销记录 ---------- */
+
+/** 三种拒绝情形的提示原文（不弹模态框：画布底部 modebar 换一句话）。 */
+export const DEPEND_TIPS = {
+  self: '不能连自己：起点和终点得是两个问题',
+  duplicate: '这条依赖已经建过了',
+  notQuestion: '只能连问题：依赖的终点必须是问题',
+} as const;
+
+export type DependPickResult =
+  | 'created'
+  | 'self'
+  | 'duplicate'
+  | 'not-question'
+  | 'not-in-mode';
+
+/** 问题行 `⋯` →「建立依赖…」：记下起点问题，进入选目标模式（Esc 取消，不留边）。 */
+export function startDepends(sourceId: NodeId): void {
+  const node = getDocState().ws.nodes.find((entry) => entry.id === sourceId);
+  if (!node || node.type !== 'question') return;
+  setUi({
+    dependsSourceId: sourceId,
+    dependsTip: null,
+    menuFor: null,
+    menuForEdge: null,
+    renamingId: null,
+    draft: null,
+    solveDraft: false,
+    connect: null,
+  });
+}
+
+export function cancelDepends(): void {
+  if (getUiState().dependsSourceId) setUi({ dependsSourceId: null, dependsTip: null });
+}
+
+/**
+ * 选目标：自环 / 已有同向边 / 非问题节点一律拒绝并给一句提示（栈不变）；
+ * 合法则 `dependsOn`（source = 起点，target = 选中的问题）一次 commit 落地，退出模式。
+ */
+export function pickDependsTarget(id: NodeId): DependPickResult {
+  const ui = getUiState();
+  const sourceId = ui.dependsSourceId;
+  if (!sourceId) return 'not-in-mode';
+  if (id === sourceId) {
+    setUi({ dependsTip: DEPEND_TIPS.self });
+    return 'self';
+  }
+  const doc = getDocState();
+  const target = doc.ws.nodes.find((node) => node.id === id);
+  if (!target || target.type !== 'question') {
+    setUi({ dependsTip: DEPEND_TIPS.notQuestion });
+    return 'not-question';
+  }
+  if (
+    doc.ws.edges.some(
+      (edge) => edge.type === 'dependsOn' && edge.source === sourceId && edge.target === id,
+    )
+  ) {
+    setUi({ dependsTip: DEPEND_TIPS.duplicate });
+    return 'duplicate';
+  }
+  commitDoc((ws) => addDependsOn(ws, { source: sourceId, target: id, now: now() }).ws, {
+    label: '建立依赖',
+  });
+  setUi({
+    dependsSourceId: null,
+    dependsTip: null,
+    selectedId: id,
+    selection: { ...ui.selection, problem: id },
+  });
+  return 'created';
 }
 
 export function beginDraft(parentId: NodeId | null): void {
@@ -287,11 +364,20 @@ export function endRename(): void {
 }
 
 export function openRowMenu(id: NodeId): void {
-  setUi({ menuFor: getUiState().menuFor === id ? null : id, renamingId: null });
+  setUi({
+    menuFor: getUiState().menuFor === id ? null : id,
+    renamingId: null,
+    menuForEdge: null,
+  });
+}
+
+/** 解域关系行 `⋯`：打开边菜单（与节点行菜单互斥）。 */
+export function openEdgeMenu(key: EdgeKey): void {
+  setUi({ menuForEdge: getUiState().menuForEdge === key ? null : key, menuFor: null });
 }
 
 export function closeRowMenu(): void {
-  setUi({ menuFor: null });
+  setUi({ menuFor: null, menuForEdge: null });
 }
 
 export function setDomain(domain: Domain): void {
@@ -305,6 +391,8 @@ export function setDomain(domain: Domain): void {
     renamingId: null,
     menuFor: null,
     connect: null,
+    dependsSourceId: null,
+    dependsTip: null,
   });
 }
 
@@ -312,12 +400,24 @@ export function setTheme(theme: 'light' | 'dark'): void {
   setUi({ theme });
 }
 
+/**
+ * 面板收起（03 §2.4.2 / 02 §109）：画板与详情互斥——先收一块、再收另一块时，把前一块放回来。
+ * `[` / `]` 两个键与两个 24px 把手都只走这四个命令。
+ */
 export function setDetailOpen(open: boolean): void {
-  setUi({ detailOpen: open });
+  setUi(open ? { detailOpen: true } : { detailOpen: false, canvasOpen: true });
 }
 
 export function toggleDetail(): void {
-  setUi({ detailOpen: !getUiState().detailOpen });
+  setDetailOpen(!getUiState().detailOpen);
+}
+
+export function setCanvasOpen(open: boolean): void {
+  setUi(open ? { canvasOpen: true } : { canvasOpen: false, detailOpen: true });
+}
+
+export function toggleCanvas(): void {
+  setCanvasOpen(!getUiState().canvasOpen);
 }
 
 /** 点左列底部检查行：展开详情并切到「检查」分组（03 §2.2）。 */
@@ -657,6 +757,29 @@ export function setRelationLabel(key: EdgeKey, label: string): void {
   });
 }
 
+/** 关系行菜单「重命名」：进行内输入；空标题丢弃（与节点改名同口径）。 */
+export function beginRelationRename(key: EdgeKey): void {
+  setUi({
+    renamingEdgeKey: key,
+    menuForEdge: null,
+    menuFor: null,
+    selectedEdgeKey: key,
+    selectedId: null,
+  });
+}
+
+export function cancelRelationRename(): void {
+  if (getUiState().renamingEdgeKey) setUi({ renamingEdgeKey: null });
+}
+
+export function commitRelationRename(key: EdgeKey, label: string): boolean {
+  const next = label.trim();
+  setUi({ renamingEdgeKey: null });
+  if (!next) return false;
+  setRelationLabel(key, next);
+  return true;
+}
+
 export function setRelationCardinality(key: EdgeKey, cardinality: Cardinality): void {
   commitDoc((ws) => setEdgeProps(ws, key, { cardinality }, now()), { label: '改基数' });
 }
@@ -664,7 +787,11 @@ export function setRelationCardinality(key: EdgeKey, cardinality: Cardinality): 
 export function deleteRelation(key: EdgeKey): void {
   commitDoc((ws) => removeEdgeByKey(ws, key, now()), { label: '删除关系' });
   const ui = getUiState();
-  if (ui.selectedEdgeKey === key) setUi({ selectedEdgeKey: null });
+  setUi({
+    selectedEdgeKey: ui.selectedEdgeKey === key ? null : ui.selectedEdgeKey,
+    menuForEdge: ui.menuForEdge === key ? null : ui.menuForEdge,
+    renamingEdgeKey: ui.renamingEdgeKey === key ? null : ui.renamingEdgeKey,
+  });
 }
 
 /** 清空工作区（二次确认在详情栏做）：一次 commit 一条撤销记录。 */

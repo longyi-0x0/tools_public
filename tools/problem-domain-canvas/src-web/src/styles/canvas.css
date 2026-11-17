@@ -46,9 +46,12 @@
 .node-link:hover{box-shadow:var(--pd-sh-1)}
 .node-link-more{flex:none;padding:0 2px;font-size:10px;color:var(--pd-fg-3);font-variant-numeric:tabular-nums;white-space:nowrap}
 .node-card:hover{box-shadow:var(--pd-sh-2)}
-.node-card[data-dragging]{cursor:grabbing;box-shadow:var(--pd-sh-2);z-index:2}
-.node-card[data-core]{background:var(--pd-bg-2)}
-.node-card[data-selected]{box-shadow:0 0 0 1.5px var(--pd-accent), var(--pd-sh-1)}
+.node-card[data-dragging="true"]{cursor:grabbing;box-shadow:var(--pd-sh-2);z-index:2}
+.node-card[data-core="true"]{background:var(--pd-bg-2)}
+/* 选中环（02 §选中态）：1.5px 主色环 + 卡片阴影。FIX6 —— 必须写 ="true"：
+   裸属性选择器 data-selected（不带 ="true"）连 "false" 也命中（React 会把布尔值渲染成字符串），
+   那样每张卡都挂环，点谁都看不出选中。REV2 N8：全表不再有裸属性选择器。 */
+.node-card[data-selected="true"]{box-shadow:0 0 0 1.5px var(--pd-accent), var(--pd-sh-1)}
 .node-code{font-size:var(--pd-fs-1);color:var(--pd-fg-3);font-variant-numeric:tabular-nums}
 .node-title{
   min-width:0;
@@ -117,7 +120,9 @@
   z-index:3;
 }
 
-/* 连线模式提示条（03 §2.7）：比普通提示更亮，明确当前在连线 */
+/* 连线模式提示条（03 §2.7 / 02 §131）：高 32、tint 底、无边框，比普通提示更亮 */
+/* 依赖模式被拒绝时追加在 modebar 尾部的提示（IMP9）：不弹模态框 */
+.modebar-tip{color:var(--pd-red-3);font-weight:600}
 .modebar{
   position:absolute;
   bottom:20px;
@@ -125,10 +130,11 @@
   transform:translateX(-50%);
   display:flex;
   align-items:center;
-  height:28px;
+  height:32px;
   padding:0 12px;
+  border:0;
   border-radius:999px;
-  background:var(--pd-bg-3);
+  background:var(--pd-tint-bg);
   box-shadow:var(--pd-sh-2);
   font-size:var(--pd-fs-2);
   color:var(--pd-tint-fg);
@@ -145,7 +151,7 @@
   padding:10px 12px;
   overflow:hidden;
 }
-.node-card.entity-card[data-connect-source]{box-shadow:0 0 0 1.5px var(--pd-accent), var(--pd-sh-2)}
+.node-card.entity-card[data-connect-source="true"]{box-shadow:0 0 0 1.5px var(--pd-accent), var(--pd-sh-2)}
 .entity-head{display:flex;align-items:center;gap:6px;min-width:0}
 .entity-head .node-title{flex:1;font-weight:600}
 .entity-identity{font-size:var(--pd-fs-1);color:var(--pd-fg-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -156,7 +162,8 @@
 .entity-tags{display:flex;flex-wrap:wrap;gap:4px;margin-top:auto}
 .tag{display:grid;place-items:center;height:18px;padding:0 6px;border-radius:999px;background:var(--pd-tint-bg);color:var(--pd-tint-fg);font-size:var(--pd-fs-1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
 .tag-constraint{background:var(--pd-bg-2);box-shadow:var(--pd-sh-1)}
-.tag[data-unsupported]{box-shadow:0 0 0 1px var(--pd-red-3)}
+/* 未支撑标签：细线走 1.5px 红环（与选中环同一口径，不再是 0 0 0 1px 的 1px 绕过） */
+.tag[data-unsupported="true"]{box-shadow:0 0 0 1.5px var(--pd-red-3)}
 .tag-support{margin-left:4px;font-size:10px;opacity:.75}
 .entity-card .support-badge{margin-left:0}
 .entity-card .check-mark{background:color-mix(in srgb,var(--pd-red-3) 14%,transparent);color:var(--pd-red-3)}
@@ -171,7 +178,9 @@
   flex-direction:column;
   align-items:center;
   gap:var(--pd-sp-2);
-  padding:20px;
+  padding:var(--pd-sp-4);
+  width:300px;
+  max-width:calc(100% - var(--pd-sp-4));
   border-radius:var(--pd-r-3);
   background:var(--pd-bg-3);
   box-shadow:var(--pd-sh-2);
@@ -179,6 +188,17 @@
   text-align:center;
 }
 .emptycard .ghost-btn{margin-left:0}
+/* 空态卡主按钮（02 §130 / 03 §85）：主色底 + 反白字；次按钮继续用 .ghost-btn。
+   反白取 --pd-bg-2：浅色主题是白、深色主题是深底，两个主题在主色上都够对比（不写裸 hex）。 */
+.primary-btn{
+  height:24px;
+  padding:0 var(--pd-sp-3);
+  border-radius:999px;
+  background:var(--pd-accent);
+  color:var(--pd-bg-2);
+  font-size:var(--pd-fs-2);
+}
+.primary-btn:hover{box-shadow:var(--pd-sh-1)}
 
 /* 详情栏（03 §2.4.4）：分组 = 嵌套淡色块 + 圆角 12，无边框；聚焦分组浮 1.5px 主色环 */
 .detail-body{flex:1;min-height:0;overflow:auto;gap:var(--pd-sp-2)}
@@ -265,21 +285,12 @@
 /* 检查行是 <button>：贴左列底部，仍是「不是卡片」的观感（03 §2.2） */
 .check-footer{width:calc(100% - var(--pd-sp-3));text-align:left;background:none;box-shadow:none;border-radius:0}
 
-/* 严重度两档（02 §2.2）：错误红、提示琥珀；只有 6px 圆点用色 */
+/* 严重度两档（02 §2.2 / IMP8 裁定）：错误红、警告琥珀；圆点用色（8px 由 .check-footer .dot 给） */
 .dot.s-error{background:var(--pd-red-3)}
 .dot.s-warning{background:var(--pd-amber-3)}
 
-/* 详情收起（03 §2.4.2）：右列第二列收到 0，不是缩成窄条 */
-.app[data-right="off"] .content{grid-template-columns:minmax(0,1fr) 0}
-.reopen-detail{
-  position:absolute;
-  right:0;
-  top:50%;
-  width:24px;
-  height:24px;
-  border-radius:999px;
-  background:var(--pd-bg-3);
-  box-shadow:var(--pd-sh-2);
-  color:var(--pd-fg-2);
-  z-index:3;
+/* 窄屏 <1200（03 §2.4.2 ③）：工具条第 5 枚「图」（缩略图开关）隐去——
+   它贴在画板右上角，窄屏下正好压在覆盖式抽屉/提示条的上方，内容会被挡。 */
+@media (max-width:1199px){
+  .minimap-toggle{display:none}
 }

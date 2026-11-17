@@ -3,8 +3,10 @@
  * 节点只产 data（长相在 flow/nodes.tsx），边只产 data/style（长相在 flow/edges.tsx）。
  * 因此整套映射能脱离浏览器用 node:test 直接断死（npm test 里跑）。
  *
- * 边的几何统一用 `smoothstep`：它就是 React Flow 里的直角折线（getSmoothStepPath），
- * 横平竖直才符合 02 的关系语法；bezier 会变成弧线，破语法。
+ * 边的几何按关系语法分（FIX3，长相在 flow/edges.tsx）：
+ *   decomposesTo / dependsOn → 纯直线（getStraightPath，d 里只有 M/L）；
+ *   entityRelation → 正交折线（getSmoothStepPath，横竖直角，带关系名/基数标签）。
+ * 这里只产 kind，具体路径函数由边组件按 kind 选——映射层保持纯函数、可被 node:test 直接断死。
  */
 import type { Edge, Node } from '@xyflow/react';
 import type { CSSProperties } from 'react';
@@ -100,7 +102,10 @@ export interface PdcEdgeData extends Record<string, unknown> {
   selected?: boolean;
 }
 
-/** 边的线条语法（02 §5）：A 组主色、2px；dependsOn 虚线 6/4，选中加粗到 3。 */
+/**
+ * 边的线条语法（02 §5 / FIX3）：一律主色 --pd-accent（浅色 #6E5CC4 / 深色 #A99BF0），2px；
+ * dependsOn 虚线 6/4，选中加粗到 3px。颜色不用 --pd-line-1/-2（边框色太浅，浅色主题下几乎看不见）。
+ */
 export function edgeStyleOf(kind: PdcEdgeKind, selected = false): CSSProperties {
   return {
     stroke: 'var(--pd-accent)',
@@ -164,6 +169,7 @@ function linksByQuestion(ws: Workspace, index: DocIndex): Map<NodeId, NodeId[]> 
 }
 
 export interface FlowSelection {
+  /** 唯一真相（FIX6）：uiStore.selectedId。下面两个字段都从这里派生，节点绝不自己记选中。 */
   selectedId: NodeId | null;
 }
 
@@ -206,6 +212,9 @@ export function toProblemFlow(input: ProblemFlowInput): { nodes: Node[]; edges: 
       type: QUESTION_NODE_TYPE,
       position: { x: pos.x, y: pos.y },
       data,
+      // FIX6：视觉选中看 data.selected；顶层 selected 同一份值，只是回灌给库，免得它把选中清掉
+      // （库 adoptUserNodes 会用 userNode 重建内部节点，缺 selected 就等于取消选中）。
+      selected: input.selectedId === node.id,
       style: { width: size.width, height: size.height },
     });
   }
@@ -288,6 +297,8 @@ export function toSolveFlow(input: SolveFlowInput): { nodes: Node[]; edges: Edge
       type: ENTITY_NODE_TYPE,
       position: { x: pos.x, y: pos.y },
       data,
+      // FIX6：同问题卡——data.selected 画环，顶层 selected 回灌给库。
+      selected: input.selectedId === node.id,
       style: { width: size.width, height: size.height },
     });
   }

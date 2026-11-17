@@ -2,7 +2,14 @@
  * 启动（04 §3）：载入 → 迁移 → 规范化 → 建索引；订阅 doc 落盘、订阅 ui 存 session；
  * pagehide / beforeunload / visibilitychange 立即 flush。
  */
-import { getDocState, initDoc, markSaved, setReadOnly, subscribeDoc } from './docStore.ts';
+import {
+  getDocState,
+  initDoc,
+  markSaved,
+  setReadOnly,
+  setSaveError,
+  subscribeDoc,
+} from './docStore.ts';
 import {
   createSessionPersister,
   createWorkspacePersister,
@@ -13,6 +20,13 @@ import { getUiState, hydrateUi, sessionOf, subscribeUi } from './uiStore.ts';
 import { STORAGE_KEYS, browserStorage, createMemoryStorage } from './storage.ts';
 import { stableStringify } from '../domain/serialize.ts';
 import { createSeedWorkspace } from '../domain/seed.ts';
+
+/** StatusBar「保存失败（点击重试）」的落点：bootstrap 建好的那个 persister。 */
+let currentPersister: { retry(): void } | null = null;
+
+export function retrySave(): void {
+  currentPersister?.retry();
+}
 
 export function applyTheme(): void {
   if (typeof document === 'undefined') return;
@@ -41,7 +55,9 @@ export function bootstrap(): void {
     read: () => stableStringify(getDocState().ws),
     onSaved: markSaved,
     onReadOnly: setReadOnly,
+    onSaveFailed: setSaveError,
   });
+  currentPersister = persister;
   const sessionPersister = createSessionPersister(storage, () => sessionOf(getUiState()));
 
   subscribeDoc(() => {

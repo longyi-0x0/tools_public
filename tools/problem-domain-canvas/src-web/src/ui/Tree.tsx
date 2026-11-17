@@ -7,16 +7,20 @@ import {
   beginEntityDraft,
   beginRename,
   cancelConnect,
+  cancelDepends,
   cancelDraft,
   cancelEntityDraft,
+  cancelRelationRename,
   closeRowMenu,
+  commitRelationRename,
   commitRename,
   deleteQuestion,
   deleteRelation,
-  deleteSolveNode,
   endRename,
+  openEdgeMenu,
   openRowMenu,
   pickConnectEntity,
+  pickDependsTarget,
   select,
   selectEdge,
   shortcutNewQuestion,
@@ -26,6 +30,7 @@ import {
 } from '../store/commands.ts';
 import { useDoc, useUi } from './useStores.ts';
 import { InlineInput } from './InlineInput.tsx';
+import { ENTITY_ROW_MENU, QUESTION_ROW_MENU, RELATION_ROW_MENU } from './treeMenus.ts';
 
 /** 02 §2.2：状态 5 态只取既有令牌，不新造色。 */
 const STATUS_CLASS: Record<QuestionStatus, string> = {
@@ -51,6 +56,10 @@ function QuestionRow({ id, depth }: { id: NodeId; depth: number }) {
   const selected = ui.selectedId === id;
   const status = statusOf(node);
   const draftHere = ui.draft !== null && ui.draft.parentId === id;
+  // 依赖关系不进树；有进出边时行尾只留一个极小的 ↗ 角标，告诉人「这条关系存在」（IMP9）。
+  const depCount = doc.ws.edges.filter(
+    (edge) => edge.type === 'dependsOn' && (edge.source === id || edge.target === id),
+  ).length;
 
   return (
     <li className="row-wrap">
@@ -58,7 +67,7 @@ function QuestionRow({ id, depth }: { id: NodeId; depth: number }) {
         className="row"
         data-selected={selected}
         style={{ paddingLeft: 8 + depth * 14 }}
-        onClick={() => select(id)}
+        onClick={() => (ui.dependsSourceId ? pickDependsTarget(id) : select(id))}
       >
         <span className="code">{code}</span>
         {ui.renamingId === id ? (
@@ -74,6 +83,11 @@ function QuestionRow({ id, depth }: { id: NodeId; depth: number }) {
         )}
         <span className={STATUS_CLASS[status]} aria-hidden="true" />
         <span className="status">{status}</span>
+        {depCount > 0 && (
+          <span className="dep-mark" title={`有 ${depCount} 条依赖`} aria-label={`有 ${depCount} 条依赖`}>
+            ↗
+          </span>
+        )}
         <span className="row-actions">
           <button
             type="button"
@@ -102,15 +116,12 @@ function QuestionRow({ id, depth }: { id: NodeId; depth: number }) {
 
       {ui.menuFor === id && (
         <div className="rowmenu" role="menu">
-          <button type="button" onClick={() => beginDraft(id)}>
-            新建子问题
-          </button>
-          <button type="button" onClick={() => beginRename(id)}>
-            重命名
-          </button>
-          <button type="button" onClick={() => deleteQuestion(id)}>
-            删除（子问题保留）
-          </button>
+          {/* 菜单项与动作在 ui/treeMenus.ts（IMP9：「建立依赖…」排在「新建子问题」之后） */}
+          {QUESTION_ROW_MENU.map((item) => (
+            <button key={item.key} type="button" onClick={() => item.run(id)}>
+              {item.label}
+            </button>
+          ))}
           <div className="menu-label">标记状态</div>
           {QUESTION_STATUSES.map((status) => (
             <button key={status} type="button" onClick={() => applyStatus(id, status)}>
@@ -196,6 +207,18 @@ function EntityRow({ id }: { id: NodeId }) {
         )}
         <SupportMark codes={codeList} />
         <span className="row-actions">
+          {/* 03 §83：实体行 hover 给「＋」——新建同级实体（先出未命名草稿行，回车才落库） */}
+          <button
+            type="button"
+            className="ract"
+            title="新建同级实体"
+            onClick={(event) => {
+              event.stopPropagation();
+              beginEntityDraft();
+            }}
+          >
+            ＋
+          </button>
           <button
             type="button"
             className="ract"
@@ -212,12 +235,12 @@ function EntityRow({ id }: { id: NodeId }) {
 
       {ui.menuFor === id && (
         <div className="rowmenu" role="menu">
-          <button type="button" onClick={() => beginRename(id)}>
-            重命名
-          </button>
-          <button type="button" onClick={() => deleteSolveNode(id)}>
-            删除实体
-          </button>
+          {/* 03 §83 行菜单：新建关系（进连线模式）/ 重命名 / 删除；菜单项与动作在 ui/treeMenus.ts */}
+          {ENTITY_ROW_MENU.map((item) => (
+            <button key={item.key} type="button" onClick={() => item.run(id)}>
+              {item.label}
+            </button>
+          ))}
         </div>
       )}
     </li>
@@ -242,9 +265,20 @@ function RelationRow({ edge }: { edge: Edge }) {
         onClick={() => selectEdge(key)}
         title={`${from.title || '未命名'} ${label} ${to.title || '未命名'} ${cardinality}`}
       >
-        <span className="title">
-          {from.title || '未命名'} —{label}→ {to.title || '未命名'}
-        </span>
+        {ui.renamingEdgeKey === key ? (
+          <InlineInput
+            initial={label}
+            placeholder="关系名…"
+            onCommit={(text) => {
+              commitRelationRename(key, text);
+            }}
+            onCancel={() => cancelRelationRename()}
+          />
+        ) : (
+          <span className="title">
+            {from.title || '未命名'} —{label}→ {to.title || '未命名'}
+          </span>
+        )}
         <span className="status">{cardinality}</span>
         <span className="row-actions">
           <button
@@ -258,8 +292,30 @@ function RelationRow({ edge }: { edge: Edge }) {
           >
             ✕
           </button>
+          <button
+            type="button"
+            className="ract"
+            title="更多"
+            onClick={(event) => {
+              event.stopPropagation();
+              openEdgeMenu(key);
+            }}
+          >
+            ⋯
+          </button>
         </span>
       </div>
+
+      {ui.menuForEdge === key && (
+        <div className="rowmenu" role="menu">
+          {/* 03 §83：关系行「重命名 / 删除」 */}
+          {RELATION_ROW_MENU.map((item) => (
+            <button key={item.key} type="button" onClick={() => item.run(key)}>
+              {item.label}
+            </button>
+          ))}
+        </div>
+      )}
     </li>
   );
 }
@@ -359,6 +415,7 @@ export function Tree() {
         cancelDraft();
         cancelEntityDraft();
         cancelConnect();
+        cancelDepends();
         closeRowMenu();
       }
     };

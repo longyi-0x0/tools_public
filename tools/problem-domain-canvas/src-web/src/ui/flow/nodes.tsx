@@ -3,6 +3,9 @@
  * 问题卡：状态点（5 态色）+ 编号 + 标题 + 关联胶囊（≤3 + `+N`）+ 检查角标；
  * 实体卡：标题 + 支撑徽标 / C6 角标 + 主键 + 字段 + 挂着的约束/行为贴条。
  * 没有 1px 边框：底色 + 阴影表达，选中是 1.5px 主色环（box-shadow），与 02 的线条预算一致。
+ * FIX6：选中属性只在选中时出现（`data-selected={node.selected || undefined}`）——写成
+ * `data-selected={false}` 会在 DOM 里留下 `data-selected="false"`，属性选择器照样命中，
+ * 结果每张卡都挂环、点谁都看不出选中。
  *
  * 句柄（IMPFIX3）：React Flow 的边必须锚在节点里的 <Handle> 上，自定义节点不写 Handle 就没有锚点，
  * 边静默不画（不报错）。问题卡的两个句柄只当锚点用（不可连，连线走左树），样式在 flow.css 的
@@ -21,7 +24,7 @@ export function QuestionNode({ data, dragging }: NodeProps): ReactElement {
   return (
     <div
       className="node-card pdc-card"
-      data-selected={node.selected}
+      data-selected={node.selected || undefined}
       data-dragging={dragging || undefined}
       data-core={node.core || undefined}
       title={node.title}
@@ -68,7 +71,7 @@ export function EntityNode({ data }: NodeProps): ReactElement {
   return (
     <div
       className="node-card entity-card pdc-card"
-      data-selected={node.selected}
+      data-selected={node.selected || undefined}
       data-connect-source={node.connectSource || undefined}
       data-unsupported={node.unsupported || undefined}
     >
