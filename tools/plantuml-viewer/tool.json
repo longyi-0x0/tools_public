@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 2,
+  "type": "tool",
+  "name": "PlantUML 看图",
+  "description": "把一段 .puml 贴进来，用官方服务器渲染成图；图没出来时能看见是哪一步不通。",
+  "kind": "h5",
+  "entry": "index.html",
+  "capabilities": [],
+  "tags": [
+    "dev"
+  ]
+}

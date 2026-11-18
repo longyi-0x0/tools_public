@@ -48,7 +48,7 @@
 | layout-atlas | h5 | — | books |
 | motion-lexicon | web | — | books |
 | html-css-js | web | — | dev |
-| plantuml | web | — | dev |
+| plantuml-viewer | h5 | — | dev |
 | react-lab | web | — | dev |
 | regex-tester | web | — | dev |
 | playground | h5 | — | dev |

@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PlantUML 看图</title>
+    <link rel="stylesheet" href="viewer.css" />
+  </head>
+  <body>
+    <div class="app">
+      <header class="top">
+        <div class="brand">
+          <h1>PlantUML 看图</h1>
+          <p class="sub">官方服务器渲染 · PNG 不做</p>
+        </div>
+        <a class="official" href="https://plantuml.com/zh/" target="_blank" rel="noopener">官网 ↗</a>
+      </header>
+
+      <div class="actions">
+        <button id="render" class="button primary" type="button">渲染</button>
+        <button id="clear" class="button" type="button" disabled>清空</button>
+        <span class="examples-label">示例：</span>
+        <div id="examples" class="examples"></div>
+      </div>
+
+      <section class="editor" aria-label="源码">
+        <label class="label" for="source">源码（等宽）</label>
+        <textarea
+          id="source"
+          spellcheck="false"
+          autocapitalize="off"
+          autocomplete="off"
+          autocorrect="off"
+          wrap="off"
+          placeholder="贴一段 .puml，例如：&#10;@startuml&#10;Alice -> Bob: hello&#10;@enduml"
+        ></textarea>
+        <p id="autofill" class="hint" hidden>已自动补 @startuml/@enduml</p>
+      </section>
+
+      <section class="preview" aria-label="预览">
+        <div id="stage" class="stage" data-fit="fit">
+          <p id="empty" class="empty">贴一段 .puml 就能看</p>
+          <img id="diagram" alt="PlantUML 渲染结果" hidden />
+          <div id="loading" class="loading" hidden>
+            <span>正在向官方服务器取图…</span><span id="elapsed">（已等 0 秒）</span>
+          </div>
+          <div id="failure" class="failure" hidden>
+            <p id="failure-text" class="failure-text"></p>
+            <p id="failure-hint" class="failure-hint"></p>
+            <div class="failure-actions">
+              <button id="retry" class="button primary" type="button">重试</button>
+              <a id="open-tab" class="button" href="https://www.plantuml.com/" target="_blank" rel="noopener" hidden>在新标签打开这张图</a>
+            </div>
+          </div>
+        </div>
+        <div class="readout">
+          <span id="size">没取到尺寸</span>
+          <span class="dot" aria-hidden="true">·</span>
+          <span id="mode">适应宽度</span>
+          <button id="fit" class="toggle" type="button" disabled>原尺寸</button>
+        </div>
+        <p id="note" class="hint" hidden>图里的英文来自官方服务器——PlantUML 报告的问题见图中，不是这个页面的报错。</p>
+        <p id="live" class="sr-only" aria-live="polite"></p>
+      </section>
+    </div>
+    <script type="module" src="viewer.js"></script>
+  </body>
+</html>
