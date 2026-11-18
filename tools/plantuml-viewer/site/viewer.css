@@ -243,27 +243,43 @@ body {
   padding-top: 2px;
 }
 
-.stage {
+/* 视口负责“相对谁定位遮罩”：loading 放在滚动容器外面，
+   放大滚到中段再渲染时，遮罩不会被一起滚出屏幕。 */
+.viewport {
   position: relative;
+  display: flex;
   flex: 1;
   min-height: 220px;
+}
+
+.stage {
+  flex: 1;
+  min-height: 0;
   overflow: auto;
   padding: 16px;
   border: 1px solid var(--line);
   border-radius: var(--radius-card);
   background: var(--surface);
-  text-align: center;
 }
 
+/* 宽度一律由 viewer.js 写成 px：适应宽度 / 适应页面 / 100% / 手动缩放都走同一条路。
+   margin:auto 让图在装得下时居中；装不下时 auto 变 0，左边缘可滚到（inline-block + text-align
+   居中在溢出时左侧滚不到，这是 v1 的坑，这里换掉）。 */
 .stage img {
-  display: inline-block;
-  max-width: 100%;
+  display: block;
+  max-width: none;
   height: auto;
+  margin: 0 auto;
   vertical-align: top;
 }
 
-.stage[data-fit="actual"] img {
-  max-width: none;
+.stage[data-draggable="true"] {
+  cursor: grab;
+  touch-action: none;
+}
+
+.stage[data-dragging="true"] {
+  cursor: grabbing;
 }
 
 .empty {
@@ -271,6 +287,7 @@ body {
   padding: 48px 12px;
   color: var(--ink-dim);
   font-size: 13px;
+  text-align: center;
 }
 
 .loading {
@@ -330,13 +347,44 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
-.dot {
-  opacity: 0.6;
+/* 取图超时但旧图还在：一条贴在图下的说明，不遮图、不禁用缩放。
+   同一条 #status 也承接 2 秒的复制结果/缩放边界提示：那些是信息，不用错误色。 */
+.status {
+  margin: 8px 2px 0;
+  color: var(--danger);
+  font-size: 12px;
+  line-height: 1.5;
 }
 
-.toggle {
-  height: 26px;
-  margin-left: 2px;
+.status[data-tone="info"] {
+  color: var(--ink-dim);
+}
+
+/* ── 看图工具条 ─────────────────────────────────────────── */
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 0 2px 8px;
+}
+
+.toolgroup {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.toolgroup-end {
+  margin-left: auto;
+}
+
+.tool {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 30px;
   padding: 0 10px;
   border: 1px solid var(--line-strong);
   border-radius: 999px;
@@ -345,19 +393,39 @@ body {
   font: inherit;
   font-size: 12px;
   font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  text-decoration: none;
+  white-space: nowrap;
   cursor: pointer;
 }
 
-.toggle:hover:not(:disabled) {
+.tool:hover:not(:disabled) {
   background: #eef4f2;
 }
 
-.toggle:disabled {
+.tool:disabled {
   border-color: var(--line);
   background: var(--sunken);
   color: var(--ink-dim);
   cursor: not-allowed;
 }
+
+.tool.percent {
+  min-width: 58px;
+}
+
+.tool[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: #e2f0ed;
+  color: var(--accent-deep);
+}
+
+.tool[aria-disabled="true"] {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+/* ── 读数行 ─────────────────────────────────────────────── */
 
 .sr-only {
   position: absolute;
@@ -413,11 +481,38 @@ body {
     min-height: 45vh;
   }
 
-  .stage {
+  .viewport {
     min-height: 45vh;
   }
 
   #source {
     min-height: 260px;
   }
+}
+
+/* ── 专注模式：收起源码与标题，图铺满 iframe ─────────────── */
+
+/* 不依赖壳、不要真全屏：只改自己这一页的网格。.top/.editor/.actions/.readout
+   由 viewer.js 用 hidden 收起（[hidden] 已在上文复位成 display:none），这里只管版式。 */
+.app.is-focus {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  grid-template-areas: "preview";
+  gap: 0;
+  height: 100vh;
+  min-height: 0;
+  padding: 8px;
+}
+
+.app.is-focus .preview {
+  min-height: 0;
+  padding-top: 0;
+}
+
+.app.is-focus .viewport {
+  min-height: 0;
+}
+
+.app.is-focus .toolbar {
+  padding-bottom: 6px;
 }
