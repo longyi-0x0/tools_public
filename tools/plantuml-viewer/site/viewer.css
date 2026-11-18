@@ -46,7 +46,8 @@ body {
 .app {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  grid-template-rows: auto auto minmax(0, 1fr);
+  /* 行序必须与下面的 areas 对得上：top / editor（铺满）/ actions（贴底）。 */
+  grid-template-rows: auto minmax(0, 1fr) auto;
   grid-template-areas:
     "top top"
     "editor preview"
